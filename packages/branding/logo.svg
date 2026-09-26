@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Saganta">
+  <!-- Knoten-S: ein durchgehender Strich (Anfang und Ende einer Saga),
+       zwei Kontrapunkte in den Boegen. Marken-Blau #3a58e6 / Screen #5b74f0. -->
+  <path d="M 69 27 A 19 19 0 1 0 50 46 A 19 19 0 1 1 31 73"
+    fill="none" stroke="#3a58e6" stroke-width="12.5" stroke-linecap="round"/>
+  <circle cx="69" cy="27" r="6" fill="#0d1117"/>
+  <circle cx="31" cy="73" r="6" fill="#0d1117"/>
+</svg>

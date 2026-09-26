@@ -1,0 +1,23 @@
+[project]
+name = "saganta-projectdeck-api"
+version = "0.1.0"
+description = "Saganta ProjectDeck: Portfolio- und Entscheidungszentrale für alle Projekte (Deadline-Risk, Weekly Focus, Reviews, Shutdown, Kalender-Planung)."
+requires-python = ">=3.12"
+dependencies = [
+  "prometheus-fastapi-instrumentator>=7.0,<8",
+  "fastapi>=0.115,<0.137",
+  "uvicorn[standard]>=0.32",
+  "sqlalchemy>=2.0",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "python-jose[cryptography]>=3.3",
+  "httpx>=0.27",
+  "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.7"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

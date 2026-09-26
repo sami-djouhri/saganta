@@ -1,0 +1,5 @@
+# Saganta ist eine private Suite: bewusst NICHT für Suchmaschinen.
+# Die Landing bleibt für alle mit dem Link erreichbar (inkl. OG-Vorschau),
+# wird aber nicht indexiert. Zum Öffnen: die folgende Zeile auf "Allow: /" ändern.
+User-agent: *
+Disallow: /

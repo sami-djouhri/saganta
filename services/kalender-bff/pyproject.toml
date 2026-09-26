@@ -1,0 +1,24 @@
+[project]
+name = "saganta-kalender-bff"
+version = "0.1.0"
+description = "Saganta Kalender-BFF: Proxy + Auth-Bridge zum nativen kalender:8085."
+requires-python = ">=3.12"
+dependencies = [
+  "prometheus-fastapi-instrumentator>=7.0,<8",
+  # fastapi<0.137: ab 0.137 crasht prometheus-instrumentator jeden Endpoint
+  # ('_IncludedRouter' has no attribute 'path'). Memory feedback_fastapi_0137_instrumentator_crash.
+  "fastapi>=0.115,<0.137",
+  "uvicorn[standard]>=0.32",
+  "httpx>=0.27",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "python-jose[cryptography]>=3.3",
+  "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.7"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

@@ -1,0 +1,26 @@
+{
+  "name": "saganta",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Saganta: Homelab-Portal-Shell auf SvelteKit + FastAPI hinter Authelia-OIDC; Kalender/Briefkasten/Nachrichten via Edge-Routing auf native Container.",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "check": "turbo run check",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,svelte,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prettier": "^3.4.0",
+    "prettier-plugin-svelte": "^3.3.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  }
+}

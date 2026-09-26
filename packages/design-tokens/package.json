@@ -1,0 +1,14 @@
+{
+  "name": "@saganta/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Die eine Quelle der Suite-Farben, Schriften und Bewegungsdauern. Reines CSS: die Werte werden dort gebraucht, wo sie wirken.",
+  "exports": {
+    "./theme.css": "./src/theme.css"
+  },
+  "files": ["src"],
+  "peerDependencies": {
+    "tailwindcss": "^4.0.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@saganta/auth-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Saganta Auth-Service: better-auth (email/password + session, 2FA/passkeys folgen). Eigener IdP der Suite, ersetzt Authelia/Zitadel-OIDC.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "db:generate": "npx @better-auth/cli@latest generate --config src/auth.ts --output ../../infra/auth/schema.sql -y",
+    "db:migrate": "npx @better-auth/cli@latest migrate --config src/auth.ts -y",
+    "lint": "echo 'no lint yet' && exit 0",
+    "test": "echo 'no tests yet' && exit 0"
+  },
+  "dependencies": {
+    "better-auth": "^1.6.22",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@saganta/tsconfig": "workspace:*",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^6.4.16",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

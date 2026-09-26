@@ -1,0 +1,19 @@
+{
+  "extends": "./.svelte-kit/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    // Deklarationsdateien fremder Pakete nicht mitprüfen. Konkreter Anlass:
+    // happy-dom (nur Testumgebung) und die Node-Typen widersprechen sich in
+    // einer Signatur, die diese App nie anfasst. Ohne den Schalter meldet die
+    // Typprüfung dauerhaft einen Fehler, den man hier nicht beheben kann, und
+    // eine Prüfung, die immer rot ist, liest bald niemand mehr. Der eigene Code
+    // bleibt vollständig streng geprüft.
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "moduleResolution": "Bundler",
+    "module": "ESNext",
+    "target": "ES2022"
+  }
+}

@@ -1,0 +1,210 @@
+/* Saganta Theme: Light/Dark/High-Contrast.
+ * Werte via CSS-Variablen, damit Tailwind Utilities sie als rgb() konsumieren.
+ *
+ * DIESE DATEI IST DIE EINE QUELLE DER SUITE-FARBEN. Eine App bindet sie mit
+ * zwei Zeilen ein und definiert selbst keine Farbe mehr:
+ *
+ *     @import 'tailwindcss';
+ *     @import '@saganta/design-tokens/theme.css';
+ *
+ * Bis 2026-09-05 stand der @theme-Block unten stattdessen wortgleich in allen
+ * acht `apps/<app>/src/app.css`. Wer die Markenfarbe aendern wollte, musste acht
+ * Dateien treffen, und eine vergessene liess genau eine App anders aussehen,
+ * ohne Fehlermeldung: eine nicht definierte Farbe erzeugt in Tailwind v4 einfach
+ * keine Klasse. Dass es bereits driftete, war belegt. `sage-400` und `sage-500`
+ * gab es nur in shell, `warm-50` nur in der von niemandem gelesenen index.ts.
+ */
+
+/* Marken-Palette. `@theme` wird von Tailwind auch in importierten Dateien
+ * ausgewertet. Die Utilities (bg-accent-500, text-muted und die uebrigen)
+ * entstehen also hier, einmal fuer die ganze Suite. */
+@theme {
+  /* Akzent = warmes Messing/Lampenlicht (Nachtstudie), loest das kalte Blau ab. */
+  --color-accent-50: #fbf4e7;
+  --color-accent-100: #f6e6c8;
+  --color-accent-200: #eecd97;
+  --color-accent-300: #e5b467;
+  --color-accent-400: #dd9c3f;
+  --color-accent-500: #cf8524;
+  --color-accent-600: #b06b18;
+  --color-accent-700: #8a5216;
+  --color-accent-800: #693f15;
+  --color-accent-900: #4d2f12;
+  /* Dunkle Tinte fuer Text AUF Messing-Flaechen (Buttons), hoher Kontrast. */
+  --color-accent-ink: #1b1408;
+  /* 50, 100, 800 und 900 sind derzeit unbenutzt und bleiben trotzdem: eine
+   * Marken-Skala mit Loechern zwingt beim naechsten Bedarf zum Nachschlagen
+   * oder Erfinden eines Zwischentons. Bei einer durchgehenden Skala ist das
+   * etwas anderes als bei einer verwaisten Einzelfarbe. */
+  /* Warmes Kupfer als zweiter Markenton, nur diese zwei Stufen sind in Gebrauch.
+   * Eine 50er und eine 950er Stufe standen hier ebenfalls und hatten null
+   * Verwendung, ebenso eine komplette sage-Skala. Das Salbei ist nicht
+   * verschwunden, es sitzt jetzt an der Stelle, an der es tatsaechlich wirkt:
+   * als --saganta-erfolg im dunklen Theme. Ein Farbwert ohne Konsument ist
+   * genau die Sorte Ballast, wegen der die Palette vorher achtfach driftete. */
+  --color-warm-500: #c8884a;
+  --color-warm-700: #7a4f24;
+  /* Statusfarben. Vier Bedeutungen, vier Namen, und der Wert haengt am Theme.
+   *
+   * Vorher standen dafuer Tailwinds Standardfamilien im Markup: emerald fuer
+   * Erfolg, sky fuer neutral, amber fuer Warnung, rose UND red fuer Fehler
+   * (zwei Familien fuer dieselbe Bedeutung). Sie sind fest verdrahtet und
+   * kennen kein Theme, und genau daran scheiterten sie: gemessen erreichte
+   * `text-emerald-300` auf hellem Grund 1,34:1, `text-emerald-200` sogar
+   * 1,13:1, wo die Barrierefreiheit 4,5:1 verlangt. Im hellen Theme war damit
+   * keine einzige Statusmeldung lesbar, auch „Gespeichert." nicht. Betroffen
+   * war ausgerechnet, wer auf hell stellt, weil er besseren Kontrast braucht.
+   *
+   * Die Werte unten sind je Theme geprueft und liegen zwischen 5,6:1 und
+   * 16,4:1. Flaechen entstehen aus derselben Farbe mit Alpha (`bg-erfolg/10`),
+   * nicht aus einer eigenen dunklen Stufe: so bleibt eine Box in jedem Theme
+   * richtig, statt im hellen als dunkler Balken stehenzubleiben. */
+  --color-erfolg: rgb(var(--saganta-erfolg));
+  --color-info: rgb(var(--saganta-info));
+  --color-warnung: rgb(var(--saganta-warnung));
+  --color-fehler: rgb(var(--saganta-fehler));
+  /* Themenabhaengig, Werte siehe :root/[data-theme] weiter unten. */
+  --color-surface: rgb(var(--saganta-surface));
+  --color-surface-2: rgb(var(--saganta-surface-2));
+  --color-text: rgb(var(--saganta-text));
+  --color-muted: rgb(var(--saganta-muted));
+  --color-border: rgb(var(--saganta-border));
+  --font-display: 'Instrument Serif', Georgia, serif;
+  /* Bewegungskurve der Suite. `--ease-*` ist ein Tailwind-v4-Namespace, die
+   * Klasse `ease-saganta` entsteht also unmittelbar hieraus. */
+  --ease-saganta: var(--saganta-ease);
+}
+
+/* NICHT GESETZT, BEWUSST: eigene Eckenradien. Das geloeschte v3-Preset trug
+ * sm=4 md=8 lg=14 xl=20px, deutlich runder als Tailwinds Vorgabe (4/6/8/12).
+ * Gewirkt hat es nie, die Suite laeuft seit jeher auf den Standardwerten. Das
+ * Aussehen jetzt nachtraeglich zu veraendern waere eine Gestaltungsentscheidung
+ * und keine Fehlerbehebung, deshalb bleibt es beim Standard. Wer die weicheren
+ * Ecken will, ergaenzt hier `--radius-md: 8px;` und die uebrigen Stufen. */
+
+/* Die drei Bewegungsdauern. Anders als bei der Kurve gibt es fuer `duration-*`
+ * KEINEN Theme-Namespace in Tailwind v4 (nachgemessen: weder `--duration-fast`
+ * noch `--transition-duration-fast` erzeugen etwas), eigene Namen brauchen hier
+ * deshalb `@utility`.
+ *
+ * Bis 2026-09-05 fehlten diese drei Klassen der Suite komplett. Definiert waren
+ * sie nur in `tailwind-preset.ts`, einem Tailwind-v3-Preset, das kein Build je
+ * eingebunden hat, denn die Apps laufen auf v4 und es gibt keine
+ * `tailwind.config`. Gemessen im gebauten CSS von assets: 171 Stellen im Markup
+ * schrieben `duration-fast`, `duration-base` oder `ease-saganta`, und keine
+ * einzige davon erzeugte eine Regel. Ein unbekannter Utility-Name ist in
+ * Tailwind kein Fehler, sondern schlicht nichts, weshalb es niemandem auffiel:
+ * `transition-colors` brachte weiterhin seine Vorgabe von 150ms mit, das
+ * abgestimmte Bewegungsverhalten (120/200/320ms auf eigener Kurve) gab es nur
+ * auf dem Papier. */
+@utility duration-fast {
+  transition-duration: var(--saganta-motion-fast);
+}
+@utility duration-base {
+  transition-duration: var(--saganta-motion-base);
+}
+@utility duration-slow {
+  transition-duration: var(--saganta-motion-slow);
+}
+
+/* Tailwind erzeugt nur Klassen, die es in den gescannten Quellen findet, und die
+ * Komponenten aus @saganta/ui liegen ausserhalb jedes App-Verzeichnisses. Der
+ * Pfad ist relativ ZU DIESER DATEI (packages/design-tokens/src/) und gilt damit
+ * fuer jede App, die sie importiert. Vorher stand er achtmal in den app.css, wo
+ * er sich pro App verzaehlen konnte, und genau das geschah am 2026-08-29: eine
+ * Ebene zu kurz, ins Leere zeigend, still ignoriert. Im gebauten CSS fehlte
+ * daraufhin jede Klasse, die es nur in @saganta/ui gibt, und das Konto-Menue
+ * der TopBar hatte weder Breite noch Position. */
+@source "../../ui/src/**/*.svelte";
+
+/* „Nachtstudie", eine warme, lampen-beleuchtete private Bibliothek. Basis ist
+ * warmes Tinten-Schwarz (nicht kaltes Blau-Schwarz), Text ivory, Akzent = Messing. */
+:root,
+[data-theme='light'] {
+  --saganta-surface: 245 240 232;
+  --saganta-surface-2: 255 253 249;
+  --saganta-text: 26 20 12;
+  --saganta-muted: 108 98 84;
+  --saganta-border: 226 218 204;
+  --saganta-focus: 176 107 24;
+  /* Statusfarben hell: dunkle Toene, geprueft 5,6:1 bis 6,9:1 auf --surface. */
+  --saganta-erfolg: 63 90 80;
+  --saganta-info: 61 84 104;
+  --saganta-warnung: 138 82 22;
+  --saganta-fehler: 155 47 42;
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --saganta-surface: 22 19 15;
+  --saganta-surface-2: 31 27 21;
+  --saganta-text: 243 237 226;
+  --saganta-muted: 166 155 138;
+  --saganta-border: 48 41 32;
+  --saganta-focus: 221 154 60;
+  /* Statusfarben dunkel: helle, entsaettigte Toene, 7,8:1 bis 9,9:1. Das Gruen
+   * ist Salbei aus der Marken-Palette, nicht Tailwinds kaltes Emerald. */
+  --saganta-erfolg: 169 196 182;
+  --saganta-info: 159 179 200;
+  --saganta-warnung: 229 180 103;
+  --saganta-fehler: 232 144 140;
+  color-scheme: dark;
+}
+
+[data-theme='hc'] {
+  --saganta-surface: 0 0 0;
+  --saganta-surface-2: 0 0 0;
+  --saganta-text: 255 255 255;
+  --saganta-muted: 220 220 220;
+  --saganta-border: 255 255 0;
+  --saganta-focus: 255 255 0;
+  /* Statusfarben Hochkontrast: bewusst grell, 9,6:1 bis 16,4:1 auf Schwarz. */
+  --saganta-erfolg: 107 255 158;
+  --saganta-info: 143 212 255;
+  --saganta-warnung: 255 210 74;
+  --saganta-fehler: 255 143 138;
+  color-scheme: dark;
+}
+
+/* Motion-Tokens als CSS-Variablen. Sie sind die Quelle fuer `--ease-saganta`
+ * und die drei `duration-*`-Utilities oben. Die fruehere Notiz nannte hier
+ * index.ts als kanonisch, was nicht stimmte: jene Datei liest niemand. */
+:root {
+  --saganta-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --saganta-motion-fast: 120ms;
+  --saganta-motion-base: 200ms;
+  --saganta-motion-slow: 320ms;
+}
+
+html,
+body {
+  background: rgb(var(--saganta-surface));
+  color: rgb(var(--saganta-text));
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* A11y: sichtbarer Fokus-Ring für Tastatur-Navigation. Nur :focus-visible → Maus-/
+ * Touch-Klicks lösen keinen Ring aus. Gilt suite-weit (jede App importiert diese
+ * Datei); folgt border-radius der Elemente und respektiert das aktive Theme. */
+:focus-visible {
+  outline: 2px solid rgb(var(--saganta-focus, 221 154 60));
+  outline-offset: 2px;
+}
+
+/* A11y: Bewegung respektieren. Deckt alle token-/Tailwind-Transitions ab. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

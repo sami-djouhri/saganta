@@ -1,0 +1,9 @@
+@import 'tailwindcss';
+@import '@saganta/design-tokens/theme.css';
+
+/* Tailwind 4 findet seine Klassen ueber die gescannten Quellen. Der Probe-Ordner
+   ist die Vite-Wurzel, also muss die Komponente daneben ausdruecklich genannt
+   werden: sonst fehlt jede Klasse, die nur dort vorkommt, und die Ansicht sieht
+   nach einem Layoutfehler aus statt nach einem fehlenden Scan-Pfad. */
+@source '../src/lib';
+@source '../../../packages/ui/src';

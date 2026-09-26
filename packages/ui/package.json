@@ -1,0 +1,31 @@
+{
+  "name": "@saganta/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "svelte": "./src/index.ts",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*.svelte": "./src/components/*.svelte"
+  },
+  "files": ["src"],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "dependencies": {
+    "@saganta/design-tokens": "workspace:*"
+  },
+  "devDependencies": {
+    "@saganta/tsconfig": "workspace:*",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.7"
+  }
+}

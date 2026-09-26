@@ -1,0 +1,31 @@
+[project]
+name = "saganta-mail-api"
+version = "0.1.0"
+description = "Saganta Mail: Aggregator-Inbox für die externen IMAP-Konten der Mitglieder, Versand über Origin-SMTP. KEIN eigener Mailserver."
+requires-python = ">=3.12"
+dependencies = [
+  "prometheus-fastapi-instrumentator>=7.0,<8",
+  # fastapi<0.137: ab 0.137 crasht prometheus-instrumentator jeden Endpoint (Memory feedback_fastapi_0137_instrumentator_crash)
+  "fastapi>=0.115,<0.137",
+  "uvicorn[standard]>=0.32",
+  "sqlalchemy>=2.0",
+  "pydantic[email]>=2.9",
+  "pydantic-settings>=2.6",
+  "python-jose[cryptography]>=3.3",
+  "cryptography>=43.0",
+  "imap-tools>=1.7",
+  "aiosmtplib>=3.0",
+  "structlog>=24.4",
+  # OAuth2-Token beim Anbieter holen und auffrischen (app/oauth.py). Fehlte beim
+  # ersten Ausrollen und liess den Dienst in einer Neustartschleife enden: httpx
+  # kam bis dahin nur als Unterabhaengigkeit von fastapi mit und war im
+  # Laufzeit-Image nicht vorhanden.
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.7"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

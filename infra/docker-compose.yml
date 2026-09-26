@@ -1,0 +1,711 @@
+# Saganta: Hauptstack.
+#
+# Phase 1: LAN-only auf host. Edge-Nginx terminiert TLS für *.home.arpa,
+# alle App-Container hängen an cc-apps, BFF↔Auth-Proxy↔Backend an cc-core.
+# Bestehende Container `kalender`, `briefkasten`, `life-ops-api` müssen
+# bei `cc-core` joinen (siehe RUNBOOK §1).
+#
+# Härtung: Alle Services sind read_only, drop ALL caps, no-new-privileges,
+# user=10001. /tmp und /run als tmpfs.
+
+# Die Umgebung, die jede SvelteKit-App teilt.
+#
+# ★ Die Suite ist unter zwei Namen erreichbar: saganta.de (Demo, oeffentlich)
+# und home.arpa (produktiv, Heimnetz). Eine Anmeldung muss im selben Raum
+# stattfinden wie die App, sonst verwirft der Browser das Cookie und die
+# Anmeldung laeuft still im Kreis. AUTH_LOGIN_URL (in der .env) bleibt der
+# Hauptweg, AUTH_LOGIN_URLS ist die Ergaenzung fuer .home.
+#
+# ★★ Diese Zeile stand bis 2026-09-06 nur bei shell und tagebuch. Die uebrigen
+# neun Apps schickten deshalb auch unter .home zur Anmeldung auf saganta.de,
+# also durch den Tunnel nach draussen. Der Hinweis "wer eine weitere App ueber
+# .home erreichbar macht, setzt hier dieselbe Zeile" hat das nicht verhindert:
+# eine Anweisung, die man befolgen muss, ist keine Zusicherung. Als Anker gilt
+# sie fuer jede App, die ihn benutzt, auch fuer die naechste.
+x-app-umgebung: &app-umgebung
+  NODE_ENV: production
+  HOST: 0.0.0.0
+  PORT: 3000
+  AUTH_LOGIN_URLS: home.arpa=https://shell.home.arpa/login
+
+x-hardening: &hardening
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m
+    - /run:size=16m
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  user: "10001:10001"
+  restart: unless-stopped
+  # Kein extra_hosts mehr: dev-portal-web-1 (Edge) trägt cc-proxy-Netz-Aliase
+  # auth/shell/api.home.arpa → Apps lösen via Docker-DNS auf, driftfest
+  # (frühere hardcodierte 10.210.1.2 wurde beim ER605-Cut stale). Siehe
+  # dev-portal/docker-compose.yml networks.cc-proxy.aliases.
+
+services:
+  saganta-shell:
+    build:
+      context: ..
+      dockerfile: apps/shell/Dockerfile
+      args:
+        # Git-SHA für den In-App-Updater; vom Deploy gestempelt, sonst 'dev'.
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-shell
+    mem_limit: 256m
+    memswap_limit: 256m   # == mem_limit → Swap aus, sauberer OOM statt Host-Thrashing
+    env_file: ../apps/shell/.env
+    environment:
+      <<: *app-umgebung
+      # Native-App-Auslieferung: /downloads/<app>.{json,apk} aus dem gemounteten Volume.
+      DOWNLOADS_DIR: /app/downloads
+      # Startseiten-Zahlen aus den eigenen Apps (offene Aufgaben, Notizen).
+      # Bewusst hier und nicht in der .env: das sind interne Adressen, keine
+      # Geheimnisse, und so stehen sie versioniert statt in einer ungetrackten
+      # Datei. Beide Dienste haengen mit dieser Shell in cc-core.
+      KALENDER_BFF_BASE_URL: http://saganta-kalender-bff:8000
+      NOTIZEN_API_BASE_URL: http://saganta-notizen-api:8000
+    networks: [cc-proxy, cc-core]
+    volumes:
+      # Trust-Anchor fuer NODE_EXTRA_CA_CERTS. Enthaelt seit 2026-08-16 die
+      # host Local CA, nicht mehr das Blatt-Zertifikat: saganta.crt am Edge
+      # wird jetzt von der CA ausgestellt und darf sich erneuern, ohne dass hier
+      # etwas nachgezogen werden muss. Der Dateiname bleibt, weil der Pfad in
+      # der .env steht. Aktuell ohnehin inert, der Login laeuft ueber
+      # http://saganta-auth:3000, das ist ein Rest aus der Authelia-Zeit.
+      - ./secrets/certs/saganta.crt:/certs/saganta.crt:ro
+      # Signierte APKs + Versions-Manifeste (befuellt von saganta-android/release.sh).
+      - ../downloads:/app/downloads:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # calendar-Service entfernt 2026-06-12: calendar.home.arpa routet jetzt
+  # direkt im dev-portal-Edge auf den nativen kalender-Container (host:8085).
+  # SvelteKit-Code unter apps/calendar/ wurde entfernt.
+  #
+  # mail-Service entfernt 2026-06-12: mail.home.arpa routet direkt auf
+  # briefkasten:8000 (postfach), Session-Bridge via
+  # /api/auth/token-login?token=$SAGANTA_SESSION_TOKEN im dev-portal-Edge.
+  # SvelteKit-Code unter apps/mail/ + packages/sdk-briefkasten/ entfernt.
+
+  saganta-shell-api:
+    build:
+      context: ../services/shell-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-shell-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/shell-api/.env
+    volumes:
+      - shell-data:/data
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  auth-proxy:
+    build:
+      context: ../services/auth-proxy
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-auth-proxy
+    mem_limit: 128m
+    memswap_limit: 128m
+    env_file: ../services/auth-proxy/.env
+    networks: [cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Saganta Kalender: eigene Sub-App (ersetzt das frühere Edge-Routing zum nativen kalender:8085).
+  # apps/kalender (SvelteKit) → services/kalender-bff (FastAPI Proxy + Auth-Bridge) → kalender:8085 (cc-core).
+  # Edge-Routing in dev-portal: calendar.home.arpa → saganta-kalender:3000 statt vorher kalender:8085.
+  saganta-kalender:
+    build:
+      context: ..
+      dockerfile: apps/kalender/Dockerfile
+      args:
+        # In-App-Updater: Git-SHA (Build-Arg), vom Deploy gestempelt.
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-kalender
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/kalender/.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  kalender-bff:
+    build:
+      context: ../services/kalender-bff
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-kalender-bff
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/kalender-bff/.env
+    networks: [cc-core, cc-apps]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Saganta Assets: Eigen-Assets + Mirror lager.electronics + Marktwatch-Wertkopplung.
+  # Ersetzt das geplante snipe-it (nie deployed). Live-Wert via marktwatch /crawl/search Median.
+  assets:
+    build:
+      context: ..
+      dockerfile: apps/assets/Dockerfile
+      args:
+        # In-App-Updater: Git-SHA (Build-Arg), vom Deploy gestempelt.
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-assets
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/assets/.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  assets-api:
+    build:
+      context: ../services/assets-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-assets-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/assets-api/.env
+    volumes:
+      - assets-data:/data
+    networks: [cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Saganta News: multiuser Familien-News aus öffentlichen RSS/Atom-Feeds (Stage 1).
+  # Bewusst getrennt vom privaten nachrichten-Service (host:8104). Edge-Routing in
+  # dev-portal: news.home.arpa → saganta-news:3000.
+  news:
+    build:
+      context: ..
+      dockerfile: apps/news/Dockerfile
+      args:
+        # In-App-Updater: Git-SHA (Build-Arg), vom Deploy gestempelt.
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-news
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/news/.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    volumes:
+      # Trust-Anchor (NODE_EXTRA_CA_CERTS), wie shell, seit 2026-08-16 die
+      # host Local CA statt des Blatt-Zertifikats. Siehe Kommentar bei shell.
+      - ./secrets/certs/saganta.crt:/certs/saganta.crt:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # news-api ist der erste Saganta-Backend mit ausgehendem Internet-Zugriff (RSS-Fetch).
+  # cc-core muss Egress erlauben, sonst füllt sich FeedSource.last_error (Deploy-Check im RUNBOOK).
+  news-api:
+    build:
+      context: ../services/news-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-news-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/news-api/.env
+    environment:
+      # Sprachausgabe fuers Briefing. `environment` schlaegt `env_file`, deshalb
+      # steht der Wert hier und nicht in der .env des Dienstes: so gibt es genau
+      # eine Stelle, an der er herkommt.
+      #
+      # ★★ Die Adresse selbst gehoert in `infra/.env` (gitignored), seit
+      # 2026-09-12. Hier stand die LAN-Adresse des Rechners, auf dem dieses
+      # Projekt entstanden ist, fest eingetragen in einer Datei, die
+      # veroeffentlicht wird und die andere Leute starten sollen: bei ihnen
+      # zeigte sie auf einen Rechner in einem fremden Haus. Auffallen konnte das
+      # nicht, weil news-api ohne erreichbaren TTS-Dienst weich faellt und das
+      # Briefing einfach textlich bleibt.
+      #
+      # Leer = kein Ton, sonst nichts. Eintragen mit
+      #   echo 'TTS_URL=http://<wirt>:8146' >> infra/.env
+      - TTS_URL=${TTS_URL:-}
+      # ★★ Das Modell der Sprechfassung, und es steht aus demselben Grund hier
+      # wie TTS_URL: `environment` schlaegt `env_file`, also gibt es genau eine
+      # Stelle. ⚠️ In `../services/news-api/.env` steht noch der alte Wert
+      # `claude-haiku-4-5-20251001`; er ist wirkungslos, aber irrefuehrend und
+      # gehoert bei Gelegenheit dort geloescht.
+      #
+      # Owner-Entscheid 2026-09-20 „Claude raus aus Saganta": bis dahin ging
+      # taeglich der Tagesblock an Anthropic, also Tagestyp, Lernroutine mit
+      # Uhrzeiten und Termintitel, und zwar woertlich (siehe die Anweisung in
+      # briefing_assembly.spoken_narration). Acht Laeufe in Folge belegt.
+      #
+      # ★ Warum `homelab-smart` (gpt-oss-20b auf LXC 201) und nicht der naeher
+      # liegende `lxc100-large`: am echten Prompt gemessen gab lxc100-large
+      # „10:25 Uhr" als „zehn Uhr und fuenfzehn Minuten" wieder, liess einen
+      # Block ganz weg und siezte. Bei einem Briefing zum Anhoeren sind die
+      # Uhrzeiten der Inhalt, nicht die Verzierung. gpt-oss-20b traf alle vier
+      # Zeiten, duzte und lieferte Fliesstext ohne Aufzaehlung.
+      #
+      # Dauer ist hier kein Kriterium: der Lauf ist naechtlich, niemand wartet.
+      # Gemessen 94 s gegen 78 s beim schwaecheren Modell.
+      #
+      # ⚠️ Das Modell muss in der Allowlist des `briefing`-Keys am llm-gateway
+      # stehen, sonst 403 und stiller Rueckfall auf den nuechternen Text:
+      #   llm-gateway/provision-keys.sh --abgleich
+      - LLM_MODEL=homelab-smart
+    volumes:
+      - news-data:/data
+    # cc-apps zusätzlich: Zugriff auf nativen kalender:8085 für die „Dein Tag"-Sektion.
+    networks: [cc-core, cc-apps]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Auth-Gating Reverse-Proxy (apps/app-proxy) vor nativem fitness (SPA+API).
+  # better-auth-Gate am Edge fitness.home.arpa. Die daheim-/fitness/-Route
+  # (Authelia) bleibt bis zum verifizierten Cutover als Fallback bestehen.
+  saganta-fitness:
+    build:
+      context: ..
+      dockerfile: apps/app-proxy/Dockerfile
+    container_name: saganta-fitness
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/app-proxy/fitness.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Auth-Gating Reverse-Proxy (apps/app-proxy) vor nativem mealprep (SPA+API).
+  # better-auth-Gate am Edge mealprep.saganta.de. daheim-/mealprep/-Route bleibt Fallback.
+  saganta-mealprep:
+    build:
+      context: ..
+      dockerfile: apps/app-proxy/Dockerfile
+    container_name: saganta-mealprep
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/app-proxy/mealprep.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Auth-Gating Reverse-Proxy (apps/app-proxy) vor nativem lager (SPA+API).
+  # better-auth-Gate am Edge lager.saganta.de. daheim-/lager/-Route bleibt Fallback.
+  saganta-lager:
+    build:
+      context: ..
+      dockerfile: apps/app-proxy/Dockerfile
+    container_name: saganta-lager
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/app-proxy/lager.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Post-Aggregations-BFF: mail-api (IMAP) + briefkasten (Briefe/Vertraege).
+  # Reine Aggregation, kein Schema-Merge. Edge post.saganta.de.
+  saganta-post:
+    build:
+      context: ..
+      dockerfile: apps/post/Dockerfile
+      args:
+        # In-App-Updater: Git-SHA (Build-Arg), vom Deploy gestempelt.
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-post
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/post/.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # --- Auth (better-auth): ersetzt Authelia/Zitadel-OIDC ---
+  # Rein intern: nur die BFFs sprechen server-to-server mit /api/auth/*.
+  # Kein Edge/Tunnel, der Browser erreicht den Login über shell (saganta.de/login).
+  saganta-auth:
+    build:
+      context: ..
+      dockerfile: apps/auth-service/Dockerfile
+    container_name: saganta-auth
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/auth-service/.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-core]
+    depends_on:
+      saganta-auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  saganta-auth-db:
+    # Bewusst NICHT aktualisiert (geprueft 2026-08-22). Der Scan meldet hier
+    # 1 CRITICAL / 21 HIGH -- alle 22 stammen aus EINER Datei, /usr/local/bin/gosu,
+    # das mit einer alten Go-stdlib gebaut ist. gosu setzt nur uid/gid und exec't
+    # weiter; der CVE (crypto/tls, Zertifikatspruefung bei TLS-Session-Resumption)
+    # ist darin nicht erreichbar. Gemessen ist der Befund in postgres:16-alpine,
+    # 16 (Debian), 17-alpine und 18-alpine identisch 1/21 -- kein Update behebt
+    # ihn, ein Major-Bump waere reines Risiko ohne Gewinn. Vor erneuter
+    # Untersuchung: `trivy image postgres:<tag>` gegenpruefen, nicht raten.
+    image: postgres:16-alpine
+    container_name: saganta-auth-db
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/auth-service/db.env
+    networks: [cc-core]
+    volumes:
+      - saganta-auth-db-data:/var/lib/postgresql/data
+      # ★★ Das Schema legt beim ersten Start die Datenbank selbst an. Vorher
+      # entstand es nur ueber die better-auth-CLI aus dem Monorepo
+      # (`pnpm ... db:migrate`), und wer die Suite aus fertigen Abbildern
+      # startet, hat weder pnpm noch Quelltext noch npm-Zugang: die Datenbank
+      # blieb leer, die Registrierung meldete „Registrierung fehlgeschlagen",
+      # und der Grund stand nur als Postgres-Fehler ueber eine fehlende Tabelle
+      # im Protokoll des Anmeldedienstes. Gemessen beim ersten Start aus einem
+      # frischen Klon am 2026-09-12.
+      #
+      # Das Abbild arbeitet dieses Verzeichnis nur ab, solange sein
+      # Datenverzeichnis leer ist. Fuer eine laufende Installation ist die
+      # Zeile damit folgenlos, und eine spaetere Aenderung hier erreicht sie
+      # nicht: die muss von Hand eingespielt werden.
+      - ./auth/migrationen:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saganta_auth -d saganta_auth"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Saganta ProjectDeck: Portfolio-/Entscheidungszentrale für alle Projekte.
+  # apps/projectdeck (SvelteKit) → services/projectdeck-api (FastAPI, eigene DB) +
+  # aktive Kalender-Planung über den nativen kalender:8085 (cc-apps).
+  # Edge-Routing in dev-portal: projectdeck.home.arpa → saganta-projectdeck:3000.
+  projectdeck:
+    build:
+      context: ..
+      dockerfile: apps/projectdeck/Dockerfile
+      args:
+        # In-App-Updater: Git-SHA (Build-Arg), vom Deploy gestempelt.
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-projectdeck
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/projectdeck/.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  projectdeck-api:
+    build:
+      context: ../services/projectdeck-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-projectdeck-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/projectdeck-api/.env
+    volumes:
+      - projectdeck-data:/data
+    networks: [cc-core, cc-apps]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Saganta Mail: Aggregator-Inbox. Mitglieder bündeln EXTERNE IMAP-Konten (Gmail/GMX/...),
+  # Versand über Origin-SMTP. KEIN eigener Mailserver (der liegt separat als Mailcow auf netcup).
+  # apps/mail (saganta-mail) RETIRED 2026-07-18 (Post←Mail-Merge Stufe B): die
+  # E-Mail-Konten-Verwaltung lebt jetzt in `post` unter /accounts. saganta-mail war
+  # ohnehin nie ans Edge geroutet (postfach.saganta.de hatte keine nginx-Route).
+  # Das Backend `mail-api` bleibt aktiv: post nutzt es. Bei Bedarf reaktivierbar
+  # (git-Historie / apps/mail/ existiert weiter).
+
+  # Saganta Notizen: Notizbuecher, Markdown-Notizen mit Anhaengen, Verknuepfungen
+  # zu Terminen/Aufgaben/Zielen/Projekten/Kontakten/Briefen, und teilbare Links.
+  #
+  # ZWEI Edge-Namen auf DIESEN einen Container: notizen.saganta.de (die App, hinter
+  # dem Login) und n.saganta.de (die oeffentliche Leseseite einer Freigabe). Der
+  # nginx im dev-portal schreibt bei n.saganta.de den Pfad intern auf /n/<merkmal>
+  # um; genau dieser Pfad ist in hooks.server.ts von der Anmeldepflicht ausgenommen.
+  #
+  # cc-apps ist noetig, weil die Verknuepfungs-Suche den nativen `briefkasten`
+  # erreichen muss: Kalender und ProjectDeck liegen in cc-core.
+  notizen:
+    build:
+      context: ..
+      dockerfile: apps/notizen/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-notizen
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/notizen/.env
+    environment:
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core, cc-apps]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  notizen-api:
+    build:
+      context: ../services/notizen-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-notizen-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/notizen-api/.env
+    volumes:
+      # Datenbank UND Anhaenge liegen hier. Der Ordner ist der einzige
+      # beschreibbare Ort, der Container laeuft sonst read_only.
+      - notizen-data:/data
+    networks: [cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Aufgaben, Tagesziele und die Tagesplanung. Ausgelagert aus der Kalender-App
+  # (2026-09-13), die dreizehn Baustellen auf einer Seite trug.
+  #
+  # ★ **Eigene Oberflaeche, KEINE eigene Datenbank.** Der Bestand liegt weiter in
+  # der einen Kalender-Engine und wird ueber denselben `kalender-bff` gelesen und
+  # geschrieben, den auch die Kalender-App benutzt. Eine Aufgabe mit Zeitfenster
+  # IST ein Termin; eine zweite Datenbank haette zwei Wahrheiten ergeben.
+  # Deshalb steht hier auch kein Volume.
+  #
+  # `cc-core` fuer kalender-bff und notizen-api (die Notiz-Verknuepfung),
+  # `cc-proxy` fuer den Edge. `cc-apps` braucht es nicht: an keinen nativen
+  # Dienst wird direkt geredet.
+  aufgaben:
+    build:
+      context: ..
+      dockerfile: apps/aufgaben/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-aufgaben
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/aufgaben/.env
+    environment:
+      <<: *app-umgebung
+      # Interne Adressen, keine Geheimnisse: versioniert statt in einer
+      # ungetrackten Datei (gleiche Begruendung wie bei saganta-shell).
+      KALENDER_BFF_BASE_URL: http://saganta-kalender-bff:8000
+      NOTIZEN_API_BASE_URL: http://saganta-notizen-api:8000
+    networks: [cc-proxy, cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  tagebuch:
+    build:
+      context: ..
+      dockerfile: apps/tagebuch/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-tagebuch
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../apps/tagebuch/.env
+    environment:
+      # Das Tagebuch laeuft als einzige App ausschliesslich unter .home; die
+      # Anmeldeadresse dafuer kommt aus dem Anker wie bei allen anderen.
+      <<: *app-umgebung
+    networks: [cc-proxy, cc-core, cc-apps, tagebuch-net]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # ★★ Ausschliesslich `tagebuch-net`, und das ist eine Zusicherung, keine
+  # Sparsamkeit: das Netz ist `internal`, der Dienst hat also keinen Weg ins
+  # Internet. Er verwahrt Chiffrat und hat auch keinen Grund dazu: kein LLM,
+  # kein Push, kein fremder Server. Was er nicht erreichen kann, kann auch ein
+  # kuenftiger Fehler nicht dorthin schicken.
+  #
+  # ★ Gemessen, nicht angenommen: `cc-core` ist NICHT `internal`. Ein Dienst,
+  # der nur dort haengt, erreicht 1.1.1.1:443 (nachgeprueft am 06.09.2026).
+  # Die erste Fassung dieser Datei stand genau so da, mit einem Kommentar, der
+  # das Gegenteil behauptete. Zum Vergleich: mail-api unten braucht Egress und
+  # sagt das ausdruecklich; es haengt aus demselben Grund in cc-core.
+  tagebuch-api:
+    build:
+      context: ../services/tagebuch-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-tagebuch-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/tagebuch-api/.env
+    volumes:
+      - tagebuch-data:/data
+    networks: [tagebuch-net]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # mail-api braucht ausgehenden Zugriff auf fremde IMAP/SMTP-Server (993/465/587).
+  # cc-core muss Egress erlauben, sonst füllt sich MailAccount.last_error (wie news-api RSS).
+  mail-api:
+    build:
+      context: ../services/mail-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-mail-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file: ../services/mail-api/.env
+    volumes:
+      - mail-data:/data
+    networks: [cc-core]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+volumes:
+  shell-data:
+  assets-data:
+  news-data:
+  mail-data:
+  projectdeck-data:
+  notizen-data:
+  tagebuch-data:
+  saganta-auth-db-data:
+
+# ★ Die drei cc-Netze sind seit 2026-09-06 LOKAL definiert, nicht mehr
+# `external: true`. Vorher lief dieses Compose nur an genau einem Ort: einem
+# Wirt, auf dem vorher jemand die Bruecken angelegt hatte. Wer das Repo klonte
+# und `docker compose up` tippte, bekam einen Fehler ueber ein fehlendes Netz und
+# keinen Hinweis, woher es kommen soll. Fuer ein Projekt, das veroeffentlicht
+# werden soll, muss der Auslieferungszustand „laeuft ueberall" sein.
+#
+# Die Homelab-Sicht steht in `docker-compose.override.lan.yml` und zieht sie
+# dort auf `external: true` zurueck.
+#
+# ★★ Warum in DIESE Datei und nicht in eine neue: 20 Stellen in fuenf Repos
+# nennen `-f docker-compose.yml -f docker-compose.override.lan.yml` woertlich
+# (deploy.sh, run-tests.sh, die Ausrollskripte, READMEs). Eine dritte Datei
+# haette jede einzelne davon gebraucht, und eine vergessene Stelle faellt nicht
+# auf: sie legt still lokale Netze an, der Dienst startet, und erst der Weg
+# ueber das dev-portal ist tot. Der bestehende Name traegt die Aenderung ohne
+# eine einzige Anpassung.
+#
+# Fuer Aufrufe OHNE `-f` sorgt COMPOSE_FILE in der .env dafuer, dass die
+# Homelab-Sicht trotzdem mitkommt.
+networks:
+  cc-proxy:
+  cc-core:
+  cc-apps:
+  # Eigenes Netz nur fuer das Tagebuch, und zwar `internal`: darin gibt es
+  # keinen Weg nach draussen. Das Frontend haengt zusaetzlich in cc-core und
+  # cc-proxy, es muss ja Auth und Kalender erreichen; das Backend haengt
+  # ausschliesslich hier und kann deshalb strukturell nichts verschicken.
+  #
+  # ⚠️ Subnetz ausdruecklich gesetzt, nie der Auto-Vergabe ueberlassen: die kann
+  # das Speedport-LAN ueberdecken (Vorfall 2026-06-16, Root-Policy).
+  tagebuch-net:
+    name: tagebuch-net
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.32.90.0/24
