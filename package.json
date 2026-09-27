@@ -22,5 +22,10 @@
     "prettier-plugin-svelte": "^3.3.0",
     "turbo": "^2.3.0",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "js-yaml": ">=4.3.2"
+    }
   }
 }

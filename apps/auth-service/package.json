@@ -16,13 +16,13 @@
   },
   "dependencies": {
     "better-auth": "^1.6.22",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^9.1.0",
     "pg": "^8.13.0"
   },
   "devDependencies": {
     "@saganta/tsconfig": "workspace:*",
     "@types/node": "^22.10.0",
-    "@types/nodemailer": "^6.4.16",
+    "@types/nodemailer": "^7.0.4",
     "@types/pg": "^8.11.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
