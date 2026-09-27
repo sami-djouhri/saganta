@@ -20,7 +20,7 @@
     "@saganta/eslint-config": "workspace:*",
     "@saganta/tsconfig": "workspace:*",
     "@sveltejs/adapter-node": "^5.2.10",
-    "@sveltejs/kit": "^2.10.0",
+    "@sveltejs/kit": "^2.70.2",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.10.0",
