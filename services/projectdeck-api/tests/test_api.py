@@ -1,7 +1,7 @@
 """API-Smoke + Verhaltenstests via TestClient.
 
 Hinweis: Container-Test-Image hat ggf. kein httpx → lokal im venv laufen
-(feedback_kalender_test_image_httpx).
+.
 """
 
 import os
