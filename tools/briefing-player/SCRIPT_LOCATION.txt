@@ -1,0 +1,1 @@
+Der Player liegt kanonisch unter apps/news/static/tools/ und wird öffentlich unter /tools/saganta-briefing-player.sh ausgeliefert.

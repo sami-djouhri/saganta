@@ -1,0 +1,11 @@
+# systemd-User-Timer: ~/.config/systemd/user/saganta-briefing.timer
+# Spielt das Briefing jeden Morgen um 06:30 (lokale Zeit).
+[Unit]
+Description=Saganta Briefing morgens abspielen
+
+[Timer]
+OnCalendar=*-*-* 06:30:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

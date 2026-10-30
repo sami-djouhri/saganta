@@ -1,0 +1,68 @@
+# Diese Datei war bis 2026-09-05 doppelt gefuehrt: unten hing ein spaeter
+# angehaengter Block "audit hardening (auto)", der 13 der 58 Regeln ein zweites
+# Mal nannte. Das ist zusammengefuehrt. Beim Ergaenzen bitte in den passenden
+# Abschnitt schreiben statt hinten anzuhaengen.
+
+# --- Geheimnisse -----------------------------------------------------------
+# .env-Dateien sind hier kanonisch und liegen NUR lokal plus im SOPS-Vault.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.yaml
+secrets.yml
+id_rsa
+id_ed25519
+*.local
+# Entschluesseltes aus dem Vault: entsteht nur transient und darf nie liegen bleiben.
+infra/secrets/vault/*.dec
+infra/secrets/*.dec
+# better-auth
+apps/auth-service/db.env
+apps/app-proxy/*.env
+!apps/app-proxy/.env.example
+# Eine Sicherung heisst `fitness.env.vor-xyz` und faengt damit weder unter
+# `apps/app-proxy/*.env` noch unter `.env.*` an. Drei solche Dateien lagen vom
+# 2026-07-03 bis 2026-09-12 ungeschuetzt neben den aktiven envs.
+apps/app-proxy/*.env.*
+!apps/app-proxy/*.env.example
+
+# --- Node und Frontend -----------------------------------------------------
+node_modules/
+.svelte-kit/
+build/
+dist/
+.next/
+.turbo/
+.cache/
+coverage/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# Entsteht bei jedem `pip install -e` neu. Bis 2026-09-05 lagen zwei davon
+# trotz dieser Regel im Repo, weil sie schon vor der Regel eingecheckt waren
+# und .gitignore auf bereits verfolgte Dateien nicht wirkt.
+*.egg-info/
+
+# --- Daten und Laufzeit ----------------------------------------------------
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# --- Arbeitsplatz ----------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/

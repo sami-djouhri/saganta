@@ -1,0 +1,36 @@
+# Was nicht in den Build-Kontext gehoert.
+#
+# `node_modules` ist der wichtigste Eintrag: die Dockerfiles installieren die
+# Abhaengigkeiten in einer eigenen Stufe (`deps`) und kopieren danach den
+# Quelltext darueber. Liegt im Kontext ein `node_modules`, ueberschreibt es die
+# frisch installierte Fassung, mit allem, was am Arbeitsplatz daran anders ist,
+# bis hin zu Dateirechten. Ein Bau, der am Zustand des Entwicklungsrechners
+# haengt, ist kein reproduzierbarer Bau.
+#
+# Nebeneffekt: der Kontext schrumpft von hunderten MB auf wenige.
+node_modules
+**/node_modules
+
+.svelte-kit
+**/.svelte-kit
+build
+**/build
+dist
+**/dist
+.turbo
+**/.turbo
+coverage
+**/coverage
+
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/*.egg-info
+
+# Geheimnisse haben in einem Image-Layer nichts verloren, auch nicht in einem
+# Zwischenschritt, der spaeter verworfen wird.
+**/.env
+**/.env.*
+infra/secrets

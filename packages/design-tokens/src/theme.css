@@ -1,0 +1,445 @@
+/* Saganta Theme: Auto/Hell/Dunkel/Hochkontrast.
+ * Werte via CSS-Variablen, damit Tailwind Utilities sie als rgb() konsumieren.
+ *
+ * DIESE DATEI IST DIE EINE QUELLE DER SUITE-FARBEN UND -SCHRIFTEN. Eine App
+ * bindet sie mit zwei Zeilen ein und definiert selbst keine Farbe und keine
+ * Schrift mehr:
+ *
+ *     @import 'tailwindcss';
+ *     @import '@saganta/design-tokens/theme.css';
+ *
+ * Bis 2026-09-05 stand der @theme-Block unten stattdessen wortgleich in allen
+ * acht `apps/<app>/src/app.css`. Wer die Markenfarbe aendern wollte, musste acht
+ * Dateien treffen, und eine vergessene liess genau eine App anders aussehen,
+ * ohne Fehlermeldung: eine nicht definierte Farbe erzeugt in Tailwind v4 einfach
+ * keine Klasse. Dass es bereits driftete, war belegt. `sage-400` und `sage-500`
+ * gab es nur in shell, `warm-50` nur in der von niemandem gelesenen index.ts.
+ *
+ * Drei Befunde vom 2026-09-27, alle drei ohne Fehlermeldung:
+ *
+ * 1. SCHRIFT. Hier standen `Instrument Serif` und `Inter` als Namen, und keine
+ *    der beiden lag im Baum. `Instrument Serif` gab es nirgends, `Inter` nur in
+ *    `apps/shell/static/fonts/` -- und weil jede App unter einem eigenen Namen
+ *    laeuft, war das eine Datei fuer eine von zehn. Im gebauten CSS der uebrigen
+ *    neun: null `@font-face`, dafuer beide Namen. 162 Stellen schrieben
+ *    `font-display` und bekamen die naechste Systemschrift, auf Android also
+ *    irgendeine Serife. Ein Schriftname ohne Datei ist kein Fehler, sondern
+ *    still der Systemfallback. Jetzt liegen beide als npm-Abhaengigkeit dieses
+ *    Pakets; der Build buendelt sie je App mit.
+ *    Die Falle dabei: fontsource liefert variable Schnitte unter
+ *    `<Familie> Variable`. `font-family: Inter` traefe das Paket NICHT und saehe
+ *    genauso aus wie vorher. Deshalb unten `'Inter Variable'` zuerst.
+ *
+ * 2. AKZENT ALS TEXT. Die Statusfarben wurden am 2026-09-05 themenabhaengig
+ *    gemacht, die Markenskala nicht. Gemessen auf hellem Grund: `accent-200`
+ *    1,34:1, `accent-300` 1,67:1, `accent-400` 2,08:1, `accent-500` 2,63:1,
+ *    `warm-500` 2,62:1 -- gegen geforderte 4,5:1. Betroffen waren 178 Stellen.
+ *    Das fiel nicht auf, weil das helle Theme praktisch unerreichbar war (siehe
+ *    3). Die Skala bleibt fest, denn als FLAECHE ist sie in jedem Theme richtig
+ *    (`bg-accent-500` traegt `text-accent-ink`); als TEXT gibt es jetzt
+ *    `text-akzent` / `text-kupfer`, und die haengen am Theme.
+ *
+ * 3. AUTO-MODUS. Jede App trug `data-theme="dark"` fest im `app.html`, und nur
+ *    shell hatte einen Umschalter. Hell und Hochkontrast standen vollstaendig
+ *    hier und waren ueber neun von zehn Apps nicht erreichbar. `auto` folgt
+ *    jetzt `prefers-color-scheme`; ein gesetztes Cookie gewinnt weiterhin.
+ *    Damit `auto` die Werte nicht ein zweites Mal braucht, stehen sie jetzt
+ *    EINMAL unter `--hell-*` / `--dunkel-*`, und die Theme-Selektoren waehlen
+ *    nur noch aus.
+ */
+
+/* Schriften. Reihenfolge: erst die Schriftdateien, dann alles andere.
+ *
+ * Kein `@import` auf fonts.googleapis.com, und zwar aus drei Gruenden: der
+ * Abruf uebertraegt die IP jedes Aufrufers an einen Dritten ohne Einwilligung
+ * (LG Muenchen I, 20.01.2022, 3 O 17493/20), er bricht die Offline-Faehigkeit,
+ * und er blockiert das Rendern, bis er in einen Zeitfehler laeuft. Beides sind
+ * Abhaengigkeiten dieses Pakets, der Build legt die woff2 neben das CSS.
+ *
+ * Inter kommt als variabler Schnitt (eine Datei fuer 100 bis 900), Instrument
+ * Serif nur in 400 -- mehr gibt es nicht, deshalb steht `font-display` im
+ * Markup nirgends zusammen mit einem Fettschnitt (nachgezaehlt: 0 Stellen).
+ * Der Kursivschnitt braucht eine eigene Zeile, `index.css` traegt nur `normal`,
+ * und die Landing setzt ein kursives Wort in die Ueberschrift. */
+@import '@fontsource-variable/inter';
+@import '@fontsource/instrument-serif';
+@import '@fontsource/instrument-serif/400-italic.css';
+
+/* Marken-Palette. `@theme` wird von Tailwind auch in importierten Dateien
+ * ausgewertet. Die Utilities (bg-accent-500, text-muted und die uebrigen)
+ * entstehen also hier, einmal fuer die ganze Suite. */
+@theme {
+  /* Akzent = warmes Messing/Lampenlicht (Nachtstudie), loest das kalte Blau ab.
+   * Diese Skala ist FEST und kennt kein Theme. Sie ist als Flaeche gedacht
+   * (`bg-accent-500` + `text-accent-ink`, 6,12:1) und als Strich. Wer damit
+   * Text setzt, waehlt fuer eines der beiden Themes falsch -- dafuer gibt es
+   * `text-akzent` weiter unten. */
+  --color-accent-50: #fbf4e7;
+  --color-accent-100: #f6e6c8;
+  --color-accent-200: #eecd97;
+  --color-accent-300: #e5b467;
+  --color-accent-400: #dd9c3f;
+  --color-accent-500: #cf8524;
+  --color-accent-600: #b06b18;
+  --color-accent-700: #8a5216;
+  --color-accent-800: #693f15;
+  --color-accent-900: #4d2f12;
+  /* Dunkle Tinte fuer Text AUF Messing-Flaechen (Buttons), hoher Kontrast. */
+  --color-accent-ink: #1b1408;
+  /* 50, 100, 800 und 900 sind derzeit unbenutzt und bleiben trotzdem: eine
+   * Marken-Skala mit Loechern zwingt beim naechsten Bedarf zum Nachschlagen
+   * oder Erfinden eines Zwischentons. Bei einer durchgehenden Skala ist das
+   * etwas anderes als bei einer verwaisten Einzelfarbe. */
+  /* Warmes Kupfer als zweiter Markenton, nur diese zwei Stufen sind in Gebrauch.
+   * Eine 50er und eine 950er Stufe standen hier ebenfalls und hatten null
+   * Verwendung, ebenso eine komplette sage-Skala. Das Salbei ist nicht
+   * verschwunden, es sitzt jetzt an der Stelle, an der es tatsaechlich wirkt:
+   * als --saganta-erfolg im dunklen Theme. Ein Farbwert ohne Konsument ist
+   * genau die Sorte Ballast, wegen der die Palette vorher achtfach driftete.
+   * Kupfer und Messing sind messbar zwei Toene (Delta E76 = 17,1), aber
+   * gleich hell (L* 62,0 gegen 61,8): wer nur Helligkeit unterscheiden kann,
+   * sieht denselben Ton. Sie duerfen deshalb nie allein eine Bedeutung
+   * tragen -- dafuer sind die vier Statusfarben da. */
+  --color-warm-500: #c8884a;
+  --color-warm-700: #7a4f24;
+  /* Statusfarben. Vier Bedeutungen, vier Namen, und der Wert haengt am Theme.
+   *
+   * Vorher standen dafuer Tailwinds Standardfamilien im Markup: emerald fuer
+   * Erfolg, sky fuer neutral, amber fuer Warnung, rose UND red fuer Fehler
+   * (zwei Familien fuer dieselbe Bedeutung). Sie sind fest verdrahtet und
+   * kennen kein Theme, und genau daran scheiterten sie: gemessen erreichte
+   * `text-emerald-300` auf hellem Grund 1,34:1, `text-emerald-200` sogar
+   * 1,13:1, wo die Barrierefreiheit 4,5:1 verlangt. Im hellen Theme war damit
+   * keine einzige Statusmeldung lesbar, auch „Gespeichert." nicht. Betroffen
+   * war ausgerechnet, wer auf hell stellt, weil er besseren Kontrast braucht.
+   *
+   * Die Werte unten sind je Theme geprueft und liegen zwischen 5,6:1 und
+   * 16,4:1. Flaechen entstehen aus derselben Farbe mit Alpha (`bg-erfolg/10`),
+   * nicht aus einer eigenen dunklen Stufe: so bleibt eine Box in jedem Theme
+   * richtig, statt im hellen als dunkler Balken stehenzubleiben. */
+  --color-erfolg: rgb(var(--saganta-erfolg));
+  --color-info: rgb(var(--saganta-info));
+  --color-warnung: rgb(var(--saganta-warnung));
+  --color-fehler: rgb(var(--saganta-fehler));
+  /* Akzent als TEXT und als Strich, themenabhaengig. Gegenstueck zur festen
+   * Skala oben: `text-akzent` ist in jedem Theme lesbar (5,6:1 bis 13,8:1 auf
+   * --surface, 4,9:1 bis 9,9:1 auf der getoenten Flaeche `bg-accent-500/15`).
+   * `akzent-stark` ist die Betonungs- und Hover-Stufe: sie geht in beiden
+   * Themes WEITER VOM GRUND WEG, im Hellen also dunkler, im Dunklen heller.
+   * Ein Hover, der die Helligkeit immer in dieselbe Richtung schiebt, ist in
+   * genau einem der beiden Themes ein Kontrastverlust. */
+  --color-akzent: rgb(var(--saganta-akzent));
+  --color-akzent-stark: rgb(var(--saganta-akzent-stark));
+  --color-kupfer: rgb(var(--saganta-kupfer));
+  /* Themenabhaengig, Werte siehe :root/[data-theme] weiter unten. */
+  --color-surface: rgb(var(--saganta-surface));
+  --color-surface-2: rgb(var(--saganta-surface-2));
+  --color-text: rgb(var(--saganta-text));
+  --color-muted: rgb(var(--saganta-muted));
+  --color-border: rgb(var(--saganta-border));
+  /* Rahmen von BEDIENELEMENTEN. `--color-border` ist ein Trennstrich und liegt
+   * bei 1,22:1 (hell) bzw. 1,29:1 (dunkel) -- richtig fuer eine Linie zwischen
+   * zwei Absaetzen, zu wenig fuer die Aussenkante eines Eingabefeldes, fuer die
+   * WCAG 1.4.11 3:1 verlangt. Gemessen am 2026-09-27 trugen 46 Felder den
+   * Trennstrich als Umriss. Derselbe Zahlenwert traegt beide Themes (4,16:1
+   * hell, 3,92:1 dunkel), weil er in der Mitte zwischen beiden Gruenden liegt. */
+  --color-border-stark: rgb(var(--saganta-border-stark));
+  --font-sans:
+    'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Instrument Serif', Georgia, serif;
+  /* Bewegungskurve der Suite. `--ease-*` ist ein Tailwind-v4-Namespace, die
+   * Klasse `ease-saganta` entsteht also unmittelbar hieraus. */
+  --ease-saganta: var(--saganta-ease);
+}
+
+/* NICHT GESETZT, BEWUSST: eigene Eckenradien. Das geloeschte v3-Preset trug
+ * sm=4 md=8 lg=14 xl=20px, deutlich runder als Tailwinds Vorgabe (4/6/8/12).
+ * Gewirkt hat es nie, die Suite laeuft seit jeher auf den Standardwerten. Das
+ * Aussehen jetzt nachtraeglich zu veraendern waere eine Gestaltungsentscheidung
+ * und keine Fehlerbehebung, deshalb bleibt es beim Standard. Wer die weicheren
+ * Ecken will, ergaenzt hier `--radius-md: 8px;` und die uebrigen Stufen. */
+
+/* Die drei Bewegungsdauern. Anders als bei der Kurve gibt es fuer `duration-*`
+ * KEINEN Theme-Namespace in Tailwind v4 (nachgemessen: weder `--duration-fast`
+ * noch `--transition-duration-fast` erzeugen etwas), eigene Namen brauchen hier
+ * deshalb `@utility`.
+ *
+ * Bis 2026-09-05 fehlten diese drei Klassen der Suite komplett. Definiert waren
+ * sie nur in `tailwind-preset.ts`, einem Tailwind-v3-Preset, das kein Build je
+ * eingebunden hat, denn die Apps laufen auf v4 und es gibt keine
+ * `tailwind.config`. Gemessen im gebauten CSS von assets: 171 Stellen im Markup
+ * schrieben `duration-fast`, `duration-base` oder `ease-saganta`, und keine
+ * einzige davon erzeugte eine Regel. Ein unbekannter Utility-Name ist in
+ * Tailwind kein Fehler, sondern schlicht nichts, weshalb es niemandem auffiel:
+ * `transition-colors` brachte weiterhin seine Vorgabe von 150ms mit, das
+ * abgestimmte Bewegungsverhalten (120/200/320ms auf eigener Kurve) gab es nur
+ * auf dem Papier. */
+@utility duration-fast {
+  transition-duration: var(--saganta-motion-fast);
+}
+@utility duration-base {
+  transition-duration: var(--saganta-motion-base);
+}
+@utility duration-slow {
+  transition-duration: var(--saganta-motion-slow);
+}
+
+/* Tailwind erzeugt nur Klassen, die es in den gescannten Quellen findet, und die
+ * Komponenten aus @saganta/ui liegen ausserhalb jedes App-Verzeichnisses. Der
+ * Pfad ist relativ ZU DIESER DATEI (packages/design-tokens/src/) und gilt damit
+ * fuer jede App, die sie importiert. Vorher stand er achtmal in den app.css, wo
+ * er sich pro App verzaehlen konnte, und genau das geschah am 2026-08-29: eine
+ * Ebene zu kurz, ins Leere zeigend, still ignoriert. Im gebauten CSS fehlte
+ * daraufhin jede Klasse, die es nur in @saganta/ui gibt, und das Konto-Menue
+ * der TopBar hatte weder Breite noch Position. */
+@source "../../ui/src/**/*.svelte";
+
+/* ---------------------------------------------------------------------------
+ * Die Werte, einmal. Die Theme-Selektoren darunter waehlen nur noch aus.
+ *
+ * Bis 2026-09-27 standen die Zahlen unmittelbar in `[data-theme='light']` und
+ * `[data-theme='dark']`. Das trug, solange es genau zwei Selektoren gab; mit
+ * `auto` (Vorgabe und `prefers-color-scheme`) braeuchte jeder Wert vier Orte,
+ * und ein nachgezogener Ton haette drei davon getroffen. Getrennt haelt jede
+ * Zahl ihren einen Ort, und die Auswahl ist ablesbar statt abgeschrieben.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* „Tagstudie": dieselbe Bibliothek bei Tageslicht. Warmes Papier statt
+   * warmes Tinten-Schwarz, keine Umkehrung des dunklen Themes. */
+  --hell-surface: 245 240 232;
+  --hell-surface-2: 255 253 249;
+  --hell-text: 26 20 12;
+  --hell-muted: 108 98 84;
+  --hell-border: 226 218 204;
+  --hell-border-stark: 124 114 100;
+  --hell-focus: 176 107 24;
+  /* Statusfarben hell: dunkle Toene, geprueft 5,18:1 bis 9,04:1 auf --surface
+   * und 5,05:1 bis 7,91:1 auf der getoenten Flaeche `bg-accent-500/15`.
+   *
+   * WARNUNG IST GOLD UND NICHT MESSING, und das ist der Grund, diese
+   * Zeilen zu lesen. Bis zum 2026-10-24 stand hier `138 82 22`, also
+   * BYTE-GLEICH derselbe Wert wie `--hell-akzent` zwei Zeilen tiefer (und wie
+   * `--color-accent-700` oben). Ein gewoehnlicher Knopf sah damit aus wie eine
+   * Warnung, und eine Warnung wie ein Knopf: 141 Stellen schreiben
+   * `text-akzent`, 36 schreiben `text-warnung`, und sie waren nicht
+   * unterscheidbar. Im dunklen Satz dieselbe Kollision.
+   *
+   * WARUM ES KEIN WERKZEUG GEMELDET HAT. Jede der beiden Farben bestand
+   * ihren WCAG-Test einzeln mit 5,61:1. Der Mangel ist keine Lesbarkeit,
+   * sondern eine Verwechslung, und die entsteht erst im Verhaeltnis zweier
+   * Werte. `wcag.py` und `kontrast.py` rechnen eine Farbe gegen ihren GRUND;
+   * keines der fuenf Werkzeuge stellte zwei Bedeutungsfarben nebeneinander.
+   * Das tut jetzt `design-wellen/bedeutungsfarben.py`.
+   *
+   * ERFOLG UND INFO SIND AUSEINANDERGEZOGEN. Sie waren mit dL* 1,2
+   * praktisch gleich hell (Gruen #3F5A50 gegen Blau #3D5468): wer Farbtoene
+   * nicht unterscheiden kann, sah denselben Ton. Verschoben wurde nur die
+   * HELLIGKEIT in CIELAB, a* und b* sind unveraendert - das Salbei bleibt
+   * Salbei und das Blau bleibt Blau, nachgerechnet steht jetzt dL* 12,2.
+   * Erfolg geht dabei WEITER VOM GRUND WEG als Info, nach derselben Regel,
+   * die unten fuer `akzent-stark` gilt: Erfolg quittiert eine Handlung und
+   * darf auffallen, Info begleitet und darf zuruecktreten. */
+  --hell-erfolg: 44 70 60;
+  --hell-info: 73 96 116;
+  --hell-warnung: 122 98 0;
+  --hell-fehler: 155 47 42;
+  /* Akzent hell = accent-700 (5,61:1), Betonung = accent-900 (10,69:1),
+   * Kupfer = warm-700 (6,23:1). Dieselben Toene wie die Marken-Skala, nur die
+   * Stufe passt zum Grund. */
+  --hell-akzent: 138 82 22;
+  --hell-akzent-stark: 77 47 18;
+  --hell-kupfer: 122 79 36;
+
+  /* „Nachtstudie", eine warme, lampen-beleuchtete private Bibliothek. Basis ist
+   * warmes Tinten-Schwarz (nicht kaltes Blau-Schwarz), Text ivory, Akzent = Messing. */
+  --dunkel-surface: 22 19 15;
+  --dunkel-surface-2: 31 27 21;
+  --dunkel-text: 243 237 226;
+  --dunkel-muted: 166 155 138;
+  --dunkel-border: 48 41 32;
+  --dunkel-border-stark: 124 114 100;
+  --dunkel-focus: 221 154 60;
+  /* Statusfarben dunkel: helle, entsaettigte Toene, 7,75:1 bis 11,14:1. Das
+   * Gruen ist Salbei aus der Marken-Palette, nicht Tailwinds kaltes Emerald.
+   * Warnung ist Gold und nicht Messing, Begruendung im hellen Satz oben;
+   * Erfolg und Info sind ebenso in der Helligkeit getrennt (dL* 12,1). */
+  --dunkel-erfolg: 180 207 193;
+  --dunkel-info: 150 170 190;
+  --dunkel-warnung: 227 199 102;
+  --dunkel-fehler: 232 144 140;
+  /* Akzent dunkel = accent-400 (7,73:1), Betonung = accent-300 (9,75:1),
+   * Kupfer = warm-500 (6,24:1).
+   *
+   * DIE LEITER IST AM 2026-10-24 UM EINE STUFE NACH UNTEN GERUECKT, von
+   * accent-300/200 auf accent-400/300, und das war kein Geschmack, sondern
+   * Arithmetik. Die Warnung musste vom Akzent weg (siehe oben), und das Gold
+   * dafuer ist #E3C766. Gegen den alten Akzent accent-300 (#E5B467) haette es
+   * nur dE76 13,2 bei dL* 4,6 erreicht, also zwei kaum getrennte Goldtoene -
+   * die Kollision waere gegen eine Verwechslung getauscht worden. Gegen
+   * accent-400 sind es dE76 22,9 bei dL* 12,2.
+   *
+   * Damit tragen Web und nativ erstmals denselben Wert. Die Kotlin-Fassung
+   * stand schon auf dieser Stufe, das Web auf accent-300, und niemand hat die
+   * beiden je nachgerechnet, obwohl Color.kt von sich sagt, es sei "der
+   * Spiegel von theme.css". Wer diese Leiter verschiebt, verschiebt
+   * `Color.kt` mit; `bedeutungsfarben.py --web ... --nativ ...` meldet es,
+   * wenn nicht.
+   *
+   * DER WERT IST EXAKT `--color-accent-400`, und das war er zuerst nicht.
+   * Die Kotlin-Fassung trug `#DD9A3C`, also einen Ton, der accent-400
+   * (`#DD9C3F`) nur beinahe trifft: dE76 1,31, unterhalb der
+   * Wahrnehmungsschwelle und damit unsichtbar, aber eben keine Stufe der
+   * eigenen Skala. Beim Nachziehen waere dieser Fremdkoerper ins Web gewandert
+   * und der Kommentar darueber haette "accent-400" behauptet, was nicht
+   * gestimmt haette. Vorher war `--dunkel-akzent` byte-gleich mit accent-300;
+   * genau diese Eigenschaft soll die Leiter behalten. Aufgefallen ist es,
+   * weil `schaufenster/abgleich.py` die dritte Token-Kopie gegen diese Datei
+   * haelt und dabei beide Zahlen nebeneinander ausgab. */
+  --dunkel-akzent: 221 156 63;
+  --dunkel-akzent-stark: 229 180 103;
+  --dunkel-kupfer: 200 136 74;
+}
+
+/* Auswahl. `auto` ist die Vorgabe und folgt dem Betriebssystem; ein per Cookie
+ * gesetztes Theme gewinnt, weil es als `data-theme` im HTML landet. */
+:root,
+[data-theme='auto'] {
+  --saganta-surface: var(--dunkel-surface);
+  --saganta-surface-2: var(--dunkel-surface-2);
+  --saganta-text: var(--dunkel-text);
+  --saganta-muted: var(--dunkel-muted);
+  --saganta-border: var(--dunkel-border);
+  --saganta-border-stark: var(--dunkel-border-stark);
+  --saganta-focus: var(--dunkel-focus);
+  --saganta-erfolg: var(--dunkel-erfolg);
+  --saganta-info: var(--dunkel-info);
+  --saganta-warnung: var(--dunkel-warnung);
+  --saganta-fehler: var(--dunkel-fehler);
+  --saganta-akzent: var(--dunkel-akzent);
+  --saganta-akzent-stark: var(--dunkel-akzent-stark);
+  --saganta-kupfer: var(--dunkel-kupfer);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root,
+  [data-theme='auto'] {
+    --saganta-surface: var(--hell-surface);
+    --saganta-surface-2: var(--hell-surface-2);
+    --saganta-text: var(--hell-text);
+    --saganta-muted: var(--hell-muted);
+    --saganta-border: var(--hell-border);
+    --saganta-border-stark: var(--hell-border-stark);
+    --saganta-focus: var(--hell-focus);
+    --saganta-erfolg: var(--hell-erfolg);
+    --saganta-info: var(--hell-info);
+    --saganta-warnung: var(--hell-warnung);
+    --saganta-fehler: var(--hell-fehler);
+    --saganta-akzent: var(--hell-akzent);
+    --saganta-akzent-stark: var(--hell-akzent-stark);
+    --saganta-kupfer: var(--hell-kupfer);
+    color-scheme: light;
+  }
+}
+
+[data-theme='light'] {
+  --saganta-surface: var(--hell-surface);
+  --saganta-surface-2: var(--hell-surface-2);
+  --saganta-text: var(--hell-text);
+  --saganta-muted: var(--hell-muted);
+  --saganta-border: var(--hell-border);
+  --saganta-border-stark: var(--hell-border-stark);
+  --saganta-focus: var(--hell-focus);
+  --saganta-erfolg: var(--hell-erfolg);
+  --saganta-info: var(--hell-info);
+  --saganta-warnung: var(--hell-warnung);
+  --saganta-fehler: var(--hell-fehler);
+  --saganta-akzent: var(--hell-akzent);
+  --saganta-akzent-stark: var(--hell-akzent-stark);
+  --saganta-kupfer: var(--hell-kupfer);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --saganta-surface: var(--dunkel-surface);
+  --saganta-surface-2: var(--dunkel-surface-2);
+  --saganta-text: var(--dunkel-text);
+  --saganta-muted: var(--dunkel-muted);
+  --saganta-border: var(--dunkel-border);
+  --saganta-border-stark: var(--dunkel-border-stark);
+  --saganta-focus: var(--dunkel-focus);
+  --saganta-erfolg: var(--dunkel-erfolg);
+  --saganta-info: var(--dunkel-info);
+  --saganta-warnung: var(--dunkel-warnung);
+  --saganta-fehler: var(--dunkel-fehler);
+  --saganta-akzent: var(--dunkel-akzent);
+  --saganta-akzent-stark: var(--dunkel-akzent-stark);
+  --saganta-kupfer: var(--dunkel-kupfer);
+  color-scheme: dark;
+}
+
+[data-theme='hc'] {
+  --saganta-surface: 0 0 0;
+  --saganta-surface-2: 0 0 0;
+  --saganta-text: 255 255 255;
+  --saganta-muted: 220 220 220;
+  --saganta-border: 255 255 0;
+  --saganta-border-stark: 255 255 0;
+  --saganta-focus: 255 255 0;
+  /* Statusfarben Hochkontrast: bewusst grell, 9,6:1 bis 16,4:1 auf Schwarz. */
+  --saganta-erfolg: 107 255 158;
+  --saganta-info: 143 212 255;
+  --saganta-warnung: 255 210 74;
+  --saganta-fehler: 255 143 138;
+  /* Akzent Hochkontrast: accent-200 (13,81:1) und accent-50 (19,20:1). */
+  --saganta-akzent: 238 205 151;
+  --saganta-akzent-stark: 251 244 231;
+  --saganta-kupfer: 238 205 151;
+  color-scheme: dark;
+}
+
+/* Motion-Tokens als CSS-Variablen. Sie sind die Quelle fuer `--ease-saganta`
+ * und die drei `duration-*`-Utilities oben. Die fruehere Notiz nannte hier
+ * index.ts als kanonisch, was nicht stimmte: jene Datei liest niemand. */
+:root {
+  --saganta-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --saganta-motion-fast: 120ms;
+  --saganta-motion-base: 200ms;
+  --saganta-motion-slow: 320ms;
+}
+
+html,
+body {
+  background: rgb(var(--saganta-surface));
+  color: rgb(var(--saganta-text));
+  /* `Inter Variable` muss zuerst stehen und exakt so heissen -- so meldet
+   * fontsource den variablen Schnitt an. Der blosse Name `Inter` traefe ihn
+   * nicht, faende auf den wenigsten Geraeten eine installierte Inter und
+   * landete lautlos bei `system-ui`. Genau das war hier bis 2026-09-27 der
+   * Fall. Der kurze Name bleibt als zweiter Eintrag: wer Inter am System hat,
+   * spart den Abruf. */
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* A11y: sichtbarer Fokus-Ring für Tastatur-Navigation. Nur :focus-visible → Maus-/
+ * Touch-Klicks lösen keinen Ring aus. Gilt suite-weit (jede App importiert diese
+ * Datei); folgt border-radius der Elemente und respektiert das aktive Theme. */
+:focus-visible {
+  outline: 2px solid rgb(var(--saganta-focus, 221 154 60));
+  outline-offset: 2px;
+}
+
+/* A11y: Bewegung respektieren. Deckt alle token-/Tailwind-Transitions ab. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

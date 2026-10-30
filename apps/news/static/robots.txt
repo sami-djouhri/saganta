@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /briefing
+Disallow: /tools/
+
+Sitemap: https://news.saganta.de/sitemap.xml

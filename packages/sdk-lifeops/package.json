@@ -1,0 +1,13 @@
+{
+  "name": "@saganta/sdk-lifeops",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "files": ["src"],
+  "devDependencies": {
+    "@saganta/tsconfig": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

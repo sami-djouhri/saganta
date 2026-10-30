@@ -1,0 +1,19 @@
+<!--
+  Das Saganta-Zeichen, uebernommen aus `apps/shell/src/lib/Landing.svelte`.
+  Dort stehen die Punkte in `currentColor`, weil sie im Fliesstext liegen. Als
+  eigenstaendige Datei gibt es kein `currentColor`, das etwas erben koennte:
+  ein Favicon wird ohne umgebenden Text geladen, der Wert faellt auf Schwarz
+  zurueck und die Punkte verschwinden im dunklen Browser-Tab. Deshalb hier
+  durchgehend der Markenton, der auf hellem und dunklem Grund traegt.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path
+    d="M 69 27 A 19 19 0 1 0 50 46 A 19 19 0 1 1 31 73"
+    fill="none"
+    stroke="#dd9c3f"
+    stroke-width="12.5"
+    stroke-linecap="round"
+  />
+  <circle cx="69" cy="27" r="6" fill="#dd9c3f" />
+  <circle cx="31" cy="73" r="6" fill="#dd9c3f" />
+</svg>

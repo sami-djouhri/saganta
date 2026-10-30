@@ -1,0 +1,30 @@
+@import 'tailwindcss';
+@import '@saganta/design-tokens/theme.css';
+
+/* Hier standen bis 2026-09-27 vier `@font-face` auf `static/fonts/Inter-*.woff2`.
+ * Der Gedanke war richtig (selbst gehostet, kein Dritt-CDN), der Ort falsch: es
+ * war die einzige App der Suite mit einer Schriftdatei, und weil jede App unter
+ * einem eigenen Namen laeuft, half sie den uebrigen neun nicht. Die Schriften
+ * sind jetzt eine Abhaengigkeit von `@saganta/design-tokens` und kommen mit den
+ * zwei Zeilen oben mit -- fuer alle. Die vier woff2 sind entfernt.
+ *
+ * App-weites Scroll-Reveal (gesetzt von use:inview, $lib/inview.ts). */
+.reveal-init {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-init {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

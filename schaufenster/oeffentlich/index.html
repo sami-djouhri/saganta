@@ -1,0 +1,97 @@
+<!doctype html>
+<!-- Erzeugt von bauen.py aus quelle/. Nicht von Hand bearbeiten. -->
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Saganta</title>
+    <meta name="description" content="Saganta ist eine Suite aus elf Apps für Kalender, Aufgaben, Notizen, Post und mehr. Sie läuft auf einem Rechner im eigenen Haus." />
+    <link rel="icon" href="saganta.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="stil.css" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Saganta" />
+    <meta property="og:title" content="Saganta" />
+    <meta property="og:description" content="Saganta ist eine Suite aus elf Apps für Kalender, Aufgaben, Notizen, Post und mehr. Sie läuft auf einem Rechner im eigenen Haus." />
+    <meta property="og:url" content="https://saganta.de/" />
+  </head>
+  <body>
+    <div class="rahmen">
+      <header class="kopf">
+        <a class="marke" href="index.html">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <path
+              d="M 69 27 A 19 19 0 1 0 50 46 A 19 19 0 1 1 31 73"
+              fill="none"
+              stroke="#dd9c3f"
+              stroke-width="12.5"
+              stroke-linecap="round"
+            />
+            <circle cx="69" cy="27" r="6" fill="currentColor" />
+            <circle cx="31" cy="73" r="6" fill="currentColor" />
+          </svg>
+          <span>Saganta</span>
+        </a>
+        <div class="band" aria-hidden="true"></div>
+      </header>
+
+      <main>
+        <h1>Elf Apps für den Alltag einer Familie, auf eigener Hardware</h1>
+        <p class="anriss">Kalender, Aufgaben, Notizen, Post und die übrigen teilen eine Anmeldung, ein Aussehen und ihre Daten untereinander. Saganta läuft auf einem Rechner im eigenen Haus. Die Daten verlassen es nicht.</p>
+        
+
+        <section id="apps">
+          <h2>Die Apps</h2>
+          <ul class="kacheln">
+            <li><a href="kalender.html"><span class="name">Kalender</span><span class="was">Termine, der geplante Tag, Gewohnheiten</span></a></li>
+            <li><a href="aufgaben.html"><span class="name">Aufgaben</span><span class="was">Was heute dran ist, mit Tagesplan</span></a></li>
+            <li><a href="notizen.html"><span class="name">Notizen</span><span class="was">Notizbücher, Anhänge, Verknüpfungen</span></a></li>
+            <li><a href="post.html"><span class="name">Post</span><span class="was">E-Mails und eingescannte Briefe</span></a></li>
+            <li><a href="news.html"><span class="name">News</span><span class="was">Nachrichten und das tägliche Briefing</span></a></li>
+            <li><a href="projectdeck.html"><span class="name">ProjectDeck</span><span class="was">Projekte, Fristen, Entscheidungen</span></a></li>
+            <li><a href="tagebuch.html"><span class="name">Tagebuch</span><span class="was">Tageseinträge, im Browser verschlüsselt</span></a></li>
+            <li><a href="besitz.html"><span class="name">Besitz</span><span class="was">Was man besitzt, und was es wert ist</span></a></li>
+            <li><a href="fitness.html"><span class="name">Fitness</span><span class="was">Training, Pläne und Fortschritt</span></a></li>
+            <li><a href="mealprep.html"><span class="name">MealPrep</span><span class="was">Rezepte, Wochenplan, Einkaufsliste</span></a></li>
+            <li><a href="lager.html"><span class="name">Lager</span><span class="was">Vorräte mit Barcode und Haltbarkeit</span></a></li>
+          </ul>
+          <p class="leise nachsatz">Dass sie zusammen liegen, ist der Zweck: MealPrep zieht den Vorrat aus dem Lager von der Einkaufsliste ab, das Tagebuch zeigt die Termine des Tages, und an jedem Termin, jeder Aufgabe und jedem Projekt lässt sich direkt eine Notiz anlegen.</p>
+        </section>
+
+        <section>
+          <h2>Auf dem Telefon</h2>
+          <p>Kalender, Notizen, Fitness und ProjectDeck gibt es zusätzlich als eigene Apps für Android und Linux. Kalender und Fitness nehmen Einträge auch ohne Verbindung an und tragen sie nach, sobald das Telefon wieder im Heimnetz ist. <a href="telefon.html">Die Telefon-Apps</a></p>
+        </section>
+
+        <section>
+          <h2>Woraus es besteht</h2>
+          <ul class="technik">
+            <li><b>Oberflächen</b> in SvelteKit, je App eine eigene</li>
+            <li><b>Dienste</b> in Python mit FastAPI, dahinter SQLite</li>
+            <li><b>Anmeldung</b> über better-auth, einmal für alle Apps</li>
+            <li><b>Telefon-Apps</b> in Kotlin mit Compose Multiplatform</li>
+            <li><b>Betrieb</b> in Docker, auf einem Raspberry Pi 5</li>
+            <li><b>Daten</b> je Nutzer getrennt, an jedem Dienst einzeln geprüft</li>
+          </ul>
+          <p class="leise nachsatz">Der Quelltext steht unter der <a href="https://www.gnu.org/licenses/agpl-3.0.html" rel="noopener">AGPL-3.0</a> auf <a href="https://github.com/sami-djouhri/saganta" rel="noopener">GitHub</a>. Wie die Teile zusammenhängen, steht ausführlich in der <a href="https://djouhri.de/projekte/saganta" rel="noopener">Fallstudie</a>.</p>
+        </section>
+
+        <section>
+          <h2>Kein öffentlicher Zugang</h2>
+          <p class="leise">Saganta ist die private Suite einer Familie. Es gibt keine Anmeldung aus dem Internet und keine Registrierung. Diese Seite beschreibt die Suite, sie ist kein Zugang zu ihr.</p>
+        </section>
+
+        <div class="anfrage">
+          <h2 class="ohne-abstand">Bei Ihnen einrichten</h2>
+          <p>Wer so etwas für sich zuhause haben möchte, kann es einrichten lassen: auf einem eigenen Rechner, mit den eigenen Daten, ohne Zugang von außen.</p>
+          <p><a href="einrichtung.html">Wie eine Einrichtung abläuft</a></p>
+        </div>
+      </main>
+
+      <footer>
+        <span>Saganta</span>
+        <a class="abstand" href="impressum.html">Impressum</a>
+        <a href="datenschutz.html">Datenschutz</a>
+      </footer>
+    </div>
+  </body>
+</html>

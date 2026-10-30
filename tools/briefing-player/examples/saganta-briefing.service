@@ -1,0 +1,13 @@
+# systemd-User-Service: ~/.config/systemd/user/saganta-briefing.service
+# Aktivieren:  systemctl --user daemon-reload && systemctl --user enable --now saganta-briefing.timer
+# (Für Autostart ohne Login einmalig: sudo loginctl enable-linger $USER)
+[Unit]
+Description=Saganta Briefing über Lautsprecher abspielen
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=SAGANTA_FEED_TOKEN=DEIN-TOKEN
+# Optional für eine USB-Soundkarte + aplay-Fallback:
+# Environment=BRIEFING_ALSA_DEVICE=plughw:1,0
+ExecStart=%h/saganta-briefing-player.sh

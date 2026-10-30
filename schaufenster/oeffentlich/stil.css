@@ -1,0 +1,438 @@
+/* Stil des Schaufensters.
+ *
+ * Die Werte sind aus `packages/design-tokens/src/theme.css` uebernommen, damit
+ * die oeffentliche Seite aussieht wie die Suite, die sie beschreibt. Uebernommen
+ * und nicht importiert: die Tokens sind eine Tailwind-v4-Theme-Datei und
+ * brauchen einen Build, und die Seite soll ohne Build auskommen.
+ *
+ * Wenn die Tokens sich aendern, aendert sich hier nichts von selbst. Das ist der
+ * Preis dieser Bauart und bewusst gewaehlt: eine Seite aus festen Dateien
+ * soll keine Node-Kette auf einem oeffentlichen Wirt verlangen.
+ * Geprueft wird die Deckung von `abgleich.py`.
+ */
+
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('schrift/instrument-serif-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('schrift/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Nachtstudie: warmes Tinten-Schwarz, Text ivory, Akzent Messing.
+ * Vorgabe wie in der Suite, das helle Theme folgt dem Betriebssystem. */
+:root {
+  --surface: rgb(22 19 15);
+  --surface-2: rgb(31 27 21);
+  --text: rgb(243 237 226);
+  --muted: rgb(166 155 138);
+  --border: rgb(48 41 32);
+  --border-stark: rgb(124 114 100);
+  /* Am 2026-10-24 um eine Stufe nachgezogen, von accent-300/200 auf
+   * accent-400/300. In der Suite musste die Warnung von der Markenfarbe weg
+   * (sie trug denselben Wert), und das Warn-Gold trennt sich erst von
+   * accent-400 deutlich. Gemeldet hat die Drift `abgleich.py`, der genau
+   * dafuer da ist: diese Datei ist eine KOPIE der Tokens, weil das
+   * Schaufenster statisch auf netcup liegt und keinen Build hat.
+   * `--akzent` ist jetzt derselbe Wert wie `--marke` darunter. */
+  --akzent: rgb(221 156 63);
+  --akzent-stark: rgb(229 180 103);
+  --kupfer: rgb(200 136 74);
+  --marke: #dd9c3f;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  /* Tagstudie: dieselbe Bibliothek bei Tageslicht, warmes Papier statt
+   * umgekehrter Nacht. */
+  :root {
+    --surface: rgb(245 240 232);
+    --surface-2: rgb(255 253 249);
+    --text: rgb(26 20 12);
+    --muted: rgb(108 98 84);
+    --border: rgb(226 218 204);
+    --border-stark: rgb(124 114 100);
+    --akzent: rgb(138 82 22);
+    --akzent-stark: rgb(77 47 18);
+    --kupfer: rgb(122 79 36);
+    color-scheme: light;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.65;
+  text-rendering: optimizeLegibility;
+}
+
+.rahmen {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* Kopf */
+
+.kopf {
+  padding: 3.5rem 0 0;
+}
+
+.marke {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 1.75rem;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.marke svg {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+/* Die Signaturlinie der Suite: ein 2-px-Band mit eigenem Strichrhythmus.
+ * Hier der durchgehende der Uebersicht, weil diese Seite auf alles zeigt. */
+.band {
+  height: 2px;
+  margin-top: 2.5rem;
+  color: var(--border-stark);
+  background: currentColor;
+}
+
+/* Erster Block */
+
+h1 {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(2.4rem, 7vw, 3.6rem);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  margin: 3.25rem 0 0;
+}
+
+.anriss {
+  margin-top: 1.5rem;
+  font-size: 1.125rem;
+  color: var(--muted);
+  max-width: 34rem;
+}
+
+/* Abschnitte */
+
+section {
+  margin-top: 4rem;
+}
+
+h2 {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-weight: 400;
+  font-size: 1.9rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 1.25rem;
+}
+
+h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 2rem 0 0.5rem;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+.leise {
+  color: var(--muted);
+}
+
+a {
+  color: var(--akzent);
+  text-decoration-color: color-mix(in srgb, var(--akzent) 45%, transparent);
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--akzent-stark);
+  text-decoration-color: currentColor;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--akzent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Die Apps auf der Startseite. Bis zum 2026-10-30 eine reine Aufzaehlung,
+ * weil es nichts anzuklicken gab ("jede Kachel waere eine Tuer ohne Raum").
+ * Seitdem hat jede App eine eigene Seite, also ist jede Zeile ein Link. */
+.kacheln {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 34rem) {
+  .kacheln {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 2.5rem;
+  }
+}
+
+.kacheln li {
+  border-top: 1px solid var(--border);
+}
+
+.kacheln a {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.7rem 0;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.kacheln a:hover .name {
+  color: var(--akzent);
+}
+
+.kacheln .name {
+  font-weight: 600;
+  min-width: 6.5rem;
+}
+
+.kacheln .was {
+  color: var(--muted);
+  font-size: 0.925rem;
+}
+
+/* App-Seiten */
+
+.ueberzeile {
+  margin: 3.25rem 0 0;
+  font-size: 0.875rem;
+}
+
+.ueberzeile + h1 {
+  margin-top: 0.75rem;
+}
+
+.punkte,
+.schritte {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.punkte li,
+.schritte li {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.punkte b,
+.schritte b {
+  font-weight: 600;
+}
+
+.schritte {
+  counter-reset: schritt;
+}
+
+.schritte li {
+  counter-increment: schritt;
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+}
+
+.schritte li::before {
+  content: counter(schritt);
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 1.4rem;
+  line-height: 1.2;
+  color: var(--akzent);
+}
+
+/* Das Bildschirmfoto ragt ueber die Textspalte hinaus, soweit Platz ist:
+ * auf 44rem verkleinert waeren die Oberflaechen nicht mehr lesbar. */
+.bildschirm {
+  margin: 2.5rem 0 0;
+}
+
+@media (min-width: 60rem) {
+  .bildschirm {
+    margin-left: -6rem;
+    margin-right: -6rem;
+  }
+}
+
+.bildschirm img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-stark);
+  border-radius: 6px;
+}
+
+.blaettern {
+  margin-top: 4rem;
+  display: flex;
+  gap: 1rem;
+  font-size: 0.95rem;
+}
+
+.blaettern .zurueck::before {
+  content: '\2190\00a0';
+}
+
+.blaettern .weiter {
+  margin-left: auto;
+}
+
+.blaettern .weiter::after {
+  content: '\00a0\2192';
+}
+
+/* Technik-Liste */
+
+.technik {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.technik li {
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.technik b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Anfrage-Zeile */
+
+.anfrage {
+  margin-top: 4rem;
+  padding: 1.75rem;
+  border: 1px solid var(--border-stark);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.anfrage p:last-child {
+  margin-bottom: 0;
+}
+
+/* Die beiden Abstaende, die vorher als `style`-Attribut im HTML standen. Sie
+ * mussten hierher, weil der Caddy-Block eine CSP ohne `unsafe-inline` setzt:
+ * ein Inline-Style wird dann vom Browser verworfen, ohne Fehlermeldung und
+ * ohne sichtbare Spur im Markup. Geprueft von `abgleich.py`. */
+.nachsatz {
+  margin-top: 1.25rem;
+}
+
+.ohne-abstand {
+  margin-top: 0;
+}
+
+/* Fuss */
+
+footer {
+  margin-top: 5rem;
+  padding: 2rem 0 3.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.875rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  align-items: baseline;
+}
+
+footer .abstand {
+  margin-left: auto;
+}
+
+/* Rechtstexte */
+
+.rechtstext h1 {
+  font-size: clamp(2rem, 5vw, 2.6rem);
+}
+
+.rechtstext h2 {
+  font-size: 1.35rem;
+  margin-top: 2.5rem;
+}
+
+/* Ohne das klebt der erste Absatz an der Ueberschrift: `h1` hat bewusst keinen
+ * Abstand nach unten, weil auf der Startseite der `.anriss` folgt und den
+ * mitbringt. */
+.rechtstext h1 + p {
+  margin-top: 1.5rem;
+}
+
+.rechtstext {
+  font-size: 0.95rem;
+}
+
+.rechtstext dl {
+  margin: 0;
+}
+
+.rechtstext dt {
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+.rechtstext dd {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+}
+
+/* Der Hinweis auf fehlende Pflichtangaben. Sichtbar und nicht als Kommentar,
+ * weil eine Seite ohne Anschrift nicht oeffentlich stehen darf. */
+.unfertig {
+  margin-top: 1.5rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--kupfer);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+}

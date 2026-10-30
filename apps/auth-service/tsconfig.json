@@ -1,0 +1,15 @@
+{
+  "extends": "@saganta/tsconfig/node.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  // Tests gehoeren nicht in die Auslieferung. Ohne diese Zeile compiliert der
+  // Produktions-Build (`pnpm --filter … build` im Dockerfile) die Testdateien
+  // mit, das Image traegt sie in `dist/`, und der Bau haengt an `vitest` --
+  // einer devDependency, die im Laufzeit-Image nichts zu suchen hat.
+  "exclude": ["src/**/*.test.ts"]
+}

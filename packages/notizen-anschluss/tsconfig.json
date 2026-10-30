@@ -1,0 +1,4 @@
+{
+  "extends": "@saganta/tsconfig/node.json",
+  "include": ["src/**/*"]
+}
