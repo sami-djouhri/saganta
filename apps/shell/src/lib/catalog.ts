@@ -64,6 +64,8 @@ export interface AppDownload {
   icon: string;
   /** Adresse der Browser-Fassung im Raum des Aufrufers. */
   web: string;
+  /** Nur diese Plattformen zeigen einen Knopf. Fehlt das Feld: alle. */
+  plattformen?: Platform[];
 }
 
 // Diese Liste war bis zum 2026-10-25 von Hand gefuehrt und damit eine
@@ -105,7 +107,7 @@ const ZUSATZTEXT: Record<string, string> = {
     'Tageseinträge, im Browser verschlüsselt. Der Server verwahrt nur das Chiffrat, es gibt keine Suche darin.',
   assets: 'Geräte, Garantien und Marktwerte. Wertsachen und Elektronik mit Zeitwert.',
   fitness: 'Training, Fortschritt und Ziele. Koppelt Makros und Energiebedarf mit Mealprep.',
-  mealprep: 'Rezepte, Wochenplan und Makros. Erzeugt die Einkaufsliste aus Plan und Lagerbestand.',
+  mealprep: 'Rezepte, Wochenplan und Makros. Was dem Plan im Lager fehlt, landet in der Einkaufsliste.',
   lager: 'Haushaltsinventar mit FIFO, Mindestbestand und Barcode.',
 };
 
@@ -129,6 +131,28 @@ export function releaseNameFuer(id: string): string {
 }
 
 /**
+ * Downloads, die keine App im Katalog sind und deshalb nicht in `apps.ts`
+ * gehoeren (der speist auch den App-Wechsler im Web, und dort hat ein
+ * Android-Startbildschirm nichts zu suchen).
+ *
+ * `downloads-abgleich.py` liest die `release`-Namen aus diesem Block; wer
+ * ihn umbenennt, muss das Skript mitziehen, sonst meldet es das Manifest als
+ * unsichtbar.
+ */
+const NUR_DOWNLOAD: AppDownload[] = [
+  {
+    id: 'launcher',
+    release: 'launcher',
+    name: 'Saganta Launcher',
+    description:
+      'Der Startbildschirm für Android: Uhr, alle Saganta-Apps als Kacheln, alle übrigen Apps mit Suche und ein Dock. Der Launcher des Herstellers bleibt installiert.',
+    icon: 'layout-grid',
+    web: '',
+    plattformen: ['android'],
+  },
+];
+
+/**
  * Die Apps der Download-Seite im Raum des aufrufenden Hosts.
  *
  * `shell` faellt heraus: die Uebersicht ist die Seite selbst, kein Download.
@@ -143,5 +167,6 @@ export function downloadsFuer(host: string | null | undefined): AppDownload[] {
       description: ZUSATZTEXT[app.id] ?? app.description,
       icon: app.icon,
       web: appUrl(app, host),
-    }));
+    }))
+    .concat(NUR_DOWNLOAD);
 }

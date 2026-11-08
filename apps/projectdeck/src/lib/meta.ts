@@ -1,9 +1,38 @@
 // Anzeige-Labels und Auswahllisten (Werte == Backend-Enums).
 
 // icon == Name aus @saganta/ui Icon-Registry (siehe packages/ui Icon.svelte).
-export const NAV = [
+//
+// Ausgeblendet heisst: nicht im Menue und nicht als Reiter, die Seite und
+// das Backend bleiben. Gemessen am 08.11.: 0 Meilensteine, Durchsichten,
+// Veroeffentlichungs-Pruefungen, Abschalt-Listen, Verweise und Zeitbloecke,
+// kein Projekt mit Frist, Kunde, Ziel-Sichtbarkeit oder Wochenbudget, der
+// einzige Wochenfokus leer aus W35. Entscheid 08.11.: ausblenden, API
+// bleibt. Wieder zeigen = den Eintrag aus der Menge nehmen.
+export const AUSGEBLENDET: ReadonlySet<string> = new Set([
+  // Menue
+  '/deadlines',
+  '/fokus',
+  '/public-pipeline',
+  '/kunden',
+  '/reviews',
+  '/shutdown',
+  // Reiter am Projekt
+  'milestones',
+  'deadlines',
+  'assets',
+  'reviews',
+  'readiness',
+  'client',
+  'shutdown',
+]);
+
+const NAV_ALLE = [
   { href: '/', label: 'Start', icon: 'layout-dashboard' },
   { href: '/projekte', label: 'Projekte', icon: 'layout-grid' },
+  // Nicht „Aufgaben": so heisst die eigene App, und dort wird eine Aufgabe
+  // geoeffnet. Hier steht nur die Uebersicht ueber alle Projekte
+  // (Entscheid 05.11.: im ProjectDeck sehen, in Aufgaben oeffnen).
+  { href: '/aufgaben', label: 'Offene Punkte', kurz: 'Offen', icon: 'square-check' },
   { href: '/deadlines', label: 'Fristen', icon: 'clock' },
   { href: '/fokus', label: 'Wochenfokus', icon: 'star' },
   { href: '/public-pipeline', label: 'Veröffentlichung', icon: 'eye' },
@@ -11,8 +40,13 @@ export const NAV = [
   { href: '/reviews', label: 'Durchsichten', icon: 'check' },
   { href: '/shutdown', label: 'Abschalten', icon: 'power' },
   { href: '/archiv', label: 'Archiv', icon: 'archive' },
-  { href: '/einstellungen', label: 'Einstellungen', icon: 'settings' },
+  { href: '/einstellungen', label: 'Einstellungen', kurz: 'Optionen', icon: 'settings' },
 ] as const;
+
+export const NAV = NAV_ALLE.filter((n) => !AUSGEBLENDET.has(n.href));
+
+/** Reihenfolge der Prioritaet, fuer Sortierungen (hoch zuerst). */
+export const PRIO_RANG: Record<string, number> = { hoch: 0, mittel: 1, niedrig: 2 };
 
 // Anzeigetexte sind deutsch wie der Rest der Oberflaeche. Bis 2026-09-18
 // standen hier englische Bezeichnungen, waehrend READINESS_LABELS und

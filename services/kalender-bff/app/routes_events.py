@@ -22,6 +22,11 @@ class EventIn(BaseModel):
     end: str = Field(..., min_length=10, max_length=32)
     all_day: bool = False
     reminder_minutes: int | None = Field(default=None, ge=0, le=10080)
+    #: iCal-RRULE. Fehlte hier bis zum 2026-11-03, und Pydantic verwirft
+    #: unbekannte Felder still: die Wiederholung, die man in der Android-App
+    #: waehlt, kam nie beim Kalender an. Der Termin entstand als Einzeltermin,
+    #: mit Erfolgsmeldung.
+    recurrence_rule: str | None = Field(default=None, max_length=500)
 
 
 class EventPatch(BaseModel):
@@ -33,6 +38,17 @@ class EventPatch(BaseModel):
     end: str | None = Field(default=None, min_length=10, max_length=32)
     all_day: bool | None = None
     reminder_minutes: int | None = Field(default=None, ge=0, le=10080)
+    #: Leerer Text heisst „keine Wiederholung mehr". Ein ``null`` taugt dafuer
+    #: nicht: ``exclude_none`` unten macht daraus „unveraendert", und Gson in
+    #: der App laesst Nullwerte ohnehin weg.
+    recurrence_rule: str | None = Field(default=None, max_length=500)
+    #: Nur mit diesem Schalter wird ``recurrence_rule`` beim Aendern
+    #: uebernommen. Die Android-App bis 0.8.4 schickt bei JEDEM Speichern eine
+    #: Vorlage mit („FREQ=WEEKLY"), auch wenn die Serie eine eigene Regel hat
+    #: (``BYDAY=MO,WE;UNTIL=…``). Solange dieses Schema das Feld nicht kannte,
+    #: fiel das still weg; ohne den Schalter loeschte jetzt jedes Speichern
+    #: Wochentage und Enddatum der Serie.
+    wiederholung_aendern: bool = False
 
 
 def _start_epoch(ev: dict) -> float:
@@ -138,17 +154,70 @@ async def _events_upstream(
 
 @router.post("", status_code=201)
 async def create_event(data: EventIn, me: Me = CurrentUser) -> dict:
-    r = await _events_upstream("POST", "/api/events", json=data.model_dump(exclude_none=True))
+    rumpf = data.model_dump(exclude_none=True)
+    if not rumpf.get("recurrence_rule"):
+        rumpf.pop("recurrence_rule", None)
+    r = await _events_upstream("POST", "/api/events", json=rumpf)
     return r.json() if r.content else {}
+
+
+def _zeitpunkt(text: str) -> datetime:
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError as e:
+        raise HTTPException(422, f"Keine gueltige Zeitangabe: {text}") from e
+
+
+def _auf_anker_umrechnen(
+    basis: dict, vorkommen: str, rumpf: dict
+) -> dict:
+    """Rechnet Start/Ende eines Vorkommens auf den Anker der Serie um.
+
+    Ohne diesen Schritt verschob „ganze Serie bearbeiten" die Serie: die
+    Clients schicken Start und Ende des Vorkommens, das man gerade ansieht
+    (``basis::2026-11-10``), der native Dienst loest die Kennung auf die Basis
+    auf und setzt deren Start auf den 10.11. Alle Termine davor waren weg, ohne
+    Rueckfrage. Das betraf das Saganta-Web (``eventUpdate``) und die App.
+
+    Uebernommen wird, was man am Vorkommen geaendert hat: die Uhrzeit, die
+    Dauer und eine Verschiebung um ganze Tage. Der Anker behaelt sein Datum.
+    """
+    alt_tag = _zeitpunkt(vorkommen + "T00:00:00").date()
+    basis_start = _zeitpunkt(str(basis["start"]))
+    basis_ende = _zeitpunkt(str(basis["end"]))
+    neu_start = _zeitpunkt(rumpf["start"]) if rumpf.get("start") else None
+    neu_ende = _zeitpunkt(rumpf["end"]) if rumpf.get("end") else None
+    if neu_start is None:
+        # Nur das Ende geaendert: die Dauer zaehlt ab dem Start des Vorkommens.
+        neu_start = datetime.combine(alt_tag, basis_start.time())
+    if neu_ende is None:
+        neu_ende = neu_start + (basis_ende - basis_start)
+    tage = (neu_start.date() - alt_tag).days
+    anker = datetime.combine(basis_start.date() + timedelta(days=tage), neu_start.time())
+    rumpf = dict(rumpf)
+    rumpf["start"] = anker.isoformat()
+    rumpf["end"] = (anker + (neu_ende - neu_start)).isoformat()
+    return rumpf
 
 
 @router.put("/{event_id}")
 async def update_event(event_id: str, data: EventPatch, me: Me = CurrentUser) -> dict:
-    # Basis-Event bearbeiten (Reihen-ID); Instanz-IDs ('base::date') löst der native
-    # Kalender selbst auf. exclude_none = echtes Partial-Update.
-    r = await _events_upstream(
-        "PUT", f"/api/events/{event_id}", json=data.model_dump(exclude_none=True)
-    )
+    # exclude_none = echtes Partial-Update.
+    rumpf = data.model_dump(exclude_none=True)
+    if rumpf.pop("wiederholung_aendern", False):
+        rumpf["recurrence_rule"] = rumpf.get("recurrence_rule") or None
+    else:
+        rumpf.pop("recurrence_rule", None)
+    basis_id, _, vorkommen = event_id.partition("::")
+    if vorkommen and ("start" in rumpf or "end" in rumpf):
+        vorkommen = vorkommen[:10]
+        if len(vorkommen) != 10:
+            raise HTTPException(422, f"Unbekannte Instanz-Kennung: {event_id}")
+        basis = (await _events_upstream("GET", f"/api/events/{basis_id}")).json()
+        if basis.get("recurrence_rule"):
+            rumpf = _auf_anker_umrechnen(basis, vorkommen, rumpf)
+        event_id = basis_id
+    r = await _events_upstream("PUT", f"/api/events/{event_id}", json=rumpf)
     return r.json() if r.content else {}
 
 

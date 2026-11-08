@@ -10,6 +10,7 @@ import {
   type HabitSession,
   type InsightsResponse,
   type KalenderCalendar,
+  type KalenderEvent,
   type KalenderGoal,
   type KalenderProject,
   type KalenderTodo,
@@ -22,6 +23,7 @@ import {
 import { notizDazuAusFormular, notizenZu, type NotizKurz } from '@saganta/notizen-anschluss';
 import { notizAnschluss, terminKennung } from '$lib/server/notizen';
 import { weekGridDays } from '$lib/cal';
+import type { Beleg, LaufenderTimer } from '$lib/handzeit';
 import type { Actions, PageServerLoad } from './$types';
 
 const ALLOWED_DAYS = [7, 14, 30] as const;
@@ -34,6 +36,13 @@ interface CaptureSuggestion {
   end_time: string | null;
   confidence?: string;
   source?: string;
+  /** Seit 2026-11-01: Dauer auch ohne Uhrzeit („morgen 2h Keller"). */
+  dauer_min?: number | null;
+  ort?: string | null;
+  /** Seit 2026-11-07: RRULE, z. B. FREQ=WEEKLY;BYDAY=MO. */
+  wiederholung?: string | null;
+  /** Bis zu drei freie Zeiten für einen Block ohne Uhrzeit. */
+  vorschlaege?: { date: string; start_time: string; end_time: string; abschnitt: string }[];
 }
 
 // Grob den Grid-Bereich eines Monats abdecken (± eine Woche für Rand-Wochen).
@@ -66,6 +75,13 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
   let habitProgress: HabitProgress[] = [];
   let habitSessions: HabitSession[] = [];
   let tagesdecke: Tagesdecke | null = null;
+  // Zeit von Hand (seit 2026-11-08): laufender Timer, Belege und Termine von
+  // heute, unabhaengig von der gezeigten Ansicht (eine fremde Woche enthaelt
+  // den heutigen Tag nicht).
+  let zeitTimer: LaufenderTimer | null = null;
+  let zeitBelege: string[] = [];
+  let termineHeute: KalenderEvent[] = [];
+  let zeitFehler: string | null = null;
   // Die Notizen je Termin-Kennung, und ob die Notizen-App überhaupt geantwortet
   // hat. Der zweite Wert zählt: ohne ihn sieht ein Ausfall aus wie „keine Notiz
   // vorhanden", und das wäre eine Aussage über einen ungelesenen Bestand.
@@ -77,9 +93,10 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 
   // Ansicht: Agenda (Liste) / Monat (6×7-Grid) / Woche (Stunden-Grid).
   // Monat via ?month=YYYY-MM, Woche via ?week=YYYY-MM-DD (Anker) navigierbar.
-  // Standard = Monat: der Kalender-Eindruck steht sofort. Agenda/Woche via ?view=.
+  // Standard = Woche (Entscheid 06.11.: „Kalender oeffnet immer in Woche",
+  // wie die App seit 0.10.0). Agenda/Monat via ?view=.
   const viewParam = url.searchParams.get('view');
-  const view = viewParam === 'list' ? 'list' : viewParam === 'week' ? 'week' : 'month';
+  const view = viewParam === 'list' ? 'list' : viewParam === 'month' ? 'month' : 'week';
   const monthParam = url.searchParams.get('month') ?? '';
   const month = /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : today.slice(0, 7);
   const weekParam = url.searchParams.get('week') ?? '';
@@ -129,6 +146,8 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
       habitProgressRes,
       habitSessionsRes,
       deckeRes,
+      zeitRes,
+      heuteRes,
     ] = await Promise.allSettled([
       kalenderBffFetch<UpcomingResponse>(baseUrl, eventsPath, token, fetch),
       kalenderBffFetch<KalenderCalendar[]>(baseUrl, '/api/events/calendars', token, fetch),
@@ -156,6 +175,13 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
         kalenderBffFetch<HabitSession[]>(baseUrl, '/api/habits/sessions/upcoming?days=7', token, fetch),
       ]),
       kalenderBffFetch<Tagesdecke>(baseUrl, `/api/tagesdecke?datum=${deckeTag}`, token, fetch),
+      kalenderBffFetch<{ belege?: Beleg[]; laeuft?: LaufenderTimer | null }>(
+        baseUrl,
+        `/api/zeit/belege?von=${today}&bis=${today}`,
+        token,
+        fetch,
+      ),
+      kalenderBffFetch<UpcomingResponse>(baseUrl, `/api/events/range?start=${today}&end=${today}`, token, fetch),
     ]);
 
     if (upcomingRes.status === 'fulfilled') {
@@ -212,6 +238,18 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
       tagesdecke = deckeRes.value;
     }
 
+    // Zeit von Hand fail-soft, aber nicht stumm: ohne Timer-Stand liesse sich
+    // ein laufender Timer nicht stoppen, und das soll man sehen.
+    if (zeitRes.status === 'fulfilled' && zeitRes.value) {
+      zeitTimer = zeitRes.value.laeuft ?? null;
+      zeitBelege = (zeitRes.value.belege ?? []).map((b) => b.verweis);
+    } else {
+      zeitFehler = 'Timer und Haken sind gerade nicht erreichbar.';
+    }
+    if (heuteRes.status === 'fulfilled' && Array.isArray(heuteRes.value?.items)) {
+      termineHeute = heuteRes.value.items;
+    }
+
     // ── Notizen zu den angezeigten Terminen ──
     // In EINEM Aufruf für alle sichtbaren Termine, nicht je Zeile: eine
     // Monatsansicht zeigt leicht zweihundert Termine, und zweihundert Anfragen
@@ -223,6 +261,10 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
   }
 
   return {
+    zeitTimer,
+    zeitBelege,
+    termineHeute,
+    zeitFehler,
     tagesdecke,
     deckeTag,
     upcoming,
@@ -506,6 +548,8 @@ export const actions: Actions = {
       date: String(fd.get('date') ?? '') || null,
       start_time: String(fd.get('start_time') ?? '') || null,
       end_time: String(fd.get('end_time') ?? '') || null,
+      dauer_min: Number(fd.get('dauer_min') ?? '') || null,
+      wiederholung: String(fd.get('wiederholung') ?? '') || null,
     };
     if (!body.title) return fail(400, { error: 'Titel fehlt.' });
     try {
@@ -545,7 +589,7 @@ export const actions: Actions = {
     const id = String(fd.get('id') ?? '');
     const aktion = String(fd.get('aktion') ?? '');
     if (!id) return fail(400, { error: 'id fehlt' });
-    if (!['accepted', 'dismissed', 'cancelled', 'start_early'].includes(aktion)) {
+    if (!['accepted', 'dismissed', 'cancelled', 'start_early', 'nicht_gemacht'].includes(aktion)) {
       return fail(400, { error: `unbekannte Aktion: ${aktion}` });
     }
     try {
@@ -555,6 +599,69 @@ export const actions: Actions = {
         body: JSON.stringify({ action: aktion }),
       });
       return { habitOk: true };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
+  // ── Zeit von Hand (seit 2026-11-08, wie die App) ──
+  zeitStart: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    const fd = await request.formData();
+    const titel = String(fd.get('titel') ?? '').trim().slice(0, 300);
+    const bezugTyp = String(fd.get('bezug_typ') ?? '');
+    const bezugId = String(fd.get('bezug_id') ?? '');
+    if (!titel) return fail(400, { error: 'Titel fehlt.' });
+    if (!['event', 'session'].includes(bezugTyp) || !bezugId) return fail(400, { error: 'Bezug fehlt.' });
+    try {
+      await kalenderBffFetch(ctx.base, '/api/zeit/timer/start', ctx.token, fetch, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titel, bezug_typ: bezugTyp, bezug_id: bezugId }),
+      });
+      return { zeitOk: true };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
+  zeitStopp: async ({ locals, fetch }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    try {
+      await kalenderBffFetch(ctx.base, '/api/zeit/timer/stopp', ctx.token, fetch, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      return { zeitOk: true };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
+  /** Nachtraeglich abhaken. Ein Ende in der Zukunft lehnt der Dienst ab; die Seite prueft das vorher. */
+  zeitHaken: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    const fd = await request.formData();
+    const titel = String(fd.get('titel') ?? '').trim().slice(0, 300);
+    const bezugTyp = String(fd.get('bezug_typ') ?? '');
+    const bezugId = String(fd.get('bezug_id') ?? '');
+    const start = String(fd.get('start') ?? '');
+    const ende = String(fd.get('ende') ?? '');
+    const zeit = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+    if (!titel) return fail(400, { error: 'Titel fehlt.' });
+    if (!['event', 'session'].includes(bezugTyp) || !bezugId) return fail(400, { error: 'Bezug fehlt.' });
+    if (!zeit.test(start) || !zeit.test(ende) || ende <= start) return fail(400, { error: 'Zeiten prüfen.' });
+    try {
+      await kalenderBffFetch(ctx.base, '/api/zeit/haken', ctx.token, fetch, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titel, start, ende, bezug_typ: bezugTyp, bezug_id: bezugId }),
+      });
+      return { zeitOk: true };
     } catch (err) {
       return fail(502, { error: String(err) });
     }
@@ -635,6 +742,33 @@ export const actions: Actions = {
    *   `vorkommen`: nur dieses eine Datum
    *   `ab_hier`: dieses und alle folgenden
    */
+  /**
+   * Termin per Ziehen in der Woche verschieben (seit 2026-11-07). Nur Beginn
+   * und Ende gehen hinaus, der bff nimmt Teilaenderungen (`EventPatch`).
+   * Serien werden in der Oberflaeche nicht gezogen.
+   */
+  eventVerschieben: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    const fd = await request.formData();
+    const id = String(fd.get('id') ?? '');
+    const start = String(fd.get('start') ?? '');
+    const end = String(fd.get('end') ?? '');
+    const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+    if (!id || id.includes('::')) return fail(400, { error: 'Serien werden im Editor verschoben.' });
+    if (!iso.test(start) || !iso.test(end) || start >= end) return fail(400, { error: 'Zeit unlesbar.' });
+    try {
+      await kalenderBffFetch(ctx.base, `/api/events/${encodeURIComponent(id)}`, ctx.token, fetch, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start, end }),
+      });
+      return { eventOk: true };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
   eventDelete: async ({ locals, fetch, request }) => {
     const ctx = bffCtx(locals);
     if (!ctx) return fail(401, { error: 'nicht angemeldet' });

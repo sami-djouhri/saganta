@@ -11,6 +11,7 @@ import {
   type MailAccount,
   type MailProviderPreset,
   type OAuthAnbieter,
+  mailAktiv,
 } from '$lib/post-api';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -24,6 +25,9 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
     failed: false,
   };
   if (!locals.user) return empty;
+  // E-Mail ist seit 2026-11-05 stillgelegt (`mailAktiv`): keine Kontenseite,
+  // die auf einen gestoppten Dienst zeigt.
+  if (!mailAktiv()) redirect(303, '/');
   try {
     const [accounts, providers, oauthAnbieter] = await Promise.all([
       listMailAccounts(locals.user, fetch),

@@ -32,13 +32,13 @@ class BriefingProfile(Base):
 
     sub: Mapped[str] = mapped_column(String(128), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Freemium-Tarif: "free" | "pro". Steuert Feature-Gating serverseitig.
+    # Kostenbremse: "free" = begrenzt, "pro" = volle Rechenzeit (services/plans.py).
     plan: Mapped[str] = mapped_column(String(16), default="free")
-    # Stripe-Anbindung (Self-Service-Payment). Leer/None solange kein Abo gekauft.
-    # Der Webhook setzt plan=pro + persistiert customer/subscription für spätere Events.
+    # Drei Spalten aus der Stripe-Zeit, alle leer. Sie bleiben (RICHTUNG.md, zweite
+    # Runde): ein Schemaumbau kostet mehr als drei leere Spalten.
     stripe_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # "active" | "canceled" | None: Spiegel des Stripe-Subscription-Status.
+    # Letzter Setzweg, heute nur noch "manuell" (/admin/set-plan) oder None.
     plan_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # interests: [{"tag": "security", "weight": 1.5}, ...], Gewicht 0..3.
     interests: Mapped[list] = mapped_column(JSON, default=list)

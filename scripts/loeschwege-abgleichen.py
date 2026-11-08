@@ -41,9 +41,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import sys
+import time
+
+from konto_soll import laeuft, ruht
+
+TEXTFILE = os.environ.get(
+    "KONTO_WACHE_LOESCHWEGE_TEXTFILE",
+    "/var/lib/node_exporter/textfile_collector/konto-wache-loeschwege.prom",
+)
 
 DOCKER_WURZEL = pathlib.Path(__file__).resolve().parents[2]
 
@@ -59,7 +68,6 @@ MIT_KOPIE = [
 MIT_PAKET = [
     ("notizen-api", "saganta-notizen-api"),
     ("tagebuch-api", "saganta-tagebuch-api"),
-    ("assets-api", "saganta-assets-api"),
     ("projectdeck-api", "saganta-projectdeck-api"),
     ("news-api", "saganta-news-api"),
     ("shell-api", "saganta-shell-api"),
@@ -134,7 +142,10 @@ def _im_container(container: str) -> dict:
 def main() -> int:
     zerleger = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     zerleger.add_argument("--json", action="store_true")
+    zerleger.add_argument("--herzschlag", action="store_true",
+                          help="Lauf und Befundzahl in den textfile-Collector schreiben")
     args = zerleger.parse_args()
+    start = time.time()
 
     ergebnis: dict = {"kopien": {}, "dienste": [], "befunde": []}
 
@@ -162,14 +173,14 @@ def main() -> int:
         plan_pfad = DOCKER_WURZEL / ordner / "app" / "konto.py"
         eintrag = {"dienst": container, "bauart": "kopie", "repo": ordner,
                    "plan_im_baum": plan_pfad.is_file()}
-        eintrag.update(_im_container(container))
+        eintrag.update(_messen(container))
         ergebnis["dienste"].append(eintrag)
 
     for ordner, container in MIT_PAKET:
         plan_pfad = (DOCKER_WURZEL / "saganta" / "services" / ordner / "app" / "konto.py")
         eintrag = {"dienst": container, "bauart": "paket", "repo": f"saganta/{ordner}",
                    "plan_im_baum": plan_pfad.is_file()}
-        eintrag.update(_im_container(container))
+        eintrag.update(_messen(container))
         ergebnis["dienste"].append(eintrag)
 
     for eintrag in ergebnis["dienste"]:
@@ -180,12 +191,55 @@ def main() -> int:
         for luecke in eintrag.get("luecken") or []:
             ergebnis["befunde"].append(f"{eintrag['dienst']}: {luecke}")
 
+    if args.herzschlag:
+        _herzschlag(ergebnis, start)
+
     if args.json:
         print(json.dumps(ergebnis, indent=2, ensure_ascii=False))
     else:
         _drucken(ergebnis)
 
     return 0 if not ergebnis["befunde"] else 1
+
+
+def _messen(container: str) -> dict:
+    """Im Container messen, wenn er laeuft. Ruht er laut control-map, ist das der
+    Normalfall und kein Befund; sein Plan im Quellbaum wird trotzdem geprueft."""
+    if not laeuft(container):
+        soll = ruht(container)
+        if soll:
+            return {"ok": True, "ruht": soll}
+        return {"ok": False, "fehler": f"Container {container} laeuft nicht und soll laufen"}
+    return _im_container(container)
+
+
+def _herzschlag(ergebnis: dict, start: float) -> None:
+    ordner = os.path.dirname(TEXTFILE)
+    if not os.path.isdir(ordner):
+        print(f"(kein Collector-Ordner {ordner}, kein Herzschlag geschrieben)")
+        return
+    ruhend = sum(1 for e in ergebnis["dienste"] if e.get("ruht"))
+    zeilen = [
+        "# HELP homelab_konto_loeschwege_lauf_zeitstempel Unix-Zeit des letzten Laufs (Loeschwege)",
+        "# TYPE homelab_konto_loeschwege_lauf_zeitstempel gauge",
+        f'homelab_konto_loeschwege_lauf_zeitstempel {int(time.time())}',
+        "# HELP saganta_konto_loeschwege_befunde Luecken in Loeschplaenen und Mechanik-Kopien",
+        "# TYPE saganta_konto_loeschwege_befunde gauge",
+        f"saganta_konto_loeschwege_befunde {len(ergebnis['befunde'])}",
+        "# HELP saganta_konto_loeschwege_ruhend Dienste, die laut control-map ruhen (ungeprueft)",
+        "# TYPE saganta_konto_loeschwege_ruhend gauge",
+        f'saganta_konto_loeschwege_ruhend {ruhend}',
+        "# HELP saganta_konto_loeschwege_lauf_dauer_sekunden Laufzeit",
+        "# TYPE saganta_konto_loeschwege_lauf_dauer_sekunden gauge",
+        f'saganta_konto_loeschwege_lauf_dauer_sekunden {round(time.time() - start, 2)}',
+    ]
+    tmp = TEXTFILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(zeilen) + "\n")
+        os.replace(tmp, TEXTFILE)
+    except OSError as fehler:
+        print(f"(Herzschlag nicht schreibbar: {fehler})")
 
 
 def _drucken(ergebnis: dict) -> None:
@@ -197,6 +251,9 @@ def _drucken(ergebnis: dict) -> None:
     print("Loeschwege je Dienst, im laufenden Container gemessen")
     print("-" * 68)
     for e in ergebnis["dienste"]:
+        if e.get("ruht"):
+            print(f"  -- {e['dienst']:<26} ruht (Soll: {e['ruht']}), im Container nicht gemessen")
+            continue
         if e.get("fehler"):
             print(f"  !! {e['dienst']:<26} {e['fehler']}")
             continue

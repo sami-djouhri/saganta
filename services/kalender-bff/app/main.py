@@ -8,14 +8,17 @@ from .config import settings
 from .routes_assistant import router as assistant_router
 from .routes_capture import router as capture_router
 from .routes_chat import router as chat_router
+from .routes_assistent import router as assistent_router
 from .routes_contacts import router as contacts_router
 from .routes_events import router as events_router
 from .routes_feedback import router as feedback_router
 from .routes_feierabend import router as feierabend_router
 from .routes_habits import router as habits_router
 from .routes_mobile import router as mobile_router
+from .routes_places import router as places_router
 from .routes_tagesdecke import router as tagesdecke_router
 from .routes_tasks import router as tasks_router
+from .routes_zeit import router as zeit_router
 
 
 structlog.configure(processors=[structlog.processors.JSONRenderer()])
@@ -66,6 +69,7 @@ app.include_router(events_router, prefix="/api/events", tags=["events"])
 # einen Instrumentator-Crash ('_IncludedRouter' has no attribute 'path').
 app.include_router(capture_router, tags=["capture"])
 app.include_router(chat_router, tags=["chat"])
+app.include_router(assistent_router, tags=["assistent"])
 app.include_router(tasks_router, tags=["tasks"])
 app.include_router(assistant_router, tags=["assistant"])
 app.include_router(feedback_router, tags=["feedback"])
@@ -76,4 +80,6 @@ app.include_router(feierabend_router, tags=["feierabend"])
 app.include_router(contacts_router, tags=["contacts"])
 app.include_router(habits_router, tags=["habits"])
 app.include_router(mobile_router, tags=["mobile"])
+app.include_router(places_router, tags=["places"])
 app.include_router(tagesdecke_router, tags=["tagesdecke"])
+app.include_router(zeit_router, tags=["zeit"])

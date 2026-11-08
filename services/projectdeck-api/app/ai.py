@@ -91,7 +91,9 @@ async def _wrap(kind: str, reasoning: list[str], default_summary: str, data: dic
     )
 
 
-async def suggest_shutdown(project: Project) -> AISuggestOut:
+async def suggest_shutdown(
+    project: Project, aufgaben: list | None = None, aufgaben_unbekannt: bool = False
+) -> AISuggestOut:
     reasoning: list[str] = []
     if project.sunset_date:
         days = (project.sunset_date - today()).days
@@ -100,8 +102,10 @@ async def suggest_shutdown(project: Project) -> AISuggestOut:
         reasoning.append(f"Status ist '{project.status}'.")
     if project.weekly_time_budget_minutes == 0:
         reasoning.append("Kein Wochen-Zeitbudget: bekommt faktisch keine Zeit mehr.")
-    open_tasks = [t for t in project.tasks if t.status != "done"]
-    if not open_tasks:
+    quelle = project.tasks if aufgaben is None else aufgaben
+    open_tasks = [t for t in quelle if t.status != "done"]
+    # Ohne Antwort des Aufgaben-Dienstes ist „keine offenen" nicht belegt.
+    if not open_tasks and not aufgaben_unbekannt:
         reasoning.append("Keine offenen Tasks: nichts mehr zu tun.")
     recommend = len(reasoning) >= 2
     default = (
@@ -112,15 +116,19 @@ async def suggest_shutdown(project: Project) -> AISuggestOut:
     return await _wrap("shutdown", reasoning, default, {"recommend_shutdown": recommend})
 
 
-async def suggest_deadline_plan(project: Project) -> AISuggestOut:
-    risk = compute_risk(project)
+async def suggest_deadline_plan(
+    project: Project, aufgaben: list | None = None, aufgaben_unbekannt: bool = False
+) -> AISuggestOut:
+    risk = compute_risk(project, aufgaben=aufgaben, aufgaben_unbekannt=aufgaben_unbekannt)
     reasoning = [
         f"Risk-Level: {risk.risk_level}.",
         f"Verbleibende planbare Minuten: {risk.total_remaining_minutes}.",
     ]
     if risk.days_until_deadline is not None:
         reasoning.append(f"Tage bis Deadline: {risk.days_until_deadline}.")
-    if not risk.has_schedulable_tasks:
+    if aufgaben_unbekannt:
+        reasoning.append("Aufgaben-Dienst nicht erreichbar: Aufgaben fehlen in der Rechnung.")
+    elif not risk.has_schedulable_tasks:
         reasoning.append("Keine planbaren Tasks: zuerst Arbeitspakete definieren.")
     if risk.open_tasks_without_estimate:
         reasoning.append(
@@ -150,8 +158,10 @@ async def suggest_deadline_plan(project: Project) -> AISuggestOut:
     return await _wrap("deadline_plan", reasoning, default, risk.model_dump(mode="json"))
 
 
-async def review_summary(project: Project) -> AISuggestOut:
-    findings = evaluate_project(project)
+async def review_summary(
+    project: Project, aufgaben: list | None = None, aufgaben_unbekannt: bool = False
+) -> AISuggestOut:
+    findings = evaluate_project(project, aufgaben, aufgaben_unbekannt)
     reasoning = [f"[{f.rule_id}] {f.message}" for f in findings]
     if not reasoning:
         reasoning = ["Keine offenen Regel-Befunde."]

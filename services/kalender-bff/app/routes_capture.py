@@ -27,6 +27,12 @@ class CaptureCommitIn(BaseModel):
     date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     start_time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     end_time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    # Seit 2026-11-01: Dauer eines Blocks („2h Keller"); ohne sie fiele ein
+    # gewaehlter Vorschlag beim Durchreichen auf eine Stunde zurueck.
+    dauer_min: int | None = Field(default=None, ge=1, le=24 * 60)
+    # Seit 2026-11-07: RRULE aus der Erkennung („jeden Montag"); geprueft wird
+    # sie im nativen Dienst (`recurrence.regel_pruefen`).
+    wiederholung: str | None = Field(default=None, max_length=200, pattern=r"^[A-Z0-9=;,]+$")
 
 
 @router.post("/api/capture")

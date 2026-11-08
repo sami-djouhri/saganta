@@ -14,10 +14,17 @@ ist. Dieses hier raeumt einen ab.
 WAS ES AUSDRUECKLICH NICHT TUT
 ==============================
 
-1. **Es loescht das Konto nicht in der Anmelde-Datenbank.** Das ist der letzte
-   Schritt und gehoert dem Auth-Dienst. Erst die Daten, dann die Anmeldung:
-   andersherum entsteht genau der verwaiste Bestand, gegen den das hier gebaut
-   ist.
+1. **Es loescht die Anmeldung nur als letzten Schritt und nur bei sauberem
+   Lauf** (seit 2026-11-08, Entscheid gegen einen Weg im Auth-Dienst).
+   Erst die Daten, dann die Anmeldung: andersherum entsteht genau der verwaiste
+   Bestand, gegen den das hier gebaut ist. Entfernt wird das Konto erst, wenn
+   jeder verkettete Dienst sauber war, im Kalender nichts mehr liegt und kein
+   Dienst ungeprueft blieb. Ein Dienst, der nicht laeuft, blockiert, bis man ihn
+   mit ``--ohne <container>`` ausdruecklich als ungeprueft hinnimmt; der
+   Bericht nennt ihn dann. Der Auth-Dienst bekommt dafuer bewusst keinen
+   Docker-Zugriff und keine Route: das waere die Fernbedienung, vor der
+   ``docs/KONTO_LOESCHEN.md`` warnt. Der Owner selbst ist gesperrt (an seinem
+   Sub haengt die Weckkette).
 
 2. **Es fasst den Kalender nicht an.** Er hat einen eigenen, aelteren Loeschweg
    (``backend/account.py:delete_account_data``), und an seinem Owner-Sub haengt
@@ -43,8 +50,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+
+from konto_soll import ruht
 
 # Alle Dienste mit einem Loeschplan (``app/konto.py``), in zwei Bauarten:
 # die sieben Saganta-Backends teilen die Mechanik ueber ``saganta_dienst``, die
@@ -177,6 +187,69 @@ def bestand_zaehlen(container: str, glob_muster: str, sub: str) -> dict:
         return {"erreichbar": True, "fehler": ausgabe.strip()[:300]}
 
 
+# better-auth vergibt Kennungen aus Buchstaben, Ziffern, _ und -. Alles andere
+# ist ein Tippfehler oder ein Versuch und geht nicht an psql.
+SUB_FORM = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _owner_sub() -> str | None:
+    """DEFAULT_OWNER_SUB aus dem laufenden Lager, ohne ihn auszugeben."""
+    rc, ausgabe = _docker(["inspect", "lager", "--format",
+                           "{{range .Config.Env}}{{println .}}{{end}}"])
+    if rc != 0:
+        return None
+    for zeile in ausgabe.splitlines():
+        if zeile.startswith("DEFAULT_OWNER_SUB="):
+            return zeile.split("=", 1)[1].strip() or None
+    return None
+
+
+def _auth_db() -> tuple[str, str] | None:
+    rc, ausgabe = _docker(["inspect", "saganta-auth-db", "--format",
+                           "{{range .Config.Env}}{{println .}}{{end}}"])
+    if rc != 0:
+        return None
+    werte = dict(z.split("=", 1) for z in ausgabe.splitlines() if "=" in z)
+    benutzer = werte.get("POSTGRES_USER", "postgres")
+    return benutzer, werte.get("POSTGRES_DB", benutzer)
+
+
+def anmeldung_loeschen(sub: str) -> dict:
+    """Konto in saganta-auth-db entfernen. session und account fallen per CASCADE.
+
+    `verification.value` traegt bei Reset-Tokens die Kennung des Kontos und
+    haengt an keinem Fremdschluessel; ohne die eigene Zeile bliebe ein gueltiger
+    Ruecksetz-Link auf ein Konto, das es nicht mehr gibt.
+    """
+    zugang = _auth_db()
+    if not zugang:
+        return {"ok": False, "fehler": "saganta-auth-db nicht erreichbar"}
+    benutzer, datenbank = zugang
+    # :'sub' setzt psql als Literal ein; -c kennt keine Variablen, daher stdin.
+    sql = (
+        "BEGIN;\n"
+        "DELETE FROM verification WHERE value = :'sub';\n"
+        "DELETE FROM \"user\" WHERE id = :'sub';\n"
+        "COMMIT;\n"
+    )
+    rc, ausgabe = _docker(
+        ["exec", "-i", "saganta-auth-db", "psql", "-U", benutzer, "-d", datenbank,
+         "-v", "ON_ERROR_STOP=1", "-v", f"sub={sub}", "-qtA"],
+        eingabe=sql,
+    )
+    if rc != 0:
+        return {"ok": False, "fehler": ausgabe.strip()[:300]}
+    # psql -q meldet die Zeilenzahlen nicht; ob das Konto weg ist, sagt die Gegenprobe.
+    rc, rest = _docker(
+        ["exec", "-i", "saganta-auth-db", "psql", "-U", benutzer, "-d", datenbank,
+         "-v", "ON_ERROR_STOP=1", "-v", f"sub={sub}", "-qtA"],
+        eingabe="SELECT count(*) FROM \"user\" WHERE id = :'sub';\n",
+    )
+    if rc != 0 or rest.strip() != "0":
+        return {"ok": False, "fehler": f"Gegenprobe: Konto noch vorhanden ({rest.strip()[:60]})"}
+    return {"ok": True}
+
+
 def main() -> int:
     zerleger = argparse.ArgumentParser(
         description="Bestand eines Mandanten ueber alle Saganta-Dienste zeigen und entfernen.",
@@ -187,7 +260,24 @@ def main() -> int:
         help="wirklich loeschen. Ohne diesen Schalter nur anzeigen.",
     )
     zerleger.add_argument("--json", action="store_true", help="maschinenlesbar")
+    zerleger.add_argument(
+        "--ohne", action="append", default=[], metavar="CONTAINER",
+        help="einen nicht laufenden Dienst ausdruecklich als ungeprueft hinnehmen "
+             "(mehrfach moeglich). Ohne diesen Schalter blockiert er das Entfernen "
+             "der Anmeldung.",
+    )
     args = zerleger.parse_args()
+    if not SUB_FORM.match(args.sub):
+        zerleger.error("--sub hat nicht die Form einer Konto-Kennung")
+    # Der Owner-Riegel steht VOR dem ersten Loeschschritt, nicht erst vor der
+    # Anmeldung: bis 2026-11-08 haette ein --loeschen mit dem Owner-Sub dessen
+    # Bestand in zehn Diensten entfernt, und daran haengt die Weckkette.
+    if args.loeschen:
+        owner = _owner_sub()
+        if owner is None:
+            zerleger.error("Owner-Sub nicht bestimmbar (laeuft lager?); ohne ihn wird nicht geloescht")
+        if args.sub == owner:
+            zerleger.error("das ist der Owner. Sein Bestand und seine Anmeldung werden nie geloescht")
 
     gesamt: dict = {"sub": args.sub, "geloescht": args.loeschen,
                     "mit_loeschweg": [], "ohne_loeschweg": [], "eigener_weg": []}
@@ -207,18 +297,38 @@ def main() -> int:
                         "befehl": befehl.replace("<sub>", args.sub)})
         gesamt["eigener_weg"].append(eintrag)
 
+    # Rueckgabewert: 0 nur, wenn jeder verkettete Dienst sauber war UND nirgends
+    # ungeloeschter Bestand zurueckbleibt. Ein Loeschlauf, nach dem noch Daten da
+    # sind, ist kein Erfolg, auch wenn jeder Einzelschritt gelang.
+    hingenommen = set(args.ohne)
+    for d in gesamt["mit_loeschweg"]:
+        container = dict((n, c) for c, n in MIT_LOESCHWEG).get(d.get("dienst"), "")
+        d["container"] = container
+        if not d.get("erreichbar"):
+            d["soll"] = ruht(container)
+            d["hingenommen"] = container in hingenommen
+    unsauber = [d for d in gesamt["mit_loeschweg"]
+                if (not d.get("erreichbar") and not d.get("hingenommen"))
+                or d.get("fehler") or (
+                    args.loeschen and d.get("erreichbar") and not d.get("sauber"))]
+    reste = _offene_summe(gesamt)
+
+    # Letzter Schritt: die Anmeldung. Nur bei --loeschen und nur ohne Rest; den
+    # Owner hat der Riegel am Anfang schon abgewiesen.
+    gesamt["anmeldung"] = {"angefasst": False}
+    if args.loeschen:
+        if unsauber or reste:
+            gesamt["anmeldung"]["grund"] = "Lauf nicht sauber oder Bestand uebrig (siehe oben)"
+        else:
+            gesamt["anmeldung"] = {"angefasst": True, **anmeldung_loeschen(args.sub)}
+
     if args.json:
         print(json.dumps(gesamt, indent=2, ensure_ascii=False))
     else:
         _bericht_drucken(gesamt, args)
 
-    # Rueckgabewert: 0 nur, wenn jeder verkettete Dienst sauber war UND nirgends
-    # ungeloeschter Bestand zurueckbleibt. Ein Loeschlauf, nach dem noch Daten da
-    # sind, ist kein Erfolg, auch wenn jeder Einzelschritt gelang.
-    unsauber = [d for d in gesamt["mit_loeschweg"]
-                if not d.get("erreichbar") or d.get("fehler") or (
-                    args.loeschen and not d.get("sauber"))]
-    reste = _offene_summe(gesamt)
+    if args.loeschen and not gesamt["anmeldung"].get("ok"):
+        return 1
     return 0 if not unsauber and not (args.loeschen and reste) else 1
 
 
@@ -238,7 +348,9 @@ def _bericht_drucken(gesamt: dict, args) -> None:
     for d in gesamt["mit_loeschweg"]:
         name = d.get("dienst", "?")
         if not d.get("erreichbar"):
-            print(f"  {name:<14} NICHT ERREICHBAR  {d.get('hinweis','')}")
+            soll = f" (Soll: {d['soll']})" if d.get("soll") else ""
+            marke = "hingenommen per --ohne" if d.get("hingenommen") else "blockiert die Anmeldung"
+            print(f"  {name:<14} NICHT ERREICHBAR{soll}, {marke}. {d.get('hinweis','')}")
             continue
         if d.get("fehler"):
             print(f"  {name:<14} FEHLER  {d['fehler']}")
@@ -296,7 +408,16 @@ def _bericht_drucken(gesamt: dict, args) -> None:
     else:
         print("ERGEBNIS: kein Bestand ausserhalb der verketteten Dienste gefunden.")
     print()
-    print("Die Anmeldung selbst (saganta-auth) ist hier nicht angefasst.")
+    anm = gesamt.get("anmeldung") or {}
+    if not gesamt["geloescht"]:
+        print("Anmeldung (saganta-auth): in der Vorschau nicht angefasst. Mit --loeschen")
+        print("wird sie als letzter Schritt entfernt, wenn oben alles sauber ist.")
+    elif anm.get("angefasst") and anm.get("ok"):
+        print("Anmeldung (saganta-auth): ENTFERNT (Konto, Sitzungen, Reset-Tokens).")
+    elif anm.get("angefasst"):
+        print(f"Anmeldung (saganta-auth): FEHLER beim Entfernen: {anm.get('fehler')}")
+    else:
+        print(f"Anmeldung (saganta-auth): bleibt stehen. Grund: {anm.get('grund')}")
     print("Erst die Daten, dann das Konto: andersherum entsteht ein verwaister Bestand.")
 
 

@@ -169,7 +169,7 @@
           <option value="hobby" selected={editing?.activity_type === 'hobby'}>Hobby</option>
           <option value="sonstige" selected={editing?.activity_type === 'sonstige'}>Sonstige</option>
         </select>
-        <span class="block text-[11px] text-muted">Markierte Aktivitäten kannst du danach kurz bewerten.</span>
+        <span class="block text-xs text-muted">Markierte Aktivitäten kannst du danach kurz bewerten.</span>
       </label>
 
       {#if formError}

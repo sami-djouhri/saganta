@@ -22,13 +22,14 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 QUELLE="services/_geteilt/saganta_dienst"
+# Nur Dienste, die laufen sollen. `assets-api` (seit 2026-11-01 im Lager
+# aufgegangen) und `mail-api` (seit 2026-11-05 stillgelegt) standen hier noch
+# und machten jeden Lauf zu Exit 2, also zu einem Befund, der immer da ist.
 declare -A CONTAINER=(
   [shell-api]=saganta-shell-api
   [news-api]=saganta-news-api
   [notizen-api]=saganta-notizen-api
   [projectdeck-api]=saganta-projectdeck-api
-  [assets-api]=saganta-assets-api
-  [mail-api]=saganta-mail-api
   [kalender-bff]=saganta-kalender-bff
   [auth-proxy]=saganta-auth-proxy
 )

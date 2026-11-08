@@ -4,20 +4,17 @@ import { getAuthConfig } from '$lib/server/auth';
 
 export const handle: Handle = createBetterAuthHandle({
   cfg: getAuthConfig,
-  // Öffentlich erreichbar ohne Login: die Marketing-Landing ('/'), die Auth-Seiten
-  // und die Standard-Health-/Asset-Pfade. Das Dashboard rendert '/' nur, wenn
-  // locals.user gesetzt ist (sonst zeigt +page die Landing).
+  // Öffentlich erreichbar ohne Login: die Auth-Seiten und die Standard-Health-/
+  // Asset-Pfade. '/' bleibt offen, weil +page.server.ts Abgemeldete selbst und
+  // relativ auf /login schickt (im Raum des Aufrufers).
+  //
+  // Seit 2026-11-01 gibt es hier keine Werbe- und Rechtsseiten mehr (`/preise`,
+  // `/impressum`, `/datenschutz`, `/agb`, Entscheid 01.11.), und `/apps`
+  // ist eine Download-Liste hinter der Anmeldung. Ein alter Link landet ueber
+  // diesen Hook auf der Anmeldung. Saganta
+  // ist privat; das oeffentliche Impressum gehoert zum Schaufenster auf netcup.
   publicPaths: [
     '/',
-    '/apps',
-    // ⚠️ Die Seite gibt es nicht mehr, der Pfad muss aber offen bleiben: dort
-    // liegt nur noch eine 301 auf `/apps`, und ohne diesen Eintrag greift der
-    // Auth-Hook davor und schickt einen alten Link auf die Anmeldemaske.
-    // Gemessen am 2026-10-25, Begründung in `routes/preise/+server.ts`.
-    '/preise',
-    '/impressum',
-    '/datenschutz',
-    '/agb',
     '/login',
     '/forgot',
     '/reset',

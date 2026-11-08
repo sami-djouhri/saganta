@@ -8,7 +8,24 @@
 import { fail, type Actions } from '@sveltejs/kit';
 import { notizDazuAusFormular } from '@saganta/notizen-anschluss';
 import { bffCtx, bffFetch, type Planung } from '$lib/aufgaben-bff';
+import {
+  alsPlanung,
+  dienstCtx,
+  dienstFetch,
+  energieZumDienst,
+  type DienstPlan,
+} from '$lib/server/aufgaben-dienst';
 import { notizAnschluss } from '$lib/server/notizen';
+
+/**
+ * Prioritaet in drei Worten (Festlegung fuer den Aufgaben-Dienst). Ein altes
+ * Formular mit „dringend" wird zu „hoch", statt am Dienst mit 422 zu scheitern.
+ */
+function prioritaet(fd: FormData): 'hoch' | 'mittel' | 'niedrig' {
+  const wert = String(fd.get('prioritaet') ?? 'mittel');
+  if (wert === 'dringend' || wert === 'hoch') return 'hoch';
+  return wert === 'niedrig' ? 'niedrig' : 'mittel';
+}
 
 /** Leere Formularwerte werden zu `null`, nicht zu `""`. */
 function optional(fd: FormData, feld: string): string | null {
@@ -20,53 +37,41 @@ export const aufgabenAktionen: Actions = {
   /**
    * Tag planen. `festlegen=false` ist eine Vorschau und aendert nichts.
    *
-   * Das ist der Kern dieser App: **erst rechnen, dann fragen.** Die Engine
-   * kann das seit jeher (`/api/assistant/plan-day` mit `commit`), der Weg war
-   * nur hinter einem Stapel Vorschlaege versteckt, die man einzeln lesen und
-   * selbst umsetzen musste. Ein Vorschlag, den man selbst abtippen muss, ist
-   * keine Planung, sondern eine Erinnerung daran, dass man planen muesste.
+   * Das ist der Kern dieser App: **erst rechnen, dann fragen.** Seit dem
+   * 2026-11-03 fragt der Aufgaben-Dienst den Planer des Kalenders und haelt die
+   * Zeiten selbst fest; der Kalender bekommt keine Kopie der Aufgaben.
    */
   planen: async ({ locals, fetch, request }) => {
-    const ctx = bffCtx(locals);
+    const ctx = dienstCtx(locals);
     if (!ctx) return fail(401, { fehler: 'nicht angemeldet' });
     const fd = await request.formData();
     const datum = String(fd.get('datum') ?? '').trim();
     const festlegen = String(fd.get('festlegen') ?? '') === 'true';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) return fail(400, { fehler: 'Datum fehlt' });
     try {
-      const plan = await bffFetch<Planung>(ctx.base, '/api/assistant/plan-day', ctx.token, fetch, {
+      const plan = await dienstFetch<DienstPlan>(ctx, '/api/planen', fetch, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: datum, commit: festlegen }),
+        json: { datum, festlegen },
       });
-      return { plan, festgelegt: festlegen };
+      return { plan: alsPlanung(plan) as Planung, festgelegt: festlegen };
     } catch (err) {
       return fail(502, { fehler: String(err) });
     }
   },
 
   anlegen: async ({ locals, fetch, request }) => {
-    const ctx = bffCtx(locals);
+    const ctx = dienstCtx(locals);
     if (!ctx) return fail(401, { fehler: 'nicht angemeldet' });
     const fd = await request.formData();
     const titel = String(fd.get('titel') ?? '').trim();
     if (!titel) return fail(400, { fehler: 'Ein Titel fehlt.' });
-    const koerper: Record<string, unknown> = {
-      title: titel,
-      priority: String(fd.get('prioritaet') ?? 'mittel'),
-    };
+    const koerper: Record<string, unknown> = { titel, prioritaet: prioritaet(fd) };
     const faellig = optional(fd, 'faellig');
-    if (faellig) koerper.due_date = faellig;
+    if (faellig) koerper.faellig = faellig;
     const dauer = optional(fd, 'dauer');
-    if (dauer) koerper.estimated_minutes = Number(dauer);
-    const projekt = optional(fd, 'projekt');
-    if (projekt) koerper.project_id = projekt;
+    if (dauer) koerper.dauer_min = Number(dauer);
     try {
-      await bffFetch(ctx.base, '/api/todos', ctx.token, fetch, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(koerper),
-      });
+      await dienstFetch(ctx, '/api/aufgaben', fetch, { method: 'POST', json: koerper });
       return { angelegt: true };
     } catch (err) {
       return fail(502, { fehler: String(err) });
@@ -74,20 +79,16 @@ export const aufgabenAktionen: Actions = {
   },
 
   umschalten: async ({ locals, fetch, request }) => {
-    const ctx = bffCtx(locals);
+    const ctx = dienstCtx(locals);
     if (!ctx) return fail(401, { fehler: 'nicht angemeldet' });
     const fd = await request.formData();
     const id = String(fd.get('id') ?? '');
     if (!id) return fail(400, { fehler: 'id fehlt' });
     const erledigt = String(fd.get('erledigt') ?? '') === 'true';
     try {
-      await bffFetch(
-        ctx.base,
-        `/api/todos/${id}/${erledigt ? 'uncomplete' : 'complete'}`,
-        ctx.token,
-        fetch,
-        { method: 'POST' },
-      );
+      await dienstFetch(ctx, `/api/aufgaben/${encodeURIComponent(id)}/${erledigt ? 'offen' : 'erledigt'}`, fetch, {
+        method: 'POST',
+      });
       return { ok: true };
     } catch (err) {
       return fail(502, { fehler: String(err) });
@@ -95,7 +96,7 @@ export const aufgabenAktionen: Actions = {
   },
 
   speichern: async ({ locals, fetch, request }) => {
-    const ctx = bffCtx(locals);
+    const ctx = dienstCtx(locals);
     if (!ctx) return fail(401, { fehler: 'nicht angemeldet' });
     const fd = await request.formData();
     const id = String(fd.get('id') ?? '');
@@ -104,20 +105,18 @@ export const aufgabenAktionen: Actions = {
     if (!titel) return fail(400, { fehler: 'Ein Titel fehlt.' });
     const dauer = optional(fd, 'dauer');
     try {
-      await bffFetch(ctx.base, `/api/todos/${id}`, ctx.token, fetch, {
+      await dienstFetch(ctx, `/api/aufgaben/${encodeURIComponent(id)}`, fetch, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: titel,
-          description: optional(fd, 'beschreibung'),
-          priority: String(fd.get('prioritaet') ?? 'mittel'),
-          // Leeres Feld heisst hier ausdruecklich „entfernen", deshalb `null`
-          // statt Auslassen: ein weggelassenes Feld laesst den alten Wert stehen.
-          due_date: optional(fd, 'faellig'),
-          estimated_minutes: dauer ? Number(dauer) : null,
-          energy_required: optional(fd, 'energie'),
-          project_id: optional(fd, 'projekt'),
-        }),
+        // Leeres Feld heisst hier ausdruecklich „entfernen", deshalb `null`
+        // statt Auslassen: ein weggelassenes Feld laesst den alten Wert stehen.
+        json: {
+          titel,
+          notiz: optional(fd, 'beschreibung'),
+          prioritaet: prioritaet(fd),
+          faellig: optional(fd, 'faellig'),
+          dauer_min: dauer ? Number(dauer) : null,
+          energie: energieZumDienst(optional(fd, 'energie')),
+        },
       });
       return { gespeichert: true };
     } catch (err) {
@@ -126,15 +125,13 @@ export const aufgabenAktionen: Actions = {
   },
 
   /**
-   * Verschieben ueber den `defer`-Weg der Engine, nicht ueber ein stilles `PUT`
-   * auf das Datum.
-   *
-   * Der Unterschied ist der Zaehler: `defer` erhoeht `defer_count`, und daraus
-   * entsteht die Warnung „bleibt liegen". Wer das Datum direkt setzt, verschiebt
-   * eine Aufgabe beliebig oft, ohne dass es je auffaellt.
+   * Verschieben ueber den eigenen Weg des Dienstes, nicht ueber ein stilles
+   * Aendern des Tages. Der Unterschied ist der Zaehler: daraus entsteht
+   * „bleibt liegen". Wer den Tag direkt setzt, verschiebt beliebig oft, ohne
+   * dass es je auffaellt.
    */
   verschieben: async ({ locals, fetch, request }) => {
-    const ctx = bffCtx(locals);
+    const ctx = dienstCtx(locals);
     if (!ctx) return fail(401, { fehler: 'nicht angemeldet' });
     const fd = await request.formData();
     const id = String(fd.get('id') ?? '');
@@ -142,14 +139,9 @@ export const aufgabenAktionen: Actions = {
     if (!id) return fail(400, { fehler: 'id fehlt' });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) return fail(400, { fehler: 'Datum fehlt' });
     try {
-      // ⚠️ `planned_date`, NICHT `due_date`: der Endpunkt kennt kein due_date und
-      // verwirft es stillschweigend. Ohne planned_date landet die Aufgabe dann im
-      // Pool statt am gewuenschten Tag, und „auf morgen verschoben" hiesse in
-      // Wahrheit „ins Unbestimmte". Der BFF prueft das ebenfalls.
-      await bffFetch(ctx.base, `/api/todos/${id}/defer`, ctx.token, fetch, {
+      await dienstFetch(ctx, `/api/aufgaben/${encodeURIComponent(id)}/verschieben`, fetch, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planned_date: datum, reason: optional(fd, 'grund') }),
+        json: { tag: datum },
       });
       return { verschoben: true };
     } catch (err) {
@@ -158,13 +150,13 @@ export const aufgabenAktionen: Actions = {
   },
 
   loeschen: async ({ locals, fetch, request }) => {
-    const ctx = bffCtx(locals);
+    const ctx = dienstCtx(locals);
     if (!ctx) return fail(401, { fehler: 'nicht angemeldet' });
     const fd = await request.formData();
     const id = String(fd.get('id') ?? '');
     if (!id) return fail(400, { fehler: 'id fehlt' });
     try {
-      await bffFetch(ctx.base, `/api/todos/${id}`, ctx.token, fetch, { method: 'DELETE' });
+      await dienstFetch(ctx, `/api/aufgaben/${encodeURIComponent(id)}`, fetch, { method: 'DELETE' });
       return { geloescht: true };
     } catch (err) {
       return fail(502, { fehler: String(err) });
@@ -202,6 +194,26 @@ export const aufgabenAktionen: Actions = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: titel, date: datum, priority: String(fd.get('prio') ?? 'B') }),
+      });
+      return { zielOk: true };
+    } catch (err) {
+      return fail(502, { fehler: String(err) });
+    }
+  },
+
+  /** Ziel erreicht bzw. wieder offen, wie der Haken in der App (Gleichstand 2026-11-07). */
+  zielUmschalten: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { fehler: 'nicht angemeldet' });
+    const fd = await request.formData();
+    const id = String(fd.get('id') ?? '');
+    if (!id) return fail(400, { fehler: 'id fehlt' });
+    const status = fd.get('erreicht') === '1' ? 'planned' : 'achieved';
+    try {
+      await bffFetch(ctx.base, `/api/goals/${id}`, ctx.token, fetch, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
       });
       return { zielOk: true };
     } catch (err) {

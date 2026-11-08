@@ -54,6 +54,19 @@ export interface MailAccountInfo {
 
 const MAIL_AUDIENCE = 'mail-api';
 
+/**
+ * Ob die E-Mail-Haelfte von Post eingeschaltet ist.
+ *
+ * Seit 2026-11-05 ist sie aus: `mail-api` ist stillgelegt (RICHTUNG.md, erste
+ * Runde; gemessen 0 Konten, 0 Nachrichten, 0 Anfragen in 30 Tagen). Der Schalter
+ * ist die Adresse selbst, gesetzt im Compose (`MAIL_API_BASE_URL: ""`). Der Code
+ * bleibt als Rezept fuer eine Reaktivierung: Adresse wieder setzen, Profil
+ * `stillgelegt` am Dienst entfernen, beide neu starten.
+ */
+export function mailAktiv(): boolean {
+  return !!env.MAIL_API_BASE_URL;
+}
+
 function backendSecret(): string {
   const secret = env.SAGANTA_BACKEND_SECRET;
   if (!secret) throw new Error('SAGANTA_BACKEND_SECRET ist nicht gesetzt: Backend-Token kann nicht signiert werden.');
@@ -573,6 +586,8 @@ export interface FeedResult {
   options: FeedOptions;
   /** Darf dieser Nutzer die single-tenant Briefkasten-Daten sehen? Steuert Feed + UI. */
   canSeeLetters: boolean;
+  /** Ist die E-Mail-Haelfte eingeschaltet (`mailAktiv`)? Steuert die Oberflaeche. */
+  mailAktiv: boolean;
 }
 
 export async function loadFeed(
@@ -585,7 +600,10 @@ export async function loadFeed(
   // "Nur ungelesen" und "nur markiert" kennen nur die Mail-Seite (Briefe haben
   // weder read- noch star-Konzept) → Quelle in dem Fall effektiv auf Mail einengen.
   const nurMailFilter = options.unreadOnly || options.starredOnly;
-  const wantMail = options.source !== 'letter';
+  // Ohne Mail fragt Post die mail-api gar nicht erst: jeder Aufruf waere ein
+  // Fehler, und der Kopf meldete dann „Mailkonten nicht erreichbar".
+  const mailAn = mailAktiv();
+  const wantMail = mailAn && options.source !== 'letter';
   // Briefe/Verträge (briefkasten, single-tenant) nur für Berechtigte laden.
   // Fail-safe: für Nicht-Owner werden sie serverseitig gar nicht erst geholt.
   const wantLetters =
@@ -613,11 +631,13 @@ export async function loadFeed(
           })
         : Promise.resolve<Letter[]>([]),
       canSeeLetters ? fetchContracts(fetcher) : Promise.resolve<Contract[]>([]),
-      fetchMailAccounts(user, fetcher),
+      mailAn ? fetchMailAccounts(user, fetcher) : Promise.resolve<MailAccountInfo[]>([]),
       // Der Ungelesen-Zaehler am Reiter meint immer den ganzen Bestand, auch wenn
       // gerade nach etwas anderem gefiltert wird. Sonst zeigte er "0", sobald
       // eine Suche offen war.
-      zaehleMail(user, fetcher, { accountId: options.accountId, unread: true }),
+      mailAn
+        ? zaehleMail(user, fetcher, { accountId: options.accountId, unread: true })
+        : Promise.resolve(0),
       canSeeLetters ? fetchLetterStats(fetcher) : Promise.resolve<LetterStats | null>(null),
       // Dasselbe fuer die Gesamtzahl. Sie stand vorher auf `mailPage.total`, also
       // auf der Trefferzahl der aktiven Filter, waehrend die Brief-Zahl daneben
@@ -625,7 +645,7 @@ export async function loadFeed(
       // vergleichbarer Zahlen, war aber keins: eine Suche machte aus
       // "47 Briefe · 1203 Mails" ein "47 Briefe · 3 Mails", und auf dem
       // Brief-Reiter stand "0 Mails", weil dort gar keine geladen werden.
-      zaehleMail(user, fetcher, { accountId: options.accountId }),
+      mailAn ? zaehleMail(user, fetcher, { accountId: options.accountId }) : Promise.resolve(0),
     ]);
 
   const mailPage = mailRes.status === 'fulfilled' ? mailRes.value : { items: [], total: 0 };
@@ -708,5 +728,6 @@ export async function loadFeed(
     hasMore,
     options,
     canSeeLetters,
+    mailAktiv: mailAn,
   };
 }

@@ -144,6 +144,31 @@ async function projekte(
     .slice(0, MAX_TREFFER);
 }
 
+/**
+ * Kontakte aus Saganta Kontakte (seit 2026-11-07). Vorher die Kontaktliste des
+ * Kalenders; die ist seither nur noch der Spiegel der Geburtstage und
+ * Jahrestage, mit einer Zeile je Jahrestag, und taugt nicht als Kontaktliste.
+ * Die Kennungen sind beim Umzug gleich geblieben.
+ */
+async function kontakte(
+  user: SagantaUser,
+  suche: string,
+  fetcher: typeof fetch,
+): Promise<Fundstueck[]> {
+  const basis = env.KONTAKTE_API_BASE_URL ?? 'http://saganta-kontakte-api:8000';
+  const kopf = { Authorization: `Bearer ${token(user, 'kontakte-api')}` };
+  const daten = (await holen(`${basis}/api/kontakte`, kopf, fetcher)) as { kontakte?: unknown };
+  return alsListe(daten?.kontakte ?? [])
+    .map((k) => ({
+      typ: 'kontakt' as VerknuepfungsTyp,
+      ref: text(k, 'id'),
+      label: text(k, 'name') || '(ohne Namen)',
+      zusatz: text(k, 'gruppe', 'telefon', 'email'),
+    }))
+    .filter((t) => t.ref && passt(suche, t.label, t.zusatz ?? ''))
+    .slice(0, MAX_TREFFER);
+}
+
 async function briefe(suche: string, fetcher: typeof fetch): Promise<Fundstueck[]> {
   const basis = env.BRIEFKASTEN_BASE_URL;
   const geheim = env.BRIEFKASTEN_INTERNAL_TOKEN;
@@ -228,11 +253,7 @@ export async function suchen(
       lauf: () => kalenderListe(user, suche, fetcher, '/api/goals', 'ziel', ['period', 'status']),
     },
     { typ: 'projekt', lauf: () => projekte(user, suche, fetcher) },
-    {
-      typ: 'kontakt',
-      lauf: () =>
-        kalenderListe(user, suche, fetcher, '/api/contacts', 'kontakt', ['email', 'phone']),
-    },
+    { typ: 'kontakt', lauf: () => kontakte(user, suche, fetcher) },
   ];
   if (darfBriefeSehen(user)) {
     aufgaben.push({ typ: 'brief', lauf: () => briefe(suche, fetcher) });

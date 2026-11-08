@@ -30,6 +30,9 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
       type: url.searchParams.get('type') ?? '',
       status: url.searchParams.get('status') ?? '',
     },
+    // Vorgabe "offen": wo am meisten liegt, steht oben (Entscheid 08.11.).
+    // "prioritaet" ist die alte Reihenfolge des Dienstes (Projekt-Prioritaet 1-5).
+    sortierung: url.searchParams.get('sort') === 'prioritaet' ? 'prioritaet' : 'offen',
   };
 };
 

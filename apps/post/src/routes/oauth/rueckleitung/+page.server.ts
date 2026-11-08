@@ -1,5 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
-import { abschlussOAuth } from '$lib/post-api';
+import { abschlussOAuth, mailAktiv } from '$lib/post-api';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -16,6 +16,9 @@ import type { PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async ({ locals, url, fetch }) => {
   if (!locals.user) redirect(303, '/');
+  // E-Mail ist seit 2026-11-05 stillgelegt (`mailAktiv`): keine Kontenseite,
+  // die auf einen gestoppten Dienst zeigt.
+  if (!mailAktiv()) redirect(303, '/');
 
   // Der Anbieter meldet einen Abbruch als Parameter, nicht als Fehlerseite.
   // Ohne diesen Zweig sieht ein bewusstes „Abbrechen" wie ein Programmfehler aus.

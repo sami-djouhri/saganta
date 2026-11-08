@@ -1,7 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { AppTile, Icon } from '@saganta/ui';
-  import Landing from '$lib/Landing.svelte';
   import { inview } from '$lib/inview';
   import type { PageData } from './$types';
 
@@ -91,10 +90,7 @@
   const notizen = $derived(data.notizen);
 </script>
 
-{#if !data.user}
-  <Landing verified={data.verified} />
-{:else}
-<!-- Dezente Atmosphäre, konsistent mit der Landing (ruhiger gehalten, Arbeitsfläche). -->
+<!-- Dezente Atmosphäre (ruhig gehalten, Arbeitsfläche). -->
 <div
   class="pointer-events-none fixed inset-x-0 top-0 -z-10 h-96"
   style="background: radial-gradient(50% 100% at 50% 0%, rgba(207,133,36,0.12), transparent 70%);"
@@ -107,9 +103,6 @@
     <h1 class="font-display text-5xl leading-tight">
       {greeting(data.user?.name ?? data.user?.email)}
     </h1>
-    <p class="max-w-xl text-muted">
-      Deine Suite. Alles, was du heute brauchst, leise im Hintergrund, präsent wenn du sie aufrufst.
-    </p>
   </header>
 
   {#if failedBackends.length > 0}
@@ -129,85 +122,8 @@
     </div>
   {/if}
 
-  <div use:inview>
-    <div class="mb-4 flex items-center justify-between gap-4">
-      <div class="flex items-baseline gap-3">
-        <h2 class="text-sm font-medium uppercase tracking-wider text-muted">Apps</h2>
-        <!-- Der einzige Weg zu den Downloads war bis 2026-08-29 das Konto-Menue
-             oben rechts. Wer nicht wusste, dass es sie gibt, fand sie auch nicht. -->
-        <a
-          href="/apps"
-          class="inline-flex items-center gap-1.5 text-xs text-muted transition-colors duration-fast ease-saganta hover:text-akzent-stark"
-        >
-          <Icon name="smartphone" size={13} /> Für Android
-        </a>
-      </div>
-      {#if appTiles.length > 6}
-        <label class="relative w-full max-w-56">
-          <span class="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-muted">
-            <Icon name="search" size={15} />
-          </span>
-          <input
-            type="search"
-            bind:value={appQuery}
-            placeholder="Apps filtern…"
-            aria-label="Apps filtern"
-            class="w-full rounded-lg border border-border-stark bg-surface-2/60 py-1.5 pl-8 pr-3 text-sm text-text outline-none transition-colors duration-fast ease-saganta placeholder:text-muted focus:border-accent-400"
-          />
-        </label>
-      {/if}
-    </div>
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {#each filteredTiles as app (app.id)}
-        <div class="relative">
-          <AppTile
-            href={app.href}
-            name={app.name}
-            description={app.description}
-            icon={app.icon}
-            badge={app.badge}
-          />
-          <form
-            method="POST"
-            action="?/togglePin"
-            use:enhance
-            class="absolute bottom-3 right-3"
-          >
-            <input type="hidden" name="id" value={app.id} />
-            <input type="hidden" name="pinned" value={String(!app.pinned)} />
-            <button
-              type="submit"
-              aria-label={app.pinned ? 'Pin entfernen' : 'Anpinnen'}
-              title={app.pinned ? 'Pin entfernen' : 'Anpinnen'}
-              class="rounded-md p-1.5 leading-none transition-colors duration-fast ease-saganta hover:bg-surface"
-              class:text-kupfer={app.pinned}
-              class:text-muted={!app.pinned}
-            >
-              <Icon name="star" size={18} filled={app.pinned} />
-            </button>
-          </form>
-        </div>
-      {/each}
-    </div>
-    {#if appQuery.trim() && filteredTiles.length === 0}
-      <p class="mt-3 text-sm text-muted">Keine App passt zu „{appQuery}".</p>
-    {/if}
-  </div>
-
-  {#if !data.briefing}
-    <!-- Nicht-Owner (bzw. Briefing nicht verfügbar): schlanker Hinweis statt leerer
-         Fläche, keine fabrizierten Widgets, nur echte Bedien-Hilfen. -->
-    <p use:inview class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted">
-      <span class="inline-flex items-center gap-1.5">
-        <Icon name="star" size={14} /> Mit dem Stern heftest du Apps nach oben.
-      </span>
-      <span class="hidden text-border sm:inline">·</span>
-      <span class="inline-flex items-center gap-1.5">
-        <kbd class="rounded border border-border px-1.5 py-0.5 font-mono text-xs">⌘K</kbd> öffnet die Befehlspalette.
-      </span>
-    </p>
-  {/if}
-
+  <!-- Was heute ansteht, steht vor den App-Kacheln (Entscheid 08.11.):
+       am Handy lag es vorher hinter gut 1000 px Kacheln. -->
   {#if data.briefing}
     <div use:inview class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <div class="rounded-2xl border border-border bg-surface-2/70 p-6 backdrop-blur-sm transition-colors duration-base ease-saganta hover:border-accent-500/40">
@@ -317,8 +233,87 @@
       </div>
     </div>
   {/if}
+
+  <div use:inview>
+    <div class="mb-4 flex items-center justify-between gap-4">
+      <div class="flex items-baseline gap-3">
+        <h2 class="text-sm font-medium uppercase tracking-wider text-muted">Apps</h2>
+        <!-- Der einzige Weg zu den Downloads war bis 2026-08-29 das Konto-Menue
+             oben rechts. Wer nicht wusste, dass es sie gibt, fand sie auch nicht. -->
+        <a
+          href="/apps"
+          class="inline-flex items-center gap-1.5 text-xs text-muted transition-colors duration-fast ease-saganta hover:text-akzent-stark"
+        >
+          <Icon name="smartphone" size={13} /> Für Android
+        </a>
+      </div>
+      {#if appTiles.length > 6}
+        <label class="relative w-full max-w-56">
+          <span class="pointer-events-none absolute inset-y-0 left-2.5 grid place-items-center text-muted">
+            <Icon name="search" size={15} />
+          </span>
+          <input
+            type="search"
+            bind:value={appQuery}
+            placeholder="Apps filtern…"
+            aria-label="Apps filtern"
+            class="w-full rounded-lg border border-border-stark bg-surface-2/60 py-1.5 pl-8 pr-3 text-sm text-text outline-none transition-colors duration-fast ease-saganta placeholder:text-muted focus:border-accent-400"
+          />
+        </label>
+      {/if}
+    </div>
+    <div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+      {#each filteredTiles as app (app.id)}
+        <div class="relative">
+          <AppTile
+            href={app.href}
+            name={app.name}
+            description={app.description}
+            icon={app.icon}
+            badge={app.badge}
+          />
+          <form
+            method="POST"
+            action="?/togglePin"
+            use:enhance
+            class="absolute bottom-1.5 right-1.5 sm:bottom-3 sm:right-3"
+          >
+            <input type="hidden" name="id" value={app.id} />
+            <input type="hidden" name="pinned" value={String(!app.pinned)} />
+            <button
+              type="submit"
+              aria-label={app.pinned ? 'Pin entfernen' : 'Anpinnen'}
+              title={app.pinned ? 'Pin entfernen' : 'Anpinnen'}
+              class="grid size-11 place-items-center rounded-md leading-none transition-colors duration-fast ease-saganta hover:bg-surface sm:size-auto sm:p-1.5"
+              class:text-kupfer={app.pinned}
+              class:text-muted={!app.pinned}
+            >
+              <Icon name="star" size={18} filled={app.pinned} />
+            </button>
+          </form>
+        </div>
+      {/each}
+    </div>
+    {#if appQuery.trim() && filteredTiles.length === 0}
+      <p class="mt-3 text-sm text-muted">Keine App passt zu „{appQuery}".</p>
+    {/if}
+  </div>
+
+  {#if !data.briefing}
+    <!-- Nicht-Owner (bzw. Briefing nicht verfügbar): schlanker Hinweis statt leerer
+         Fläche, keine fabrizierten Widgets, nur echte Bedien-Hilfen. -->
+    <p use:inview class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted">
+      <span class="inline-flex items-center gap-1.5">
+        <Icon name="star" size={14} /> Mit dem Stern heftest du Apps nach oben.
+      </span>
+      <span class="hidden text-border sm:inline">·</span>
+      <span class="inline-flex items-center gap-1.5">
+        <kbd class="rounded border border-border px-1.5 py-0.5 font-mono text-xs">⌘K</kbd> öffnet die Befehlspalette.
+      </span>
+    </p>
+  {/if}
+
 </section>
-{/if}
 
 <script lang="ts" module>
   function greeting(who: string | undefined): string {

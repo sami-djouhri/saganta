@@ -55,7 +55,7 @@
     <input type="hidden" name="erledigt" value={String(aufgabe.completed)} />
     <button
       type="submit"
-      class="grid size-5 shrink-0 place-items-center rounded border border-border text-transparent transition-colors duration-fast ease-saganta hover:border-accent-500 hover:text-akzent-stark {aufgabe.completed
+      class="relative grid size-5 shrink-0 place-items-center rounded border border-border-stark text-transparent before:absolute before:-inset-3 before:content-[''] transition-colors duration-fast ease-saganta hover:border-accent-500 hover:text-akzent-stark {aufgabe.completed
         ? 'border-accent-500 bg-accent-500 text-accent-ink'
         : ''}"
       aria-label={aufgabe.completed ? `${aufgabe.title} wieder öffnen` : `${aufgabe.title} abhaken`}
@@ -125,8 +125,9 @@
     {/if}
   </button>
 
-  <span
-    class="mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide {prio.klasse}"
-    >{prio.label}</span
-  >
+  <!-- Nur was heraussticht, bekommt ein Etikett: „mittel" und „niedrig" an
+       jeder Zeile waren Rauschen, das die zwei wichtigen Faelle verdeckte. -->
+  {#if aufgabe.priority === 'hoch' || aufgabe.priority === 'dringend'}
+    <span class="mt-0.5 shrink-0 rounded border px-1.5 py-0.5 text-xs {prio.klasse}">{prio.label}</span>
+  {/if}
 </li>

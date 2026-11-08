@@ -102,11 +102,49 @@ class NachbauHandler(BaseHTTPRequestHandler):
                 return
             return self._senden(200, {"range": abfrage, "events": [], "todos": [],
                                       "habits": [], "sessions": []})
+        if zerlegt.path == "/api/day-type/week-schedule":
+            if not self._pflicht(abfrage, ("week_start",)):
+                return
+            return self._senden(200, [{"date": abfrage["week_start"], "type": "arbeit",
+                                       "wake": "05:30", "bed": "21:30", "buffer_start": "19:30",
+                                       "block": {"start": "07:00", "end": "16:00"}}])
         if zerlegt.path == "/api/events":
             if not self._pflicht(abfrage, ("start", "end")):
                 return
+            if abfrage["start"] == "2027-01-01":
+                # Jahresansicht: Feiertag, ein Tagestyp-Ereignis, ein Termin
+                # ueber zwei Tage, ein ganztaegiger Termin (Ende exklusiv).
+                return self._senden(200, [
+                    {"id": "f1", "calendar_id": "daytype-feiertag-0000-0000-000000000000",
+                     "title": "Neujahr", "start": "2027-01-01T00:00:00",
+                     "end": "2027-01-02T00:00:00", "all_day": True},
+                    {"id": "a1", "calendar_id": "daytype-arbeit-0000-0000-000000000000",
+                     "title": "Arbeit", "start": "2027-01-04T07:00:00",
+                     "end": "2027-01-04T16:00:00"},
+                    {"id": "t1", "calendar_id": "system-termine", "title": "Reise",
+                     "start": "2027-01-04T18:00:00", "end": "2027-01-05T10:00:00"},
+                    {"id": "t2", "calendar_id": "system-termine", "title": "Fest",
+                     "start": "2027-01-04T00:00:00", "end": "2027-01-05T00:00:00",
+                     "all_day": True},
+                ])
             return self._senden(200, [{"id": "e1", "title": "Termin",
                                        "start_at": "2026-08-25T09:00:00"}])
+        if zerlegt.path == "/api/events/serie-1":
+            # Basis einer woechentlichen Serie: Anker Dienstag 25.08., 18 bis 19 Uhr.
+            return self._senden(200, {"id": "serie-1", "title": "Chor",
+                                      "start": "2026-08-25T18:00:00",
+                                      "end": "2026-08-25T19:00:00",
+                                      "recurrence_rule": "FREQ=WEEKLY"})
+        if zerlegt.path == "/api/events/einzel-1":
+            return self._senden(200, {"id": "einzel-1", "title": "Arzt",
+                                      "start": "2026-08-25T09:00:00",
+                                      "end": "2026-08-25T10:00:00",
+                                      "recurrence_rule": None})
+        if zerlegt.path == "/api/search":
+            if not self._pflicht(abfrage, ("q",)):
+                return
+            return self._senden(200, {"query": abfrage["q"], "results": [
+                {"kind": "event", "id": "e1", "title": "Zahnarzt", "date": "2025-03-01"}]})
         if zerlegt.path == "/api/habits/weekly-progress":
             return self._senden(200, [{"habit_id": "h1", "name": "Lernen",
                                        "target_hours": 6.0, "completed_hours": 2.0}])
@@ -116,6 +154,26 @@ class NachbauHandler(BaseHTTPRequestHandler):
             return self._senden(200, [])
         if zerlegt.path == "/api/todos":
             return self._senden(200, [])
+        if zerlegt.path == "/api/places":
+            return self._senden(200, [{"id": "p1", "name": "Zuhause", "kind": "zuhause",
+                                       "address": "Weg 1", "lat": 51.3, "lon": 7.0}])
+        if zerlegt.path == "/api/places/adressen/suche":
+            if not self._pflicht(abfrage, ("q",)):
+                return
+            return self._senden(200, {"treffer": [], "dienst": True})
+        if zerlegt.path == "/api/day-type/bereich":
+            if not self._pflicht(abfrage, ("start", "tage")):
+                return
+            from datetime import date, timedelta
+            erster = date.fromisoformat(abfrage["start"])
+            return self._senden(200, [
+                {"date": (erster + timedelta(days=i)).isoformat(),
+                 "type": "feiertag" if i == 0 else "frei"}
+                for i in range(int(abfrage["tage"]))])
+        if zerlegt.path.startswith("/api/reviews/"):
+            return self._senden(200, {"date": zerlegt.path.rsplit("/", 1)[-1],
+                                      "what_went_well": "gut", "blockers": None,
+                                      "carry_over_to_tomorrow": None, "energy_level": "high"})
         if zerlegt.path == "/api/feed-token":
             return self._senden(200, {"feed_token": "geheim-des-owners"})
         if zerlegt.path == "/api/day-type/urlaub-bilanz":
@@ -123,7 +181,8 @@ class NachbauHandler(BaseHTTPRequestHandler):
                 return
             return self._senden(200, {"jahr": int(abfrage["jahr"]), "ganze_tage": 3,
                                       "halbe_tage": 1, "verbraucht": 3.5,
-                                      "tage": ["2026-07-01"]})
+                                      "tage": ["2026-07-01"], "anspruch": 30.0,
+                                      "rest_nach_plan": 26.5})
         if zerlegt.path == "/api/tagesdecke":
             if not self._pflicht(abfrage, ("datum",)):
                 return
@@ -145,6 +204,13 @@ class NachbauHandler(BaseHTTPRequestHandler):
             if not self._pflicht(abfrage, ("von", "bis")):
                 return
             return self._senden(200, {"von": abfrage["von"], "bis": abfrage["bis"], "tage": 1})
+        if zerlegt.path == "/api/zeit/timer":
+            return self._senden(200, {"laeuft": None})
+        if zerlegt.path == "/api/zeit/belege":
+            # Wie das Original: beide Grenzen Pflicht.
+            if not self._pflicht(abfrage, ("von", "bis")):
+                return
+            return self._senden(200, {"belege": [], "laeuft": None})
         return self._senden(404, {"detail": "unbekannt"})
 
     def do_PATCH(self):  # noqa: N802
@@ -173,6 +239,7 @@ class NachbauHandler(BaseHTTPRequestHandler):
     POST_PFLICHT = {
         "/api/day-type/set": ("date", "type"),
         "/api/day-type/set-range": ("von", "bis", "type"),
+        "/api/places/wege/planen": ("tage",),
     }
 
     def do_POST(self):  # noqa: N802
@@ -187,6 +254,10 @@ class NachbauHandler(BaseHTTPRequestHandler):
                 return
             if zerlegt.path == "/api/day-type/set":
                 return self._senden(200, {"date": abfrage["date"], "type": abfrage["type"]})
+            if zerlegt.path == "/api/places/wege/planen":
+                return self._senden(200, {"tage": [], "hinwege": 0, "heimwege": 0,
+                                          "terminwege": 0, "fehler": 0,
+                                          "nahverkehr_gestoert": False})
             return self._senden(200, {
                 "von": abfrage["von"], "bis": abfrage["bis"], "type": abfrage["type"],
                 "gesetzt": [abfrage["von"]], "uebersprungen": [], "wochen_neu_geplant": 1,
@@ -278,6 +349,71 @@ class BffRoutenTest(unittest.TestCase):
         antwort = self.klient.get(
             "/api/mobile/bootstrap?start=2026-02-30&end=2026-03-01", headers=self.kopf)
         self.assertEqual(antwort.status_code, 400)
+
+    # ── Wochenplan fuer den Nachtmodus des Launchers (2026-11-07) ────────
+    def test_wochenplan_reicht_den_wochenbeginn_durch(self):
+        r = self.klient.get("/api/day-type/week-schedule?week_start=2026-11-09", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self._abfrage_an("/api/day-type/week-schedule"), {"week_start": "2026-11-09"})
+        self.assertEqual(r.json()[0]["wake"], "05:30")
+
+    def test_wochenplan_mit_unmoeglichem_datum_erreicht_den_kalender_nicht(self):
+        r = self.klient.get("/api/day-type/week-schedule?week_start=2026-02-30", headers=self.kopf)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(GESEHEN, [])
+
+    # ── Spiegel aus Saganta Kontakte (2026-11-07) ─────────────────────────
+    def test_kontakte_abgleich_reicht_den_bestand_durch(self):
+        eintraege = [{"id": "k-1", "name": "Anna", "birthday": "1995-03-10", "art": "geburtstag"},
+                     {"id": "k-2", "name": "Hochzeitstag", "birthday": "2020-06-20", "art": "jahrestag"}]
+        r = self.klient.put("/api/contacts/abgleich", json={"eintraege": eintraege}, headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self._abfrage_an("/api/contacts/abgleich"), {"eintraege": eintraege})
+
+    def test_kontakte_schreiben_ist_umgezogen(self):
+        for methode, pfad in (("post", "/api/contacts"), ("put", "/api/contacts/k-1")):
+            r = getattr(self.klient, methode)(pfad, json={"name": "Anna"}, headers=self.kopf)
+            self.assertEqual(r.status_code, 410, r.text)
+        self.assertEqual(self.klient.delete("/api/contacts/k-1", headers=self.kopf).status_code, 410)
+        self.assertEqual(GESEHEN, [])
+
+    def test_kontakte_abgleich_mit_kaputtem_datum_erreicht_den_kalender_nicht(self):
+        r = self.klient.put("/api/contacts/abgleich", json={"eintraege": [
+            {"id": "k-1", "name": "Anna", "birthday": "10.03.1995"}]}, headers=self.kopf)
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(GESEHEN, [])
+
+    # ── Orte und Block-Dauer (2026-11-01) ─────────────────────────────────
+    def test_orte_werden_durchgereicht(self):
+        r = self.klient.get("/api/places", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()[0]["kind"], "zuhause")
+
+    def test_adresssuche_reicht_q_durch(self):
+        r = self.klient.get("/api/places/adressen/suche?q=Hauptstr", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self._abfrage_an("/api/places/adressen/suche"), {"q": "Hauptstr"})
+
+    def test_wege_planen_schickt_tage_im_query(self):
+        r = self.klient.post("/api/places/wege/planen?tage=7", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self._abfrage_an("/api/places/wege/planen"), {"tage": "7"})
+
+    def test_ort_aendern_schickt_geloeschte_adresse_als_null(self):
+        """Sonst behielte der Ort die alte Lage zur neuen (leeren) Adresse."""
+        r = self.klient.put("/api/places/p1", headers=self.kopf,
+                            json={"name": "Zuhause", "kind": "zuhause"})
+        self.assertEqual(r.status_code, 200, r.text)
+        rumpf = self._abfrage_an("/api/places/p1")
+        self.assertIn("lat", rumpf)
+        self.assertIsNone(rumpf["lat"])
+
+    def test_capture_commit_reicht_die_dauer_durch(self):
+        r = self.klient.post("/api/capture/commit", headers=self.kopf, json={
+            "type": "event", "title": "Keller", "date": "2026-11-02",
+            "start_time": "19:30", "end_time": "21:30", "dauer_min": 120})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(self._abfrage_an("/api/capture/commit")["dauer_min"], 120)
 
     # ── Auth-Riegel ───────────────────────────────────────────────────────
     def test_ohne_token_kein_zugriff(self):
@@ -387,6 +523,57 @@ class BffRoutenTest(unittest.TestCase):
         self.assertEqual(self._abfrage_an("/api/habits/sessions/s1/action"),
                          {"action": "dismissed"})
 
+    # ── Zeit von Hand (Timer und Haken, 2026-11-01) ────────────────────────
+    def test_belege_reicht_von_und_bis_durch(self):
+        r = self.klient.get("/api/zeit/belege?von=2026-11-01&bis=2026-11-07", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self._abfrage_an("/api/zeit/belege"), {"von": "2026-11-01", "bis": "2026-11-07"})
+
+    def test_haken_reicht_bezug_und_zeiten_durch(self):
+        r = self.klient.post("/api/zeit/haken", headers=self.kopf, json={
+            "titel": "Zahnarzt", "start": "2026-11-01T09:00", "ende": "2026-11-01T10:00",
+            "bezug_typ": "event", "bezug_id": "e1::2026-11-01"})
+        self.assertEqual(r.status_code, 201, r.text)
+        rumpf = self._abfrage_an("/api/zeit/haken")
+        self.assertEqual((rumpf["bezug_typ"], rumpf["bezug_id"]), ("event", "e1::2026-11-01"))
+        self.assertNotIn("art", rumpf)  # nichts erfinden, was der Aufrufer nicht sagte
+
+    def test_haken_mit_unbekanntem_bezug_scheitert_hier(self):
+        r = self.klient.post("/api/zeit/haken", headers=self.kopf, json={
+            "titel": "x", "start": "2026-11-01T09:00", "ende": "2026-11-01T10:00", "bezug_typ": "kino"})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(GESEHEN, [])
+
+    def test_timer_start_und_stopp_ohne_rumpf(self):
+        r = self.klient.post("/api/zeit/timer/start", headers=self.kopf, json={"titel": "Lesen"})
+        self.assertEqual(r.status_code, 200, r.text)
+        r = self.klient.post("/api/zeit/timer/stopp", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self._abfrage_an("/api/zeit/timer/stopp"), {})
+
+    def test_gewohnheit_mit_hobby_laesst_sich_aendern(self):
+        """Regression 2026-11-08: der BFF kannte `sport` und `hobby` nicht, der Dienst schon."""
+        for kategorie in ("hobby", "sport"):
+            r = self.klient.put("/api/habits/h1", headers=self.kopf,
+                                json={"name": "Schach", "category": kategorie})
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual(self._abfrage_an("/api/habits/h1")["category"], kategorie)
+            GESEHEN.clear()
+
+    def test_gewohnheit_anlegen_reicht_zeitfenster_durch(self):
+        r = self.klient.post("/api/habits", headers=self.kopf, json={
+            "name": "Laufen", "category": "sport", "weekday_start": "18:00",
+            "weekday_end": "19:30", "weekend_start": "09:00", "weekend_end": "12:00"})
+        self.assertEqual(r.status_code, 201, r.text)
+        rumpf = self._abfrage_an("/api/habits")
+        self.assertEqual((rumpf["weekday_start"], rumpf["weekend_end"]), ("18:00", "12:00"))
+
+    def test_unbekannte_kategorie_scheitert_hier(self):
+        r = self.klient.post("/api/habits", headers=self.kopf,
+                             json={"name": "x", "category": "session"})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(GESEHEN, [])
+
     def test_unbekannte_sitzungsaktion_scheitert_hier(self):
         """422 im BFF statt eines weitergereichten Upstream-Fehlers, dessen
         Ursache im Aufrufer liegt."""
@@ -428,6 +615,77 @@ class BffRoutenTest(unittest.TestCase):
                     f"/api/events/serie-1/instances/{murks}", headers=self.kopf)
                 self.assertEqual(antwort.status_code, 422)
         self.assertEqual(GESEHEN, [])
+
+    def test_wiederholung_kommt_beim_anlegen_an(self):
+        """Befund 2026-11-03: ``EventIn`` kannte ``recurrence_rule`` nicht,
+        Pydantic warf es weg, und jede in der App gewaehlte Wiederholung kam als
+        Einzeltermin an."""
+        antwort = self.klient.post("/api/events", json={
+            "calendar_id": "k", "title": "Chor", "start": "2026-08-25T18:00:00",
+            "end": "2026-08-25T19:00:00", "recurrence_rule": "FREQ=WEEKLY"},
+            headers=self.kopf)
+        self.assertEqual(antwort.status_code, 201, antwort.text)
+        rumpf = [d for m, p, d in GESEHEN if m == "POST" and p == "/api/events"][0]
+        self.assertEqual(rumpf["recurrence_rule"], "FREQ=WEEKLY")
+
+    def test_leere_wiederholung_entfernt_sie(self):
+        self.klient.put("/api/events/serie-1",
+                        json={"recurrence_rule": "", "wiederholung_aendern": True},
+                        headers=self.kopf)
+        rumpf = [d for m, p, d in GESEHEN if m == "PUT"][0]
+        self.assertIn("recurrence_rule", rumpf)
+        self.assertIsNone(rumpf["recurrence_rule"])
+
+    def test_aendern_ohne_schalter_laesst_die_regel_stehen(self):
+        """Die App bis 0.8.4 schickt bei jedem Speichern eine Vorlage
+        („FREQ=WEEKLY") und wuerde damit Wochentage und Ende einer eigenen
+        Regel ueberschreiben."""
+        self.klient.put("/api/events/serie-1",
+                        json={"title": "Chor", "recurrence_rule": "FREQ=WEEKLY"},
+                        headers=self.kopf)
+        rumpf = [d for m, p, d in GESEHEN if m == "PUT"][0]
+        self.assertEqual(rumpf, {"title": "Chor"})
+
+    def test_aendern_mit_schalter_setzt_die_regel(self):
+        self.klient.put("/api/events/serie-1",
+                        json={"recurrence_rule": "FREQ=DAILY", "wiederholung_aendern": True},
+                        headers=self.kopf)
+        rumpf = [d for m, p, d in GESEHEN if m == "PUT"][0]
+        self.assertEqual(rumpf, {"recurrence_rule": "FREQ=DAILY"})
+
+    def test_ganze_serie_ueber_vorkommen_behaelt_ihren_anker(self):
+        """Wer am Vorkommen 08.09. die Uhrzeit aendert und „alle" meint,
+        darf die Serie nicht auf den 08.09. verschieben: davor laege dann
+        nichts mehr."""
+        antwort = self.klient.put("/api/events/serie-1::2026-09-08", json={
+            "title": "Chor", "start": "2026-09-08T19:30:00", "end": "2026-09-08T21:00:00"},
+            headers=self.kopf)
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        put = [(p, d) for m, p, d in GESEHEN if m == "PUT"]
+        self.assertEqual(put[0][0], "/api/events/serie-1")
+        self.assertEqual(put[0][1]["start"], "2026-08-25T19:30:00")
+        self.assertEqual(put[0][1]["end"], "2026-08-25T21:00:00")
+
+    def test_vorkommen_einen_tag_spaeter_verschiebt_die_serie_um_einen_tag(self):
+        self.klient.put("/api/events/serie-1::2026-09-08", json={
+            "start": "2026-09-09T18:00:00", "end": "2026-09-09T19:00:00"},
+            headers=self.kopf)
+        put = [d for m, p, d in GESEHEN if m == "PUT"][0]
+        self.assertEqual(put["start"], "2026-08-26T18:00:00")
+        self.assertEqual(put["end"], "2026-08-26T19:00:00")
+
+    def test_ohne_zeiten_wird_nichts_umgerechnet(self):
+        self.klient.put("/api/events/serie-1::2026-09-08", json={"title": "Probe"},
+                        headers=self.kopf)
+        self.assertEqual([p for m, p, _ in GESEHEN if m == "GET" and p.startswith("/api/events/")], [])
+        put = [(p, d) for m, p, d in GESEHEN if m == "PUT"][0]
+        self.assertEqual(put, ("/api/events/serie-1::2026-09-08", {"title": "Probe"}))
+
+    def test_suche_wird_durchgereicht(self):
+        antwort = self.klient.get("/api/search?q=zahn", headers=self.kopf)
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        self.assertEqual(antwort.json()["results"][0]["title"], "Zahnarzt")
+        self.assertEqual(self._abfrage_an("/api/search")["q"], "zahn")
 
     def test_serie_ab_datum_beenden(self):
         antwort = self.klient.post(
@@ -548,12 +806,72 @@ class BffRoutenTest(unittest.TestCase):
         )
         self.assertEqual(antwort.status_code, 422)
 
-    def test_urlaubsbilanz_nennt_kein_jahreskontingent(self):
-        """Der Dienst zaehlt, was verbraucht ist. Wie viel zusteht, weiss er nicht."""
+    def test_urlaubsbilanz_reicht_anspruch_und_rest_durch(self):
+        """Seit 2026-11-07 liegt der Anspruch im Dienst, der BFF reicht ihn unveraendert durch."""
         antwort = self.klient.get("/api/day-type/urlaub-bilanz?jahr=2026", headers=self.kopf)
         self.assertEqual(antwort.status_code, 200, antwort.text)
         self.assertEqual(antwort.json()["verbraucht"], 3.5)
-        self.assertNotIn("anspruch", antwort.json())
+        self.assertEqual(antwort.json()["anspruch"], 30.0)
+        self.assertEqual(antwort.json()["rest_nach_plan"], 26.5)
+
+    def test_urlaubseinstellung_schickt_nur_gesetzte_felder(self):
+        antwort = self.klient.put("/api/day-type/urlaub-einstellung", json={"anspruch": 30},
+                                  headers=self.kopf)
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        gesehen = [a for m, p, a in GESEHEN if m == "PUT" and p == "/api/day-type/urlaub-einstellung"][-1]
+        self.assertEqual(gesehen, {"anspruch": 30.0})
+
+    def test_zeitkonto_eintrag_geht_durch_und_unsinn_nicht(self):
+        antwort = self.klient.put("/api/day-type/zeitkonto/eintrag/2026-11-09",
+                                  json={"art": "arbeit", "von": "07:00", "bis": "16:30"}, headers=self.kopf)
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        gesehen = [a for m, p, a in GESEHEN if m == "PUT" and p == "/api/day-type/zeitkonto/eintrag/2026-11-09"][-1]
+        self.assertEqual(gesehen, {"art": "arbeit", "von": "07:00", "bis": "16:30"})
+        vorher = len(GESEHEN)
+        antwort = self.klient.put("/api/day-type/zeitkonto/eintrag/2026-11-09",
+                                  json={"art": "urlaub"}, headers=self.kopf)
+        self.assertEqual(antwort.status_code, 422)
+        self.assertEqual(len(GESEHEN), vorher)
+        antwort = self.klient.delete("/api/day-type/zeitkonto/eintrag/2026-11-09", headers=self.kopf)
+        self.assertEqual(antwort.status_code, 204)
+
+    # ── Jahresansicht und Tagesreview (2026-11-03) ───────────────────────
+    def test_jahr_fragt_tagestyp_beim_dienst_und_zaehlt_termine(self):
+        antwort = self.klient.get("/api/jahr?jahr=2027", headers=self.kopf)
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        self.assertEqual(self._abfrage_an("/api/day-type/bereich"),
+                         {"start": "2027-01-01", "tage": "365"})
+        tage = {t["date"]: t for t in antwort.json()["tage"]}
+        self.assertEqual(len(tage), 365)
+        self.assertEqual(tage["2027-01-01"]["feiertag"], "Neujahr")
+        self.assertEqual(tage["2027-01-01"]["termine"], 0)
+        # Arbeit zaehlt nicht, Reise und Fest schon; Fest endet exklusiv.
+        self.assertEqual(tage["2027-01-04"]["termine"], 2)
+        self.assertEqual(tage["2027-01-05"]["termine"], 1)
+        # Der Tagestyp kommt unveraendert vom Dienst, nicht aus den Terminen.
+        self.assertEqual(tage["2027-01-04"]["type"], "frei")
+
+    def test_jahr_schaltjahr_und_grenzen(self):
+        antwort = self.klient.get("/api/jahr?jahr=2028", headers=self.kopf)
+        self.assertEqual(len(antwort.json()["tage"]), 366)
+        self.assertEqual(self.klient.get("/api/jahr?jahr=99", headers=self.kopf).status_code, 422)
+
+    def test_review_schickt_alle_felder_auch_leere(self):
+        antwort = self.klient.put("/api/reviews/2026-11-03", headers=self.kopf,
+                                  json={"what_went_well": "Viel geschafft", "energy_level": "high"})
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        rumpf = self._abfrage_an("/api/reviews/2026-11-03")
+        self.assertEqual(rumpf["what_went_well"], "Viel geschafft")
+        self.assertIn("blockers", rumpf)
+        self.assertIsNone(rumpf["blockers"])
+
+    def test_review_prueft_datum_und_energie(self):
+        self.assertEqual(self.klient.put("/api/reviews/morgen", headers=self.kopf,
+                                         json={}).status_code, 422)
+        self.assertEqual(self.klient.put("/api/reviews/2026-11-03", headers=self.kopf,
+                                         json={"energy_level": "riesig"}).status_code, 422)
+        self.assertEqual(self.klient.get("/api/reviews/2026-11-03",
+                                         headers=self.kopf).json()["energy_level"], "high")
 
     def test_health_braucht_keine_anmeldung(self):
         for pfad in ("/health", "/healthz", "/health/ready"):
@@ -604,6 +922,38 @@ class BffRoutenTest(unittest.TestCase):
             "/api/todos/t4", json={"energy_required": "hoch"}, headers=self.kopf
         )
         self.assertEqual(schlecht.status_code, 422)
+
+    def test_anlegen_behaelt_projekt_und_energie(self):
+        """Regression 2026-11-03: ``TodoIn`` kannte kein ``project_id``.
+
+        Pydantic verwarf das Feld still, die neue Aufgabe stand ohne Projekt da.
+        """
+        antwort = self.klient.post(
+            "/api/todos",
+            json={"title": "Reifen", "project_id": "p1", "energy_required": "low"},
+            headers=self.kopf,
+        )
+        self.assertEqual(antwort.status_code, 201, antwort.text)
+        hoch = self._abfrage_an("/api/todos")
+        self.assertEqual(hoch.get("project_id"), "p1")
+        self.assertEqual(hoch.get("energy_required"), "low")
+
+    def test_vorschlag_fuer_fremde_aufgaben_reicht_alles_durch(self):
+        antwort = self.klient.post("/api/assistant/vorschlag", headers=self.kopf, json={
+            "date": "2026-11-04",
+            "aufgaben": [{"id": "a1", "title": "Reifen", "energy_required": "high", "estimated_minutes": 30}],
+            "belegt": [{"start": "2026-11-04T10:00:00+01:00", "end": "2026-11-04T10:30:00+01:00"}],
+        })
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        hoch = self._abfrage_an("/api/schedule/vorschlag")
+        self.assertEqual(hoch["aufgaben"][0]["energy_required"], "high")
+        self.assertEqual(len(hoch["belegt"]), 1)
+
+    def test_vorschlag_weist_deutsche_energie_ab(self):
+        antwort = self.klient.post("/api/assistant/vorschlag", headers=self.kopf, json={
+            "date": "2026-11-04", "aufgaben": [{"id": "a1", "title": "x", "energy_required": "hoch"}],
+        })
+        self.assertEqual(antwort.status_code, 422)
 
     def test_aufschieben_geht_ueber_planned_date(self):
         """Die Route fehlte ganz, obwohl die Engine sie seit jeher hat.

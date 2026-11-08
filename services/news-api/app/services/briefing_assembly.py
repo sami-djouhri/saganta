@@ -258,7 +258,7 @@ def assemble(db: Session, profile: BriefingProfile, for_date: date | None = None
     now = _utcnow()
     for_date = for_date or now.date()
     weights = _interest_weights(profile)
-    # Tarif-Gating: Freitext-Themen nur Pro; Länge auf Tarif-Maximum begrenzen.
+    # Kostenbremse: Freitext-Themen nur mit voller Rechenzeit; Länge auf das Erlaubte begrenzen.
     plan_feats = plans.features(profile.plan)
     free_topics = (profile.free_topics or []) if plan_feats["custom_topics"] else []
     eff_length = plans.clamp_length(profile.plan, profile.length)

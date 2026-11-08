@@ -3,17 +3,11 @@ import { redirect } from '@sveltejs/kit';
 import type { SagantaUser } from './types.js';
 import type { SagantaLocals } from './hooks.js';
 
-// ── Suite-weites Theme (subdomain-übergreifend) ──────────────────────────────
-// Damit die ganze Suite „wie aus einem Guss" aussieht, teilen sich alle Apps das
-// gewählte Theme über EIN Cookie auf der Registrar-Domain (.saganta.de/.home.arpa).
-// Geschrieben wird es nur in der shell (Theme-Control-Center), gelesen von jeder App.
-
-export const THEME_COOKIE_NAME = 'saganta_theme';
-// `auto` folgt dem Betriebssystem und ist seit 2026-09-27 die Vorgabe. Es steht
-// hier mit drin, damit die shell es speichern kann; im HTML ist es der Wert, der
-// ohne Cookie ohnehin schon steht, deshalb schreibt der Handle unten dafuer nicht.
-export const VALID_THEMES = new Set(['auto', 'dark', 'light', 'hc']);
-const ONE_YEAR = 60 * 60 * 24 * 365;
+// ── Cookie-Domäne (subdomain-übergreifend) ────────────────────────────────────
+// Bis 2026-11-02 stand hier zusätzlich das suite-weite Theme-Cookie
+// `saganta_theme` samt Umschreiben von `data-theme` im Handle. Seit dem
+// Entscheid „nur dunkel" gibt es kein Theme mehr zu wählen; ein noch
+// gesetztes Cookie im Browser bleibt liegen und bewirkt nichts.
 
 /**
  * Parent-Registrar-Domain für ein subdomain-übergreifendes Cookie:
@@ -26,25 +20,6 @@ export function parentCookieDomain(hostname: string): string | undefined {
   const parts = host.split('.');
   if (parts.length < 2) return undefined; // localhost
   return '.' + parts.slice(-2).join('.');
-}
-
-/** Setzt das suite-weite Theme-Cookie (shell schreibt, alle Apps lesen). */
-export function setThemeCookie(
-  cookies: Cookies,
-  hostname: string,
-  secure: boolean,
-  theme: string,
-): void {
-  if (!VALID_THEMES.has(theme)) return;
-  const domain = parentCookieDomain(hostname);
-  cookies.set(THEME_COOKIE_NAME, theme, {
-    path: '/',
-    domain,
-    httpOnly: false, // nur Optik, kein Geheimnis; Client darf lesen
-    sameSite: 'lax',
-    secure,
-    maxAge: ONE_YEAR,
-  });
 }
 
 /**
@@ -275,22 +250,6 @@ export function createBetterAuthHandle(opts: HandleOptions): Handle {
       if (origin && new URL(origin).host !== url.host) {
         return new Response('Origin mismatch', { status: 403 });
       }
-    }
-
-    // Suite-weites Theme: hat die Person in der shell eines gewählt, in das
-    // gerenderte HTML injizieren. `auto` ist der SSR-Default → kein Rewrite nötig
-    // (spart den Transform im Normalfall). Nur validierte Werte werden gesetzt.
-    //
-    // Der gesuchte Wert war bis 2026-09-27 `dark`, weil jedes app.html das fest
-    // trug. Mit dem Auto-Modus ist die Vorgabe `auto`; wer hier den alten Wert
-    // stehen ließe, bekäme keinen Fehler, sondern eine Umschaltung, die nichts
-    // mehr findet und still nichts tut.
-    const theme = event.cookies.get(THEME_COOKIE_NAME);
-    if (theme && theme !== 'auto' && VALID_THEMES.has(theme)) {
-      return resolve(event, {
-        transformPageChunk: ({ html }) =>
-          html.replaceAll('data-theme="auto"', `data-theme="${theme}"`),
-      });
     }
 
     return resolve(event);

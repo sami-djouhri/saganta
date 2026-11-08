@@ -37,7 +37,9 @@ router = APIRouter()
 # Aliase, die gemessen auf ein Modell in diesem Haus zeigen (siehe
 # die Projektregeln, Abschnitt AI-Services). Wer hier einen Namen
 # ergaenzt, muss belegen, dass er im Haus endet.
-ERLAUBTE_MODELLE = {"homelab-fast", "homelab-smart", "homelab-large"}
+# Ohne `homelab-large` (seit 2026-11-03): der Alias zeigt auf gamehost, also
+# aus dem Haus, und der Key des kalender-bff erlaubt ihn auch nicht.
+ERLAUBTE_MODELLE = {"homelab-fast", "homelab-smart"}
 
 _SYSTEM = (
     "Du beantwortest Fragen zum Kalender des Nutzers. Du bekommst seine Termine "

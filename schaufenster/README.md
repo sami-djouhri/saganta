@@ -41,7 +41,7 @@ Registrierung bleibt zu, der Hash kommt von better-auth selbst, das Passwort
 steht nur in einer Datei mit 600. Löschen räumt alle Dienste (über
 `scripts/konto-loeschen.py`), den Kalender und die Anmeldung und greift nur
 auf die feste Muster-Adresse. ⚠️ Das Anlegen ist ein Schreibzugriff auf die
-Auth-Datenbank und wurde in der Sitzung vom 30.10. nicht freigegeben:
+Auth-Datenbank und ist am 30.10. nicht freigegeben worden:
 Handgriff.
 
 ## Warum es diese Seite überhaupt gibt
@@ -77,7 +77,7 @@ nicht importiert: die Tokens sind eine Tailwind-Theme-Datei und brauchen einen
 Build.
 
 **Eine Kopie driftet, und diese hier driftete noch am Tag ihrer Entstehung.**
-Während die Seite gebaut wurde, verschob eine parallele Sitzung `--dunkel-akzent`
+Während die Seite gebaut wurde, verschob eine gleichzeitige Änderung `--dunkel-akzent`
 um eine Stufe. Deshalb vergleicht `abgleich.py` die sechzehn übernommenen Werte
 gegen die Tokens und meldet jede Abweichung. Als **Hinweis**, nicht als Fund: die
 Seite ist mit einer anderen Goldstufe nicht falsch, nur nicht mehr deckungsgleich,

@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     # Jemand wartet auf diese Antwort, anders als beim naechtlichen Briefing in
     # news-api. Laenger als eine halbe Minute ist keine Antwort mehr.
     llm_timeout_seconds: float = 30.0
+    #: Der Assistent (KI-Chat Stufe 2) gemessen: Median 20 s, bis 46 s.
+    assistent_timeout_seconds: float = 90.0
 
     jwt_secret: str = "change-me-shared-with-auth-proxy"
     jwt_algorithm: str = "HS256"

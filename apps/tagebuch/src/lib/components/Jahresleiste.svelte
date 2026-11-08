@@ -58,7 +58,7 @@
     {#each MONATSNAMEN as name, index}
       {@const monat = index + 1}
       <div class="flex items-center gap-2">
-        <span class="w-8 shrink-0 text-[11px] text-muted">{name.slice(0, 3)}</span>
+        <span class="w-8 shrink-0 text-xs text-muted">{name.slice(0, 3)}</span>
         <div class="flex flex-wrap gap-1">
           {#each Array(tageImMonat(jahr, monat)) as _, i}
             {@const datum = feld(jahr, monat, i + 1)}
@@ -92,7 +92,7 @@
       </div>
     {/each}
   </div>
-  <p class="mt-2 text-[11px] text-muted">
+  <p class="mt-2 text-xs text-muted">
     Gefüllte Felder sind Tage mit Eintrag, blasse liegen noch vor dir. Der Server kennt davon nur
     das Datum und die Länge.
   </p>

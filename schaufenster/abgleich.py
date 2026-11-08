@@ -261,7 +261,7 @@ def pruefe_farben(stil: Path) -> None:
 
     `stil.css` traegt die Werte als Kopie, weil die Tokens eine
     Tailwind-Theme-Datei sind und einen Build braeuchten. Eine Kopie driftet, und
-    hier ist sie noch am Tag ihrer Entstehung gedriftet: eine parallele Sitzung
+    hier ist sie noch am Tag ihrer Entstehung gedriftet: eine gleichzeitige Aenderung
     verschob `--dunkel-akzent` um eine Stufe, waehrend diese Seite entstand.
 
     Das ist ein Hinweis und kein Fund: die Seite ist mit der aelteren Goldstufe

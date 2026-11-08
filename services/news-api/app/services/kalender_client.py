@@ -119,3 +119,23 @@ def _fetch_tomorrow(
     if not day_type and not events:
         return None
     return {"date": day.isoformat(), "day_type": day_type, "events": events}
+
+
+def fetch_aufstehen(sub: str, day: date) -> str | None:
+    """Die berechnete Aufstehzeit (HH:MM) aus dem Schlafplan des Kalenders.
+
+    Liegt seit 2026-11-08 additiv in Ebene 1 (`/api/day-type`, Feld
+    `aufstehen`); der Kalender rechnet sie aus dem ersten festen Termin samt
+    Weg. None = nicht verfuegbar (Kalender aus, aelterer Kalender ohne das
+    Feld, Schlafplan dort fehlgeschlagen). Der Scheduler faellt dann auf die
+    feste Wunschzeit zurueck, nie auf eine geratene.
+    """
+    if not available():
+        return None
+    base = settings.kalender_url.rstrip("/")
+    params = {"date": day.isoformat(), "token": settings.kalender_feed_token}
+    budget = _Budget(settings.kalender_timeout)
+    with httpx.Client(headers=tenant_headers(sub)) as c:
+        dt = _get(c, f"{base}/api/day-type", params, budget)
+    wert = (dt or {}).get("aufstehen")
+    return wert if isinstance(wert, str) else None

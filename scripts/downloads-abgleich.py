@@ -110,6 +110,12 @@ def erwartete_namen() -> dict[str, str]:
         if app_id == "shell":
             continue  # die Uebersicht ist die Seite selbst, kein Download
         namen[abweichend.get(app_id, app_id)] = app_id
+    # Reine Downloads ohne Katalog-App (der Launcher), Block NUR_DOWNLOAD in catalog.ts.
+    text = CATALOG_TS.read_text(encoding="utf-8")
+    m = re.search(r"const NUR_DOWNLOAD:\s*AppDownload\[\]\s*=\s*\[(.*?)\n\];", text, re.S)
+    if m:
+        for release in re.findall(r"release:\s*'([^']+)'", m.group(1)):
+            namen[release] = release
     return namen
 
 

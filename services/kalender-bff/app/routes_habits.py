@@ -26,7 +26,10 @@ router = APIRouter()
 
 _HEXFARBE = r"^#[0-9a-fA-F]{6}$"
 _UHRZEIT = r"^\d{2}:\d{2}$"
-_KATEGORIE = r"^(lernen|lesen|sonstige)$"
+# Muss dem Muster in `kalender/backend/schemas.py` gleichen. Der Dienst kennt
+# `sport` und `hobby` seit dem 2026-10-25, hier fehlten sie bis zum 2026-11-08:
+# die Gewohnheit mit `hobby` liess sich ueber die App nicht mehr aendern (422).
+_KATEGORIE = r"^(lernen|lesen|sport|hobby|sonstige)$"
 
 
 class HabitIn(BaseModel):
@@ -75,7 +78,7 @@ class SessionAction(BaseModel):
     scheitern und nicht erst beim nativen Dienst, sonst steht im App-Log ein
     weitergereichter Upstream-Fehler, dessen Ursache im BFF liegt.
     """
-    action: Literal["accepted", "dismissed", "cancelled", "start_early"]
+    action: Literal["accepted", "dismissed", "cancelled", "start_early", "nicht_gemacht"]
 
 
 @router.get("/api/habits")

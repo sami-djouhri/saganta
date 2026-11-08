@@ -109,13 +109,13 @@ export interface DeliveryConfig {
   webhook_url: string | null;
   webhook_configured: boolean;
 }
+/** Die Kostenbremse des Kontos (news-api `/plan`). `plan` ist der gespeicherte
+ *  Wert (`free` = begrenzt, `pro` = volle Rechenzeit), `voll` die Antwort. */
 export interface PlanInfo {
   plan: string;
   features: Record<string, unknown>;
-  pro_benefits: string[];
-  is_pro: boolean;
-  stripe_enabled?: boolean;
-  plan_status?: string | null;
+  voll: boolean;
+  voller_umfang: string[];
 }
 
 /** Ruft die news-api unter /api/news/briefing im Namen des Users auf (60s-Token). */

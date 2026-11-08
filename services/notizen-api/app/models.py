@@ -196,3 +196,25 @@ class Freigabe(Base):
         if self.modus == "offen" and self.notiz_id is None:
             return "quelle_weg"
         return "aktiv"
+
+
+class Papierkorb(Base):
+    """Geloeschte Notizen, 30 Tage wiederherstellbar (seit 2026-11-07).
+
+    Eine eigene Tabelle statt einer Loeschmarke an `notizen`: so muss keine
+    der vielen Leserouten (Liste, Suche, Verknuepfte, oeffentliche Freigaben)
+    lernen, Geloeschtes auszublenden. Eine vergessene Stelle haette sonst eine
+    geloeschte Notiz weiter lesbar gelassen, im schlimmsten Fall ueber einen
+    oeffentlichen Link. Hier liegt eine Kopie als JSON; die Notiz selbst wird
+    wie zuvor geloescht. Anhaenge kommen nicht mit zurueck (ihre Dateien sind weg).
+    """
+
+    __tablename__ = "papierkorb"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_sub: Mapped[str] = mapped_column(String(128), index=True)
+    alte_id: Mapped[int] = mapped_column(Integer)
+    titel: Mapped[str] = mapped_column(String(300), default="")
+    daten: Mapped[str] = mapped_column(Text)
+    geloescht_am: Mapped[datetime] = mapped_column(DateTime, default=jetzt, index=True)
+

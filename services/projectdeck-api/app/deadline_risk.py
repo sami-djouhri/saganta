@@ -59,10 +59,21 @@ SCHWERE = {
 MEILENSTEIN_FERTIG = {"done", "erreicht", "abgeschlossen", "erledigt"}
 
 
-def schedulable_remaining_minutes(project: Project) -> int:
+def _aufgaben(project: Project, aufgaben: list | None) -> list:
+    """Die Aufgaben des Projekts: uebergeben (Aufgaben-Dienst) oder ``project.tasks``.
+
+    Seit dem Umzug uebergeben alle Routen die Aufgaben des Dienstes; der
+    Rueckfall auf ``project.tasks`` traegt nur noch die Logiktests. Nie ``project.tasks``
+    mit den Dienst-Aufgaben ueberschreiben: das ist eine ORM-Beziehung, und eine
+    Zuweisung daran loeschte beim naechsten Commit die alten Zeilen.
+    """
+    return project.tasks if aufgaben is None else aufgaben
+
+
+def schedulable_remaining_minutes(project: Project, aufgaben: list | None = None) -> int:
     """Σ verbleibende Minuten offener, planbarer Tasks (Fallback estimated)."""
     total = 0
-    for t in project.tasks:
+    for t in _aufgaben(project, aufgaben):
         if t.status == TaskStatus.DONE:
             continue
         if not t.can_schedule:
@@ -73,13 +84,13 @@ def schedulable_remaining_minutes(project: Project) -> int:
     return total
 
 
-def has_schedulable_tasks(project: Project) -> bool:
+def has_schedulable_tasks(project: Project, aufgaben: list | None = None) -> bool:
     return any(
-        t.can_schedule and t.status != TaskStatus.DONE for t in project.tasks
+        t.can_schedule and t.status != TaskStatus.DONE for t in _aufgaben(project, aufgaben)
     )
 
 
-def offene_ohne_schaetzung(project: Project) -> int:
+def offene_ohne_schaetzung(project: Project, aufgaben: list | None = None) -> int:
     """Offene, planbare Aufgaben, deren Aufwand niemand beziffert hat.
 
     Sie sind der Grund, aus dem eine Summe von 0 Minuten nichts über den Druck
@@ -87,7 +98,7 @@ def offene_ohne_schaetzung(project: Project) -> int:
     """
     return sum(
         1
-        for t in project.tasks
+        for t in _aufgaben(project, aufgaben)
         if t.status != TaskStatus.DONE
         and t.can_schedule
         and t.remaining_minutes is None
@@ -95,12 +106,14 @@ def offene_ohne_schaetzung(project: Project) -> int:
     )
 
 
-def ueberfaellige_aufgaben(project: Project, stichtag: date_type | None = None) -> int:
+def ueberfaellige_aufgaben(
+    project: Project, stichtag: date_type | None = None, aufgaben: list | None = None
+) -> int:
     """Offene Aufgaben mit einem Termin in der Vergangenheit."""
     tag = stichtag or today()
     return sum(
         1
-        for t in project.tasks
+        for t in _aufgaben(project, aufgaben)
         if t.status != TaskStatus.DONE and t.deadline is not None and t.deadline < tag
     )
 
@@ -146,11 +159,21 @@ def _level_from_pressure(
 
 
 def compute_risk(
-    project: Project, available_minutes: int | None = None
+    project: Project,
+    available_minutes: int | None = None,
+    aufgaben: list | None = None,
+    aufgaben_unbekannt: bool = False,
 ) -> DeadlineRiskOut:
-    remaining = schedulable_remaining_minutes(project)
-    unschaetzt = offene_ohne_schaetzung(project)
-    spaete_aufgaben = ueberfaellige_aufgaben(project)
+    """``aufgaben_unbekannt``: der Aufgaben-Dienst hat nicht geantwortet.
+
+    Dann ist das Urteil `unknown`, nicht `relaxed`: ohne Aufgaben ergaebe die
+    Rechnung 0 Minuten, und 0 Minuten saehen aus wie „nichts zu tun".
+    """
+    if aufgaben_unbekannt:
+        aufgaben = []
+    remaining = schedulable_remaining_minutes(project, aufgaben)
+    unschaetzt = offene_ohne_schaetzung(project, aufgaben)
+    spaete_aufgaben = ueberfaellige_aufgaben(project, aufgaben=aufgaben)
     spaete_meilensteine = ueberfaellige_meilensteine(project)
     days_until: int | None = None
     if project.deadline_date:
@@ -171,6 +194,8 @@ def compute_risk(
             pressure = float("inf") if remaining > 0 else 0.0
 
     level = _level_from_pressure(pressure, days_until, unschaetzt)
+    if aufgaben_unbekannt:
+        level = RiskLevel.UNKNOWN
 
     # Eskalieren, nicht überschreiben: ein überfälliger Meilenstein darf ein
     # `impossible` nicht nach `critical` entschärfen.
@@ -189,7 +214,7 @@ def compute_risk(
         available_scheduling_minutes=available_minutes,
         deadline_pressure=None if pressure == float("inf") else pressure,
         risk_level=level.value,
-        has_schedulable_tasks=has_schedulable_tasks(project),
+        has_schedulable_tasks=has_schedulable_tasks(project, aufgaben),
         overdue_tasks=spaete_aufgaben,
         overdue_milestones=spaete_meilensteine,
         open_tasks_without_estimate=unschaetzt,

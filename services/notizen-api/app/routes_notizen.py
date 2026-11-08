@@ -1,8 +1,9 @@
-from datetime import UTC
+import json
+from datetime import UTC, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,18 +12,19 @@ from .auth import Me, verify_jwt
 from .config import settings
 from .db import get_db
 from .helfer import anhang_aus, notiz_aus, notiz_holen, notizen_kurz, verknuepfung_aus
-from .models import VERKNUEPFUNGS_TYPEN, Anhang, Notiz, Notizbuch, Verknuepfung
+from .models import VERKNUEPFUNGS_TYPEN, Anhang, Notiz, Notizbuch, Papierkorb, Verknuepfung
 from .schemas import (
     AnhangAus,
     NotizAn,
     NotizAus,
     NotizKurzAus,
     NotizPatch,
+    PapierkorbAus,
     VerknuepfungAn,
     VerknuepfungAus,
 )
 from .suche import suchen
-from .util import dateiname_saeubern, tags_lesen, tags_normalisieren
+from .util import dateiname_saeubern, jetzt, tags_lesen, tags_normalisieren
 
 router = APIRouter()
 
@@ -296,10 +298,65 @@ def loeschen(
     """
     notiz = notiz_holen(db, me.sub, notiz_id)
     ablagen = [a.ablage for a in notiz.anhaenge]
+    # In den Papierkorb (seit 2026-11-07): 30 Tage wiederherstellbar, ohne Anhaenge.
+    db.add(Papierkorb(
+        owner_sub=me.sub, alte_id=notiz.id, titel=notiz.titel,
+        daten=json.dumps({
+            "titel": notiz.titel, "inhalt": notiz.inhalt, "tags": notiz.tags,
+            "notizbuch_id": notiz.notizbuch_id, "angeheftet": notiz.angeheftet,
+            "archiviert": notiz.archiviert,
+            "erstellt_am": notiz.erstellt_am.isoformat() if notiz.erstellt_am else None,
+            "anhaenge": len(ablagen),
+            "verknuepfungen": [{"typ": v.typ, "ref": v.ref, "label": v.label} for v in notiz.verknuepfungen],
+        }, ensure_ascii=False),
+    ))
     db.delete(notiz)
     db.commit()
     for name in ablagen:
         ablage.loeschen(name)
+
+
+PAPIERKORB_TAGE = 30
+
+
+def _papierkorb_leeren(db: Session, sub: str) -> None:
+    grenze = jetzt() - timedelta(days=PAPIERKORB_TAGE)
+    db.execute(delete(Papierkorb).where(Papierkorb.owner_sub == sub, Papierkorb.geloescht_am < grenze))
+
+
+@router.get("/papierkorb/liste", response_model=list[PapierkorbAus])
+def papierkorb(me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> list[PapierkorbAus]:
+    """Geloeschte Notizen der letzten 30 Tage, juengste zuerst."""
+    _papierkorb_leeren(db, me.sub)
+    db.commit()
+    zeilen = db.scalars(
+        select(Papierkorb).where(Papierkorb.owner_sub == me.sub).order_by(Papierkorb.geloescht_am.desc())
+    ).all()
+    return [PapierkorbAus(id=z.id, titel=z.titel, geloescht_am=z.geloescht_am,
+                          anhaenge=json.loads(z.daten).get("anhaenge", 0)) for z in zeilen]
+
+
+@router.post("/papierkorb/{eintrag_id}/wiederherstellen", response_model=NotizAus)
+def wiederherstellen(eintrag_id: int, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> NotizAus:
+    z = db.scalars(select(Papierkorb).where(Papierkorb.id == eintrag_id, Papierkorb.owner_sub == me.sub)).first()
+    if z is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nicht im Papierkorb")
+    d = json.loads(z.daten)
+    buch = d.get("notizbuch_id")
+    if buch is not None and db.scalars(
+        select(Notizbuch.id).where(Notizbuch.id == buch, Notizbuch.owner_sub == me.sub)
+    ).first() is None:
+        buch = None  # Notizbuch inzwischen geloescht: ohne Notizbuch zurueck
+    notiz = Notiz(owner_sub=me.sub, notizbuch_id=buch, titel=d.get("titel", ""),
+                  inhalt=d.get("inhalt", ""), tags=d.get("tags", ""),
+                  angeheftet=bool(d.get("angeheftet")), archiviert=bool(d.get("archiviert")))
+    db.add(notiz)
+    db.flush()
+    for v in d.get("verknuepfungen", []):
+        db.add(Verknuepfung(owner_sub=me.sub, notiz_id=notiz.id, typ=v["typ"], ref=v["ref"], label=v.get("label", "")))
+    db.delete(z)
+    db.commit()
+    return notiz_aus(notiz_holen(db, me.sub, notiz.id))
 
 
 # --- Verknuepfungen ------------------------------------------------------

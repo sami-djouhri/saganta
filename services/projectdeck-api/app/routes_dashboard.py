@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from . import aufgaben_dienst
 from .auth import CurrentUser, Me
 from .db import get_db
 from .deadline_risk import compute_risk
@@ -34,7 +36,8 @@ def dashboard(me: Me = CurrentUser, db: Session = Depends(get_db)) -> dict:
     )
     focus_ids = set(wf.project_ids) if wf else set()
 
-    findings = evaluate_all(projects)
+    aufgaben_je, unbekannt = aufgaben_dienst.quelle_alle(me)
+    findings = evaluate_all(projects, aufgaben_je, unbekannt)
     bucket_ids: dict[str, set[int]] = {}
     for f in findings:
         bucket_ids.setdefault(f.bucket, set()).add(f.project_id)
@@ -81,7 +84,8 @@ def dashboard(me: Me = CurrentUser, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/findings", response_model=list[Finding])
 def findings(me: Me = CurrentUser, db: Session = Depends(get_db)) -> list[Finding]:
-    return evaluate_all(_projects(db, me))
+    aufgaben_je, unbekannt = aufgaben_dienst.quelle_alle(me)
+    return evaluate_all(_projects(db, me), aufgaben_je, unbekannt)
 
 
 @router.get("/deadline-center", response_model=list[DeadlineRiskOut])
@@ -111,8 +115,10 @@ def deadline_center(me: Me = CurrentUser, db: Session = Depends(get_db)) -> list
         "unknown": 5,
         "relaxed": 6,
     }
+    aufgaben_je, unbekannt = aufgaben_dienst.quelle_alle(me)
     for p in _projects(db, me):
-        risk = compute_risk(p)
+        aufgaben = None if aufgaben_je is None else aufgaben_je.get(p.slug, [])
+        risk = compute_risk(p, aufgaben=aufgaben, aufgaben_unbekannt=unbekannt)
         if not p.deadline_date and not (risk.overdue_tasks or risk.overdue_milestones):
             continue
         # Kundenprojekte mit harter Deadline werden hochpriorisiert.
@@ -123,3 +129,31 @@ def deadline_center(me: Me = CurrentUser, db: Session = Depends(get_db)) -> list
     # die Route mit einem TypeError beenden.
     risks.sort(key=lambda x: (x[0], x[2].deadline_date or today()))
     return [r for _, r, _ in risks]
+
+
+_RANG = {"hoch": 0, "mittel": 1, "niedrig": 2}
+
+
+@router.get("/aufgaben")
+def alle_aufgaben(me: Me = CurrentUser, db: Session = Depends(get_db)) -> list[dict]:
+    """Die offenen Aufgaben aller eigenen Projekte, mit dem Projekt dazu.
+
+    Seit dem Umzug (Nov. 2026) aus dem Aufgaben-Dienst, in dessen Form
+    (Kennung UUID), ergaenzt um ``project_id``, ``project_name`` und
+    ``project_status``. Ersetzt ``GET /api/tasks``. Aufgaben ohne Projekt oder
+    mit dem Slug eines fremden oder geloeschten Projekts fehlen hier; sie stehen
+    in Saganta Aufgaben. Antwortet der Dienst nicht: 503, keine leere Liste.
+    """
+    try:
+        alle = aufgaben_dienst.aufruf(me, "GET", "/api/aufgaben") or []
+    except (aufgaben_dienst.AufgabenNichtErreichbar, httpx.HTTPStatusError) as exc:
+        raise HTTPException(503, "Aufgaben-Dienst nicht erreichbar") from exc
+    projekte = {p.slug: p for p in _projects(db, me)}
+    out: list[dict] = []
+    for a in alle:
+        p = projekte.get(a.get("projekt") or "")
+        if p is None:
+            continue
+        out.append({**a, "project_id": p.id, "project_name": p.name, "project_status": p.status})
+    out.sort(key=lambda a: (_RANG.get(a.get("prioritaet"), 1), a["project_name"]))
+    return out

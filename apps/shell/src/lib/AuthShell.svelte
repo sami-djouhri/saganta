@@ -1,6 +1,6 @@
 <script lang="ts">
   // Gemeinsamer Rahmen für die Auth-Seiten (Login/Register, Forgot, Reset).
-  // Spiegelt die Atmosphäre der Landing (Gradient-Mesh + Korn), zentriert eine
+  // Gradient-Mesh + Korn als Hintergrund, zentriert eine
   // schmale Spalte und rendert den Seiteninhalt darin.
   interface Props {
     children: import('svelte').Snippet;
@@ -14,18 +14,12 @@
     <div class="mesh mesh-b"></div>
     <div class="grain"></div>
   </div>
-  <!-- Inhalt füllt den freien Raum und bleibt zentriert; der Footer liegt im Fluss
-       darunter → überlappt auch hohe Formulare (Register) auf kurzen Viewports nicht. -->
+  <!-- Inhalt füllt den freien Raum und bleibt zentriert. -->
   <div class="grid flex-1 place-items-center py-6">
     <div class="reveal w-full max-w-sm">
       {@render children()}
     </div>
   </div>
-  <footer class="flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-muted">
-    <a href="/" class="transition-colors duration-fast ease-saganta hover:text-text">Startseite</a>
-    <a href="/impressum" class="transition-colors duration-fast ease-saganta hover:text-text">Impressum</a>
-    <a href="/datenschutz" class="transition-colors duration-fast ease-saganta hover:text-text">Datenschutz</a>
-  </footer>
 </div>
 
 <style>

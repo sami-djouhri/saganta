@@ -1,5 +1,21 @@
-/* Saganta Theme: Auto/Hell/Dunkel/Hochkontrast.
+/* Saganta Theme: Nachtstudie, und nur sie.
  * Werte via CSS-Variablen, damit Tailwind Utilities sie als rgb() konsumieren.
+ *
+ * SEIT DEM 2026-11-02 GIBT ES NUR NOCH DUNKEL (Entscheid in der
+ * Fragerunde zu „Apps vereinheitlichen"). Hell („Tagstudie") und Hochkontrast
+ * sind gestrichen, und mit ihnen jeder Umschalter. Die Werte stehen deshalb
+ * EINMAL unter `--dunkel-*`, und `:root` waehlt sie fest aus. Ein
+ * `data-theme`-Attribut oder ein altes Cookie `saganta_theme=light` trifft
+ * keinen Selektor mehr und bleibt damit wirkungslos, statt eine halbe helle
+ * Seite zu erzeugen. Der Name `--dunkel-*` bleibt, weil zwei Pruefer ihn lesen
+ * (interne Notiz, `schaufenster/abgleich.py`).
+ * Die Absaetze unten zu Hell und Auto-Modus sind Geschichte; ihre Lehren
+ * (Schrift ohne Datei, Akzent als Text) gelten weiter.
+ *
+ * Diese Datei ist auch die Quelle fuer die Hausdienste ausserhalb der Suite:
+ * `scripts/nachtstudie-erzeugen.py` liest sie und schreibt daraus eine reine
+ * CSS-Fassung, die in jedem Dienst als Kopie liegt und per Pruefsumme bewacht
+ * wird.
  *
  * DIESE DATEI IST DIE EINE QUELLE DER SUITE-FARBEN UND -SCHRIFTEN. Eine App
  * bindet sie mit zwei Zeilen ein und definiert selbst keine Farbe und keine
@@ -56,14 +72,18 @@
  * und er blockiert das Rendern, bis er in einen Zeitfehler laeuft. Beides sind
  * Abhaengigkeiten dieses Pakets, der Build legt die woff2 neben das CSS.
  *
- * Inter kommt als variabler Schnitt (eine Datei fuer 100 bis 900), Instrument
- * Serif nur in 400 -- mehr gibt es nicht, deshalb steht `font-display` im
- * Markup nirgends zusammen mit einem Fettschnitt (nachgezaehlt: 0 Stellen).
- * Der Kursivschnitt braucht eine eigene Zeile, `index.css` traegt nur `normal`,
- * und die Landing setzt ein kursives Wort in die Ueberschrift. */
+ * Inter kommt als variabler Schnitt (eine Datei fuer 100 bis 900).
+ *
+ * Instrument Serif ist seit dem 2026-11-02 draussen (Entscheid:
+ * Titel ueberall Inter halbfett, wie es die Android-Apps seit dem 01.11.
+ * tragen). `font-display` bleibt als Klasse bestehen, weil sie an ueber 150
+ * Stellen im Markup steht, und ist jetzt eine eigene Utility weiter unten:
+ * Inter mit Gewicht 600. Als blosser Schriftname im `@theme` haette sie die
+ * Titel auf Gewicht 400 gesetzt, und alle Ueberschriften waeren still mager
+ * geworden. Das npm-Paket bleibt vorerst in der package.json stehen, weil ein
+ * Entfernen das Lockfile aendert und `npm install` hier gesperrt ist; es wird
+ * nicht mehr importiert und landet damit in keinem Build. */
 @import '@fontsource-variable/inter';
-@import '@fontsource/instrument-serif';
-@import '@fontsource/instrument-serif/400-italic.css';
 
 /* Marken-Palette. `@theme` wird von Tailwind auch in importierten Dateien
  * ausgewertet. Die Utilities (bg-accent-500, text-muted und die uebrigen)
@@ -131,7 +151,7 @@
   --color-akzent: rgb(var(--saganta-akzent));
   --color-akzent-stark: rgb(var(--saganta-akzent-stark));
   --color-kupfer: rgb(var(--saganta-kupfer));
-  /* Themenabhaengig, Werte siehe :root/[data-theme] weiter unten. */
+  /* Werte siehe `--dunkel-*` und die Auswahl in `:root` weiter unten. */
   --color-surface: rgb(var(--saganta-surface));
   --color-surface-2: rgb(var(--saganta-surface-2));
   --color-text: rgb(var(--saganta-text));
@@ -146,7 +166,9 @@
   --color-border-stark: rgb(var(--saganta-border-stark));
   --font-sans:
     'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Instrument Serif', Georgia, serif;
+  /* `--font-display` steht hier bewusst NICHT mehr, siehe `@utility
+   * font-display` unten: ein Theme-Wert erzeugt nur die Schriftfamilie, das
+   * Gewicht 600 der Titel braucht eine eigene Regel. */
   /* Bewegungskurve der Suite. `--ease-*` ist ein Tailwind-v4-Namespace, die
    * Klasse `ease-saganta` entsteht also unmittelbar hieraus. */
   --ease-saganta: var(--saganta-ease);
@@ -184,6 +206,15 @@
   transition-duration: var(--saganta-motion-slow);
 }
 
+/* Titelschrift: Inter halbfett, mit leicht engerer Laufweite, wie
+ * `Typography.kt` (`titel`) in saganta-apps/core. Seit 2026-11-02 statt
+ * Instrument Serif. */
+@utility font-display {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
 /* Tailwind erzeugt nur Klassen, die es in den gescannten Quellen findet, und die
  * Komponenten aus @saganta/ui liegen ausserhalb jedes App-Verzeichnisses. Der
  * Pfad ist relativ ZU DIESER DATEI (packages/design-tokens/src/) und gilt damit
@@ -195,62 +226,22 @@
 @source "../../ui/src/**/*.svelte";
 
 /* ---------------------------------------------------------------------------
- * Die Werte, einmal. Die Theme-Selektoren darunter waehlen nur noch aus.
+ * Die Werte, einmal, unter `--dunkel-*`. `:root` weiter unten waehlt sie fest.
  *
- * Bis 2026-09-27 standen die Zahlen unmittelbar in `[data-theme='light']` und
- * `[data-theme='dark']`. Das trug, solange es genau zwei Selektoren gab; mit
- * `auto` (Vorgabe und `prefers-color-scheme`) braeuchte jeder Wert vier Orte,
- * und ein nachgezogener Ton haette drei davon getroffen. Getrennt haelt jede
- * Zahl ihren einen Ort, und die Auswahl ist ablesbar statt abgeschrieben.
+ * Bis 2026-11-02 stand hier daneben ein zweiter Satz `--hell-*` („Tagstudie")
+ * und darunter vier Auswahlbloecke (auto, light, dark, hc). Gestrichen per
+ * Entscheid, siehe Kopf dieser Datei. Die alten Werte stehen in der
+ * git-Historie dieser Datei, falls Hell je zurueckkommt.
+ *
+ * WARNUNG IST GOLD UND NICHT MESSING, und das ist der Grund, die
+ * Statuszeilen unten zu lesen. Bis zum 2026-10-24 trugen Akzent und Warnung
+ * byte-gleich denselben Wert: ein gewoehnlicher Knopf sah aus wie eine
+ * Warnung (141 Stellen `text-akzent`, 36 `text-warnung`). Jede Farbe bestand
+ * ihren WCAG-Test einzeln; der Mangel ist eine Verwechslung, keine
+ * Lesbarkeit, und die prueft interne Notiz.
  * ------------------------------------------------------------------------- */
 
 :root {
-  /* „Tagstudie": dieselbe Bibliothek bei Tageslicht. Warmes Papier statt
-   * warmes Tinten-Schwarz, keine Umkehrung des dunklen Themes. */
-  --hell-surface: 245 240 232;
-  --hell-surface-2: 255 253 249;
-  --hell-text: 26 20 12;
-  --hell-muted: 108 98 84;
-  --hell-border: 226 218 204;
-  --hell-border-stark: 124 114 100;
-  --hell-focus: 176 107 24;
-  /* Statusfarben hell: dunkle Toene, geprueft 5,18:1 bis 9,04:1 auf --surface
-   * und 5,05:1 bis 7,91:1 auf der getoenten Flaeche `bg-accent-500/15`.
-   *
-   * WARNUNG IST GOLD UND NICHT MESSING, und das ist der Grund, diese
-   * Zeilen zu lesen. Bis zum 2026-10-24 stand hier `138 82 22`, also
-   * BYTE-GLEICH derselbe Wert wie `--hell-akzent` zwei Zeilen tiefer (und wie
-   * `--color-accent-700` oben). Ein gewoehnlicher Knopf sah damit aus wie eine
-   * Warnung, und eine Warnung wie ein Knopf: 141 Stellen schreiben
-   * `text-akzent`, 36 schreiben `text-warnung`, und sie waren nicht
-   * unterscheidbar. Im dunklen Satz dieselbe Kollision.
-   *
-   * WARUM ES KEIN WERKZEUG GEMELDET HAT. Jede der beiden Farben bestand
-   * ihren WCAG-Test einzeln mit 5,61:1. Der Mangel ist keine Lesbarkeit,
-   * sondern eine Verwechslung, und die entsteht erst im Verhaeltnis zweier
-   * Werte. `wcag.py` und `kontrast.py` rechnen eine Farbe gegen ihren GRUND;
-   * keines der fuenf Werkzeuge stellte zwei Bedeutungsfarben nebeneinander.
-   * Das tut jetzt `design-wellen/bedeutungsfarben.py`.
-   *
-   * ERFOLG UND INFO SIND AUSEINANDERGEZOGEN. Sie waren mit dL* 1,2
-   * praktisch gleich hell (Gruen #3F5A50 gegen Blau #3D5468): wer Farbtoene
-   * nicht unterscheiden kann, sah denselben Ton. Verschoben wurde nur die
-   * HELLIGKEIT in CIELAB, a* und b* sind unveraendert - das Salbei bleibt
-   * Salbei und das Blau bleibt Blau, nachgerechnet steht jetzt dL* 12,2.
-   * Erfolg geht dabei WEITER VOM GRUND WEG als Info, nach derselben Regel,
-   * die unten fuer `akzent-stark` gilt: Erfolg quittiert eine Handlung und
-   * darf auffallen, Info begleitet und darf zuruecktreten. */
-  --hell-erfolg: 44 70 60;
-  --hell-info: 73 96 116;
-  --hell-warnung: 122 98 0;
-  --hell-fehler: 155 47 42;
-  /* Akzent hell = accent-700 (5,61:1), Betonung = accent-900 (10,69:1),
-   * Kupfer = warm-700 (6,23:1). Dieselben Toene wie die Marken-Skala, nur die
-   * Stufe passt zum Grund. */
-  --hell-akzent: 138 82 22;
-  --hell-akzent-stark: 77 47 18;
-  --hell-kupfer: 122 79 36;
-
   /* „Nachtstudie", eine warme, lampen-beleuchtete private Bibliothek. Basis ist
    * warmes Tinten-Schwarz (nicht kaltes Blau-Schwarz), Text ivory, Akzent = Messing. */
   --dunkel-surface: 22 19 15;
@@ -259,10 +250,19 @@
   --dunkel-muted: 166 155 138;
   --dunkel-border: 48 41 32;
   --dunkel-border-stark: 124 114 100;
-  --dunkel-focus: 221 154 60;
+  --dunkel-focus: 221 156 63; /* = accent-400, bis 2026-11-02 der Beinahe-Ton 221 154 60 */
+  /* Drei Rollen, die die Suite selbst (noch) nicht benutzt, die nativen Apps
+   * und die Hausdienste aber schon: Hover- und eingelassene Flaeche, gedaempfter
+   * Text (4,97:1). Sie stehen hier seit dem 2026-11-02, damit diese Datei die
+   * EINE Quelle ist und nicht nur fuer die Suite. Werte = SagantaDarkSurfaceHover,
+   * SagantaDarkSurfaceSunken, SagantaDarkTextDim in Color.kt, geprueft von
+   * `bedeutungsfarben.py`. Abnehmer: `scripts/nachtstudie-erzeugen.py`. */
+  --dunkel-surface-hover: 41 35 25;
+  --dunkel-surface-sunken: 17 14 11;
+  --dunkel-text-dim: 147 137 121;
   /* Statusfarben dunkel: helle, entsaettigte Toene, 7,75:1 bis 11,14:1. Das
    * Gruen ist Salbei aus der Marken-Palette, nicht Tailwinds kaltes Emerald.
-   * Warnung ist Gold und nicht Messing, Begruendung im hellen Satz oben;
+   * Warnung ist Gold und nicht Messing, Begruendung im Kasten oben;
    * Erfolg und Info sind ebenso in der Helligkeit getrennt (dL* 12,1). */
   --dunkel-erfolg: 180 207 193;
   --dunkel-info: 150 170 190;
@@ -301,10 +301,9 @@
   --dunkel-kupfer: 200 136 74;
 }
 
-/* Auswahl. `auto` ist die Vorgabe und folgt dem Betriebssystem; ein per Cookie
- * gesetztes Theme gewinnt, weil es als `data-theme` im HTML landet. */
-:root,
-[data-theme='auto'] {
+/* Auswahl: fest die Nachtstudie. Kein `[data-theme]`-Selektor mehr, damit ein
+ * gespeichertes Theme aus der Zeit vor dem 2026-11-02 nichts mehr bewirkt. */
+:root {
   --saganta-surface: var(--dunkel-surface);
   --saganta-surface-2: var(--dunkel-surface-2);
   --saganta-text: var(--dunkel-text);
@@ -319,83 +318,6 @@
   --saganta-akzent: var(--dunkel-akzent);
   --saganta-akzent-stark: var(--dunkel-akzent-stark);
   --saganta-kupfer: var(--dunkel-kupfer);
-  color-scheme: dark;
-}
-
-@media (prefers-color-scheme: light) {
-  :root,
-  [data-theme='auto'] {
-    --saganta-surface: var(--hell-surface);
-    --saganta-surface-2: var(--hell-surface-2);
-    --saganta-text: var(--hell-text);
-    --saganta-muted: var(--hell-muted);
-    --saganta-border: var(--hell-border);
-    --saganta-border-stark: var(--hell-border-stark);
-    --saganta-focus: var(--hell-focus);
-    --saganta-erfolg: var(--hell-erfolg);
-    --saganta-info: var(--hell-info);
-    --saganta-warnung: var(--hell-warnung);
-    --saganta-fehler: var(--hell-fehler);
-    --saganta-akzent: var(--hell-akzent);
-    --saganta-akzent-stark: var(--hell-akzent-stark);
-    --saganta-kupfer: var(--hell-kupfer);
-    color-scheme: light;
-  }
-}
-
-[data-theme='light'] {
-  --saganta-surface: var(--hell-surface);
-  --saganta-surface-2: var(--hell-surface-2);
-  --saganta-text: var(--hell-text);
-  --saganta-muted: var(--hell-muted);
-  --saganta-border: var(--hell-border);
-  --saganta-border-stark: var(--hell-border-stark);
-  --saganta-focus: var(--hell-focus);
-  --saganta-erfolg: var(--hell-erfolg);
-  --saganta-info: var(--hell-info);
-  --saganta-warnung: var(--hell-warnung);
-  --saganta-fehler: var(--hell-fehler);
-  --saganta-akzent: var(--hell-akzent);
-  --saganta-akzent-stark: var(--hell-akzent-stark);
-  --saganta-kupfer: var(--hell-kupfer);
-  color-scheme: light;
-}
-
-[data-theme='dark'] {
-  --saganta-surface: var(--dunkel-surface);
-  --saganta-surface-2: var(--dunkel-surface-2);
-  --saganta-text: var(--dunkel-text);
-  --saganta-muted: var(--dunkel-muted);
-  --saganta-border: var(--dunkel-border);
-  --saganta-border-stark: var(--dunkel-border-stark);
-  --saganta-focus: var(--dunkel-focus);
-  --saganta-erfolg: var(--dunkel-erfolg);
-  --saganta-info: var(--dunkel-info);
-  --saganta-warnung: var(--dunkel-warnung);
-  --saganta-fehler: var(--dunkel-fehler);
-  --saganta-akzent: var(--dunkel-akzent);
-  --saganta-akzent-stark: var(--dunkel-akzent-stark);
-  --saganta-kupfer: var(--dunkel-kupfer);
-  color-scheme: dark;
-}
-
-[data-theme='hc'] {
-  --saganta-surface: 0 0 0;
-  --saganta-surface-2: 0 0 0;
-  --saganta-text: 255 255 255;
-  --saganta-muted: 220 220 220;
-  --saganta-border: 255 255 0;
-  --saganta-border-stark: 255 255 0;
-  --saganta-focus: 255 255 0;
-  /* Statusfarben Hochkontrast: bewusst grell, 9,6:1 bis 16,4:1 auf Schwarz. */
-  --saganta-erfolg: 107 255 158;
-  --saganta-info: 143 212 255;
-  --saganta-warnung: 255 210 74;
-  --saganta-fehler: 255 143 138;
-  /* Akzent Hochkontrast: accent-200 (13,81:1) und accent-50 (19,20:1). */
-  --saganta-akzent: 238 205 151;
-  --saganta-akzent-stark: 251 244 231;
-  --saganta-kupfer: 238 205 151;
   color-scheme: dark;
 }
 
@@ -428,7 +350,7 @@ body {
  * Touch-Klicks lösen keinen Ring aus. Gilt suite-weit (jede App importiert diese
  * Datei); folgt border-radius der Elemente und respektiert das aktive Theme. */
 :focus-visible {
-  outline: 2px solid rgb(var(--saganta-focus, 221 154 60));
+  outline: 2px solid rgb(var(--saganta-focus, 221 156 63));
   outline-offset: 2px;
 }
 

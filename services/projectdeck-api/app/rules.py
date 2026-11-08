@@ -30,11 +30,19 @@ def _f(rule_id: str, severity: str, p: Project, message: str, bucket: str) -> Fi
     )
 
 
-def evaluate_project(p: Project) -> list[Finding]:
+def evaluate_project(
+    p: Project, aufgaben: list | None = None, aufgaben_unbekannt: bool = False
+) -> list[Finding]:
+    """``aufgaben``: aus dem Aufgaben-Dienst; ``None`` liest ``p.tasks``.
+
+    Antwortet der Dienst nicht (``aufgaben_unbekannt``), entfaellt der
+    Aufgaben-Befund, statt fuer jedes Projekt mit Frist zu behaupten, es habe
+    keinen planbaren Task.
+    """
     out: list[Finding] = []
 
     # Deadline gesetzt, aber keine planbaren Tasks.
-    if p.deadline_date and not has_schedulable_tasks(p):
+    if p.deadline_date and not aufgaben_unbekannt and not has_schedulable_tasks(p, aufgaben):
         out.append(
             _f(
                 "deadline_without_schedulable_tasks",
@@ -169,8 +177,14 @@ def evaluate_project(p: Project) -> list[Finding]:
     return out
 
 
-def evaluate_all(projects: list[Project]) -> list[Finding]:
+def evaluate_all(
+    projects: list[Project],
+    aufgaben_je: dict[str, list] | None = None,
+    aufgaben_unbekannt: bool = False,
+) -> list[Finding]:
+    """``aufgaben_je``: Slug -> Aufgaben aus dem Dienst; ``None`` liest ``p.tasks``."""
     out: list[Finding] = []
     for p in projects:
-        out.extend(evaluate_project(p))
+        aufgaben = None if aufgaben_je is None else aufgaben_je.get(p.slug, [])
+        out.extend(evaluate_project(p, aufgaben, aufgaben_unbekannt))
     return out

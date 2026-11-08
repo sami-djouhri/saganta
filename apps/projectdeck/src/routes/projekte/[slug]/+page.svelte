@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { page } from '$app/stores';
-  import { Button, Icon, NotizenBlock, appUrlById } from '@saganta/ui';
+  import { Button, Icon, NotizenBlock, appUrlById, aufgabeUrl, kalenderCaptureUrl } from '@saganta/ui';
   import {
     DEADLINE_TYPE,
     PROJECT_STATUS,
@@ -10,8 +10,11 @@
     SCHEDULING_MODE,
     SHUTDOWN_LABELS,
     VISIBILITY,
+    AUSGEBLENDET,
+    PRIO_RANG,
     fmtMinutes,
   } from '$lib/meta';
+  import type { Aufgabe } from '$lib/types';
   import type { PageData, ActionData } from './$types';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -29,6 +32,18 @@
     });
   }
   let p = $derived(data.project);
+  const host = $derived($page.url.host);
+
+  // Zeit fuer das Projekt einplanen heisst: einen Termin im Saganta Kalender
+  // anlegen. Die Schnelleingabe dort schlaegt bei Dauer ohne Uhrzeit bis zu
+  // drei freie Zeiten vor; die Dauer aendert man vor dem Uebernehmen.
+  const einplanenUrl = $derived(kalenderCaptureUrl(`1h ${p.name}`, undefined, host));
+  // Eingeplant ist, was einen Tag oder eine Uhrzeit traegt.
+  const eingeplant = $derived(
+    data.aufgaben
+      .filter((a) => !a.erledigt && (a.tag || a.start))
+      .sort((a, b) => (a.start ?? a.tag ?? '').localeCompare(b.start ?? b.tag ?? '')),
+  );
 
   const notizenBasis = $derived(appUrlById('notizen', $page.url.host));
   // Getrennt vom uebrigen Formularfehler: sonst erscheint „Bitte einen Titel
@@ -55,9 +70,12 @@
   // mittreffen. Ein uebersehener Vergleich laesst den Reiter still LEER, denn
   // die `{:else if}`-Kette faellt dann einfach durch. Kein Fehler, kein
   // Inhalt, und anklickbar bleibt er trotzdem.
+  //
+  // Seit 08.11. oeffnet ein Projekt auf den Aufgaben (Entscheid), und
+  // Reiter in `AUSGEBLENDET` (meta.ts) fehlen; ihr Inhalt bleibt im Code.
   const TABS = [
-    { id: 'overview', label: 'Überblick' },
     { id: 'tasks', label: 'Aufgaben' },
+    { id: 'overview', label: 'Überblick' },
     { id: 'milestones', label: 'Meilensteine' },
     { id: 'deadlines', label: 'Fristen' },
     { id: 'calendar', label: 'Kalender' },
@@ -66,8 +84,21 @@
     { id: 'readiness', label: 'Veröffentlichung' },
     { id: 'client', label: 'Kunde' },
     { id: 'shutdown', label: 'Abschalten' },
-  ];
-  let tab = $state('overview');
+  ].filter((t) => !AUSGEBLENDET.has(t.id));
+  let tab = $state('tasks');
+
+  // Offene nach Prioritaet, Wartende ans Ende; erledigte eingeklappt darunter.
+  const alleAufgaben = $derived(uniqueBy(data.aufgaben, (x) => x.id));
+  const offene = $derived(
+    alleAufgaben
+      .filter((a) => !a.erledigt)
+      .sort(
+        (x, y) =>
+          Number(x.wartet) - Number(y.wartet) ||
+          (PRIO_RANG[x.prioritaet] ?? 1) - (PRIO_RANG[y.prioritaet] ?? 1),
+      ),
+  );
+  const erledigte = $derived(alleAufgaben.filter((a) => a.erledigt));
   let showAdvanced = $state(false);
   let aiResult = $derived(form && 'ai' in form ? form.ai : undefined);
 </script>
@@ -76,36 +107,29 @@
   <div>
     <a href="/projekte" class="text-sm text-muted hover:text-text">← Projekte</a>
     <h1 class="font-display text-2xl">{p.name}</h1>
-    <div class="mt-1 flex flex-wrap gap-1 text-[11px] text-muted">
+    <div class="mt-1 flex flex-wrap gap-1 text-xs text-muted">
       <span class="rounded bg-surface-2 px-1.5 py-0.5">{PROJECT_TYPES[p.type] ?? p.type}</span>
       <span class="rounded bg-surface-2 px-1.5 py-0.5">{PROJECT_STATUS[p.status] ?? p.status}</span>
       <span class="rounded bg-surface-2 px-1.5 py-0.5">{VISIBILITY[p.visibility] ?? p.visibility}</span>
-      <span class="rounded bg-surface-2 px-1.5 py-0.5">P{p.priority}</span>
+      <span class="rounded bg-surface-2 px-1.5 py-0.5">Prio {p.priority}</span>
       <span class="rounded bg-surface-2 px-1.5 py-0.5 font-mono">{p.slug}</span>
     </div>
+    {#if p.next_action}
+      <p class="mt-2 max-w-2xl text-sm text-muted">→ {p.next_action}</p>
+    {/if}
   </div>
-  <form method="POST" action="?/plan" use:enhance>
-    <Button type="submit" variant="primary" size="sm">
-      <Icon name="refresh-cw" size={15} /> Im Kalender planen
-    </Button>
-  </form>
+  <a
+    href={einplanenUrl}
+    class="inline-flex items-center gap-1.5 rounded-md bg-accent-500 px-3 py-1.5 text-sm text-accent-ink transition-colors duration-fast ease-saganta hover:bg-accent-400"
+  >
+    <Icon name="clock" size={15} /> Zeit einplanen
+  </a>
 </div>
 
 {#if form && 'error' in form && form.error}
   <p class="mt-3 rounded border border-fehler/40 bg-fehler/10 px-3 py-2 text-sm text-fehler">
     {form.error}
   </p>
-{/if}
-{#if form && 'planResult' in form && form.planResult}
-  {#if 'planScheduled' in form && form.planScheduled > 0}
-    <p class="mt-3 rounded border border-erfolg/40 bg-erfolg/10 px-3 py-2 text-sm text-erfolg">
-      {form.planResult}
-    </p>
-  {:else}
-    <p class="mt-3 rounded border border-warnung/40 bg-warnung/10 px-3 py-2 text-sm text-warnung">
-      {form.planResult}
-    </p>
-  {/if}
 {/if}
 
 <nav class="mt-5 flex flex-wrap gap-1 border-b border-border">
@@ -240,40 +264,60 @@
     </div>
 
   {:else if tab === 'tasks'}
+    <!-- Die Aufgaben liegen seit dem Umzug (Nov. 2026) im Aufgaben-Dienst.
+         Hier wird angelegt, abgehakt und geloescht; geoeffnet wird eine
+         Aufgabe in Saganta Aufgaben (Entscheid 05.11.), dort liegen
+         Listen, Bedingungen und Umhaengen. -->
     <form method="POST" action="?/addTask" use:enhance class="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-border bg-surface-2/40 p-3">
       <label class="flex flex-1 flex-col gap-1 text-sm">
         <span class="text-muted">Neue Aufgabe</span>
-        <input name="title" required placeholder="Titel" class="rounded-md border border-border-stark bg-surface px-3 py-2" />
+        <input name="titel" required placeholder="Titel" class="rounded-md border border-border-stark bg-surface px-3 py-2" />
       </label>
       <label class="flex flex-col gap-1 text-sm">
-        <span class="text-muted">Schätzung (Min.)</span>
-        <input name="estimated_minutes" type="number" min="0" class="w-28 rounded-md border border-border-stark bg-surface px-3 py-2" />
+        <span class="text-muted">Dauer (Min.)</span>
+        <input name="dauer_min" type="number" min="1" max="1440" class="w-28 rounded-md border border-border-stark bg-surface px-3 py-2" />
       </label>
-      <label class="flex items-center gap-2 text-sm"><input name="can_schedule" type="checkbox" checked /> planbar</label>
+      <label class="flex flex-col gap-1 text-sm">
+        <span class="text-muted">Priorität</span>
+        <select name="prioritaet" class="rounded-md border border-border-stark bg-surface px-3 py-2">
+          <option value="hoch">hoch</option>
+          <option value="mittel" selected>mittel</option>
+          <option value="niedrig">niedrig</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 text-sm">
+        <span class="text-muted">Fällig</span>
+        <input name="faellig" type="date" class="rounded-md border border-border-stark bg-surface px-3 py-2" />
+      </label>
       <Button type="submit" variant="primary" aria-label="Hinzufügen"><Icon name="plus" size={16} /></Button>
     </form>
-    {#if data.tasks.length === 0}
+    {#if data.aufgabenFehlen}
+      <p class="rounded border border-warnung/40 bg-warnung/10 px-3 py-2 text-sm text-warnung">
+        Der Aufgaben-Dienst antwortet gerade nicht. Die Aufgaben dieses Projekts sind nicht verloren, nur nicht abrufbar.
+      </p>
+    {:else if alleAufgaben.length === 0}
       <p class="text-sm text-muted">Keine Aufgaben.</p>
     {:else}
-      <ul class="divide-y divide-border rounded-lg border border-border">
-        {#each uniqueBy(data.tasks, (x) => x.id) as t (t.id)}
-          <li class="flex items-center gap-3 px-3 py-2 text-sm">
-            <form method="POST" action="?/taskStatus" use:enhance>
-              <input type="hidden" name="id" value={t.id} />
-              <input type="hidden" name="status" value={t.status === 'done' ? 'open' : 'done'} />
-              <button class="transition-colors duration-fast ease-saganta {t.status === 'done' ? 'text-erfolg' : 'text-muted hover:text-text'}" title="Status umschalten" aria-label="Status umschalten"><Icon name={t.status === 'done' ? 'square-check' : 'square'} size={18} /></button>
-            </form>
-            <span class="flex-1 {t.status === 'done' ? 'text-muted line-through' : ''}">{t.title}</span>
-            <span class="text-xs text-muted">{fmtMinutes(t.remaining_minutes ?? t.estimated_minutes)}</span>
-            {#if t.can_schedule}<span class="text-xs text-akzent">planbar</span>{/if}
-            {#if t.scheduled_event_id}<span class="text-erfolg" title="im Kalender"><Icon name="clock" size={13} label="im Kalender" /></span>{/if}
-            <form method="POST" action="?/deleteTask" use:enhance>
-              <input type="hidden" name="id" value={t.id} />
-              <button class="text-muted transition-colors duration-fast ease-saganta hover:text-fehler" title="Löschen" aria-label="Löschen"><Icon name="x" size={14} /></button>
-            </form>
-          </li>
-        {/each}
-      </ul>
+      {#if offene.length === 0}
+        <p class="text-sm text-muted">Nichts offen.</p>
+      {:else}
+        <p class="mb-2 text-xs text-muted">{offene.length} offen{offene.some((a) => a.prioritaet === 'hoch') ? `, davon ${offene.filter((a) => a.prioritaet === 'hoch').length} hoch` : ''}</p>
+        <ul class="divide-y divide-border rounded-lg border border-border">
+          {#each offene as t (t.id)}
+            {@render aufgabenZeile(t)}
+          {/each}
+        </ul>
+      {/if}
+      {#if erledigte.length}
+        <details class="mt-4">
+          <summary class="cursor-pointer text-sm text-muted hover:text-text">Erledigt ({erledigte.length})</summary>
+          <ul class="mt-2 divide-y divide-border rounded-lg border border-border">
+            {#each erledigte as t (t.id)}
+              {@render aufgabenZeile(t)}
+            {/each}
+          </ul>
+        </details>
+      {/if}
     {/if}
 
   {:else if tab === 'milestones'}
@@ -345,42 +389,21 @@
     </form>
 
   {:else if tab === 'calendar'}
-    <p class="mb-3 text-sm text-muted">Aus dem Kalender zurückgemeldete geplante Arbeitsblöcke.</p>
-    {#if data.timeBlocks.length === 0}
-      <p class="text-sm text-muted">Noch nichts geplant. Nutze „Im Kalender planen" oben.</p>
+    <p class="mb-3 text-sm text-muted">
+      Aufgaben dieses Projekts mit Tag oder Uhrzeit. Eingeplant wird in Saganta Aufgaben („Tag planen") oder über „Zeit einplanen" oben.
+    </p>
+    {#if data.aufgabenFehlen}
+      <p class="text-sm text-warnung">Der Aufgaben-Dienst antwortet gerade nicht.</p>
+    {:else if eingeplant.length === 0}
+      <p class="text-sm text-muted">Nichts eingeplant.</p>
     {:else}
       <ul class="divide-y divide-border rounded-lg border border-border text-sm">
-        {#each uniqueBy(data.timeBlocks, (x) => x.id) as b (b.id)}
-          <li class="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-            <div class="min-w-0">
-              <span
-                >{b.planned_start ? b.planned_start.slice(0, 16).replace('T', ' ') : '–'} → {b.planned_end
-                  ? b.planned_end.slice(11, 16)
-                  : '–'}</span
-              >
-              <span class="ml-2 text-muted"
-                >{b.status}{b.actual_minutes ? ` · ${fmtMinutes(b.actual_minutes)}` : ''}</span
-              >
-            </div>
-            {#if b.status !== 'done'}
-              <form method="POST" action="?/worklog" use:enhance class="flex items-center gap-2">
-                <input type="hidden" name="calendar_event_id" value={b.calendar_event_id ?? ''} />
-                <input type="hidden" name="task_id" value={b.task_id ?? ''} />
-                <input
-                  name="actual_minutes"
-                  type="number"
-                  min="0"
-                  step="5"
-                  placeholder="Min."
-                  required
-                  class="w-20 rounded-md border border-border-stark bg-surface px-2 py-1 text-sm"
-                />
-                <label class="flex items-center gap-1 text-xs text-muted">
-                  <input type="checkbox" name="completed" /> fertig
-                </label>
-                <Button type="submit" variant="ghost">Buchen</Button>
-              </form>
-            {/if}
+        {#each eingeplant as a (a.id)}
+          <li class="flex items-center justify-between gap-3 px-3 py-2">
+            <a href={aufgabeUrl(a.id, host)} class="min-w-0 truncate hover:underline">{a.titel}</a>
+            <span class="shrink-0 text-xs text-muted">
+              {a.start ? a.start.slice(0, 16).replace('T', ' ') : a.tag}{a.ende ? `–${a.ende.slice(11, 16)}` : ''}{a.dauer_min && !a.ende ? ` · ${fmtMinutes(a.dauer_min)}` : ''}
+            </span>
           </li>
         {/each}
       </ul>
@@ -400,7 +423,7 @@
     <ul class="divide-y divide-border rounded-lg border border-border text-sm">
       {#each uniqueBy(data.assets, (x) => x.id) as a (a.id)}
         <li class="flex items-center gap-3 px-3 py-2">
-          <span class="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] uppercase text-muted">{a.type}</span>
+          <span class="rounded bg-surface-2 px-1.5 py-0.5 text-xs uppercase text-muted">{a.type}</span>
           <span class="font-medium">{a.label}</span>
           {#if a.url}<a href={a.url} class="text-akzent hover:text-akzent-stark" target="_blank" rel="noreferrer">{a.value}</a>{:else}<span class="text-muted">{a.value}</span>{/if}
           <form method="POST" action="?/deleteAsset" use:enhance class="ml-auto">
@@ -521,3 +544,33 @@
     </div>
   {/if}
 </div>
+
+{#snippet aufgabenZeile(t: Aufgabe)}
+  <li class="flex items-start gap-3 px-3 py-2 text-sm {t.wartet && !t.erledigt ? 'opacity-60' : ''}">
+    <form method="POST" action="?/taskStatus" use:enhance>
+      <input type="hidden" name="id" value={t.id} />
+      <input type="hidden" name="erledigt" value={t.erledigt ? 'nein' : 'ja'} />
+      <button class="transition-colors duration-fast ease-saganta {t.erledigt ? 'text-erfolg' : 'text-muted hover:text-text'}" title="Abhaken umschalten" aria-label="Abhaken umschalten"><Icon name={t.erledigt ? 'square-check' : 'square'} size={18} /></button>
+    </form>
+    <div class="min-w-0 flex-1">
+      <a
+        href={aufgabeUrl(t.id, host)}
+        class="hover:underline {t.erledigt ? 'text-muted line-through' : ''}"
+        title="In Saganta Aufgaben öffnen">{t.titel}</a
+      >
+      {#if t.notiz}
+        <p class="mt-0.5 whitespace-pre-line text-xs text-muted">{t.notiz}</p>
+      {/if}
+      {#if t.wartet && !t.erledigt}
+        <p class="mt-0.5 text-xs text-muted">wartet{t.wartet_bis ? ` bis ${t.wartet_bis}` : ''}{t.wartet_grund ? `: ${t.wartet_grund}` : ''}</p>
+      {/if}
+    </div>
+    {#if t.faellig && !t.erledigt}<span class="text-xs {t.faellig < heute ? 'text-warnung' : 'text-muted'}">fällig {t.faellig}</span>{/if}
+    {#if t.dauer_min}<span class="text-xs text-muted">{fmtMinutes(t.dauer_min)}</span>{/if}
+    {#if t.prioritaet === 'hoch' && !t.erledigt}<span class="text-xs text-akzent">hoch</span>{/if}
+    <form method="POST" action="?/deleteTask" use:enhance>
+      <input type="hidden" name="id" value={t.id} />
+      <button class="text-muted transition-colors duration-fast ease-saganta hover:text-fehler" title="Löschen" aria-label="Löschen"><Icon name="x" size={14} /></button>
+    </form>
+  </li>
+{/snippet}

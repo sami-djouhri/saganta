@@ -31,16 +31,19 @@
       >
         <div class="flex items-start justify-between gap-2">
           <span class="font-medium leading-tight group-hover:text-text">{p.name}</span>
-          <span class="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] uppercase text-muted"
-            >P{p.priority}</span
+          <span class="shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted"
+            >Prio {p.priority}</span
           >
         </div>
         {#if p.domain}
-          <span class="truncate text-[11px] text-muted">{p.domain}</span>
+          <span class="truncate text-xs text-muted">{p.domain}</span>
         {/if}
-        <div class="flex flex-wrap gap-1 text-[11px] text-muted">
+        <div class="flex flex-wrap gap-1 text-xs text-muted">
           <span class="rounded bg-surface px-1.5 py-0.5">{PROJECT_TYPES[p.type] ?? p.type}</span>
           <span class="rounded bg-surface px-1.5 py-0.5">{PROJECT_STATUS[p.status] ?? p.status}</span>
+          {#if p.open_high}
+            <span class="rounded bg-surface px-1.5 py-0.5 text-akzent">{p.open_high} hoch</span>
+          {/if}
           {#if p.open_tasks}
             <span class="rounded bg-surface px-1.5 py-0.5">{p.open_tasks} offen</span>
           {/if}
@@ -52,7 +55,7 @@
              da und war bei den meisten Projekten leer: `mt-auto` schob sie nach
              unten und zog jede Kachel um eine leere Zeile auseinander. -->
         {#if p.deadline_date || p.weekly_time_budget_minutes}
-          <div class="mt-auto flex items-center justify-between text-[11px] text-muted">
+          <div class="mt-auto flex items-center justify-between text-xs text-muted">
             <span>{p.deadline_date ? `⏱ ${p.deadline_date}` : ''}</span>
             <span>{p.weekly_time_budget_minutes ? fmtMinutes(p.weekly_time_budget_minutes) + '/Wo' : ''}</span>
           </div>

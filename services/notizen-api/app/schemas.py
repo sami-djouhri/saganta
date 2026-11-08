@@ -247,3 +247,14 @@ class OeffnenAn(BaseModel):
 
 
 NotizAus.model_rebuild()
+
+
+class PapierkorbAus(BaseModel):
+    """Eine geloeschte Notiz im Papierkorb (30 Tage)."""
+
+    id: int
+    titel: str
+    geloescht_am: datetime
+    #: Wie viele Anhaenge die Notiz hatte; sie kommen nicht mit zurueck.
+    anhaenge: int = 0
+

@@ -163,18 +163,38 @@ nicht aus. Hier ist Nichtstun reversibel und Tun nicht.
 
 ### Was ausdruecklich nicht dazugehoert
 
-**Das Konto in der Anmelde-Datenbank** (`saganta-auth`) wird hier nicht
-geloescht. Reihenfolge ist: erst die Daten, dann die Anmeldung. Andersherum
-entsteht genau der verwaiste Bestand, gegen den das Ganze gebaut ist.
+Nichts mehr: seit 2026-11-08 entfernt `konto-loeschen.py --loeschen` als
+**letzten** Schritt auch die Anmeldung (Konto, Sitzungen per CASCADE,
+Reset-Tokens in `verification`). Reihenfolge ist: erst die Daten, dann die
+Anmeldung. Andersherum entsteht genau der verwaiste Bestand, gegen den das
+Ganze gebaut ist. Das Werkzeug haelt sie selbst ein:
+
+* Die Anmeldung faellt nur, wenn jeder verkettete Dienst sauber war und im
+  Kalender nichts mehr liegt (dort zuerst von Hand, Befehl im Bericht).
+* Ein Dienst, der nicht laeuft, blockiert, bis man ihn mit `--ohne <container>`
+  ausdruecklich als ungeprueft hinnimmt. Ob er laut control-map ruhen darf,
+  steht daneben (`scripts/konto_soll.py`).
+* **Der Owner ist gesperrt, und zwar vor dem ersten Loeschschritt.** Vorher
+  haette ein `--loeschen` mit seinem Sub den Bestand in zehn Diensten entfernt.
+  Ist sein Sub nicht bestimmbar (Lager aus), loescht das Werkzeug gar nicht.
+* Warum kein Weg im Auth-Dienst (Entscheid 08.11.): er braeuchte
+  Docker-Zugriff oder eine Loeschroute, also genau die Fernbedienung von oben.
+
+Gemessen am 2026-11-08 mit einem Probekonto `@example.invalid` samt Sitzung und
+Reset-Token: ohne `--ohne` bleibt die Anmeldung stehen (rc 1), mit `--ohne` fuer
+die vier ruhenden Dienste sind alle drei Zeilen weg (rc 0), die echten Konten
+unberuehrt.
 
 ## Was als naechstes zu tun ist
 
-1. `saganta-auth` bekommt einen Weg, der das Werkzeug ruft und **danach** das
-   Konto entfernt, damit die Reihenfolge nicht von Hand eingehalten werden muss.
-2. Eine Wache, die meldet, wenn ein Profil ohne Konto arbeitet. Der Befund von
-   damals waere so am ersten Morgen aufgefallen statt in der achten Nacht.
-3. `loeschwege-abgleichen.py` in einen Timer, damit eine neue Tabelle auch dann
-   auffaellt, wenn niemand die Tests laufen laesst.
+1. ✅ 2026-11-08: die Anmeldung faellt als letzter Schritt des Werkzeugs (oben).
+2. ✅ 2026-11-08: Wache interne Notiz (taeglich): fuehrt
+   `verwaiste-mandanten.py` und `loeschwege-abgleichen.py` mit `--herzschlag`
+   aus. Beide kennen jetzt den Soll-Zustand: ein ruhender Dienst ist kein
+   Befund, ein gestoppter wird aber auch nicht mehr still als „0 Mandanten"
+   gezaehlt (das tat `verwaiste-mandanten.py` bis dahin bei briefkasten und
+   tagebuch).
+3. ✅ siehe 2.
 4. Offen und bewusst nicht geloest: der Volltextindex haelt nach dem Loeschen
    **Tombstones** (FTS5 traegt ein `delete`-Kommando nach, raeumt die Bloecke
    aber erst beim Zusammenlegen). Logisch ist der Treffer weg, physisch koennen

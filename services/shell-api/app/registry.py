@@ -88,6 +88,19 @@ VORLAGEN: list[AppVorlage] = [
         tags=("core", "productivity"),
     ),
     AppVorlage(
+        id="kontakte",
+        name="Kontakte",
+        description=(
+            "Menschen mit Telefon, Mail, Adresse, Geburtstag und Jahrestagen. "
+            "Verknuepft mit Terminen und Notizen."
+        ),
+        sub="kontakte",
+        # Seit 2026-11-07, heim-only wie die ganze Suite (Entscheid 21.10.).
+        nur_heim=True,
+        icon="users",
+        tags=("core", "productivity"),
+    ),
+    AppVorlage(
         id="news",
         name="News",
         description="Nachrichtenquellen und das persoenliche Briefing.",
@@ -154,12 +167,16 @@ VORLAGEN: list[AppVorlage] = [
         icon="book",
         tags=("core", "productivity"),
     ),
+    # `assets` (Besitz) ist am 2026-11-01 im Lager aufgegangen und stand hier
+    # noch einen Tag als tote Kachel; `app-katalog-abgleich.py` meldete es.
     AppVorlage(
-        id="assets",
-        name="Besitz",
-        description="Geraete, Garantien und Marktwerte.",
-        sub="assets",
-        icon="box",
+        id="einkaufsliste",
+        name="Einkaufsliste",
+        description="Was fehlt, von selbst aus Vorrat und Essensplan.",
+        # Eigener Dienst seit 2026-11-01 (docker/einkaufsliste), nur im Heimnetz.
+        sub="einkaufsliste",
+        nur_heim=True,
+        icon="shopping-cart",
         tags=("productivity",),
     ),
     AppVorlage(
@@ -189,6 +206,53 @@ VORLAGEN: list[AppVorlage] = [
         sub="fitness",
         icon="dumbbell",
         tags=("core", "productivity"),
+    ),
+    AppVorlage(
+        id="finanzen",
+        name="Finanzen",
+        description=(
+            "Konten, Buchungen, Prognose ueber Jahre, Budgets und Depot. "
+            "Eigener Dienst hinter Authelia."
+        ),
+        sub="finanzen",
+        icon="trending-up",
+        tags=("productivity",),
+        nur_heim=True,
+    ),    AppVorlage(
+        id="medien",
+        name="Medien",
+        description="Filme, Serien, Buecher, Spiele und Musik: Bestand, Verkauf, Bewertung.",
+        sub="medien",
+        icon="library",
+        tags=("productivity",),
+        nur_heim=True,
+    ),
+    AppVorlage(
+        id="wissen",
+        name="Wissen",
+        description="Eine Suche ueber das Offline-Wissen: Wiki, Buecher, Dokumente, Anleitungen.",
+        sub="wissen",
+        icon="lightbulb",
+        tags=("productivity",),
+        nur_heim=True,
+    ),
+    AppVorlage(
+        id="bibliothek",
+        name="Bibliothek",
+        description="Die Hausbibliothek zum Lesen, mit Lesestand und Notizen.",
+        sub="bibliothek",
+        icon="book-open",
+        tags=("productivity",),
+        nur_heim=True,
+    ),
+    AppVorlage(
+        id="karten",
+        name="Karten",
+        description="Offline-Karten mit Suche, Routen und Bus und Bahn.",
+        sub="karten",
+        icon="map",
+        tags=("productivity",),
+        nur_heim=True,
     ),
 ]
 

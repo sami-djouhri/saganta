@@ -4,15 +4,16 @@
 WOZU: Jede App traegt unter ihrer Kopfleiste ein 2-px-Band mit eigenem
 Strichrhythmus (`signatur` in `packages/ui/src/apps.ts`). Ob zwoelf solche
 Rhythmen nebeneinander wirklich unterscheidbar sind, laesst sich am Quelltext
-nicht beurteilen -- und einzeln betrachtet sieht jeder von ihnen richtig aus.
+nicht beurteilen, und einzeln betrachtet sieht jeder von ihnen richtig aus.
 Die Baender einer App zu sehen, hiesse sich anzumelden und durchzuklicken.
 
 Diese Probe liest die Muster aus dem Katalog (also aus der einen Quelle, nicht
-aus einer Kopie), legt sie untereinander und fotografiert sie in allen drei
-Erscheinungsbildern. Was hier gleich aussieht, ist gleich.
+aus einer Kopie), legt sie untereinander und fotografiert sie in der
+Nachtstudie. Was hier gleich aussieht, ist gleich. Bis 2026-11-02 waren es drei
+Bilder (dunkel, hell, Hochkontrast); seither gibt es nur Dunkel.
 
 Aufruf:  scripts/signatur-probe.py [zielordner]
-Ergebnis: <ziel>/signaturen-<theme>.png
+Ergebnis: <ziel>/signaturen.png
 """
 import pathlib
 import re
@@ -42,7 +43,7 @@ def muster_lesen():
     return eintraege
 
 
-def seite(eintraege, theme):
+def seite(eintraege):
     zeilen = []
     for kennung, name, wert in eintraege:
         zeilen.append(
@@ -50,11 +51,9 @@ def seite(eintraege, theme):
             f'<span class="kennung">{kennung}</span></div>'
             f'<div class="band" style="background-image:{wert}"></div></div>')
     return f"""<!doctype html>
-<html lang="de" data-theme="{theme}"><head><meta charset="utf-8">
+<html lang="de"><head><meta charset="utf-8">
 <style>
   :root {{ --grund:#161310; --schrift:#f3ede2; --strich:#7c7264; }}
-  [data-theme=light] {{ --grund:#f5f0e8; --schrift:#1a140c; --strich:#7c7264; }}
-  [data-theme=hc] {{ --grund:#000; --schrift:#fff; --strich:#ff0; }}
   body {{ margin:0; padding:28px 32px; background:var(--grund); color:var(--schrift);
          font-family: ui-sans-serif, system-ui, sans-serif; }}
   h1 {{ font-size:15px; font-weight:600; margin:0 0 4px; }}
@@ -64,7 +63,7 @@ def seite(eintraege, theme):
   .kennung {{ opacity:.5; font-family: ui-monospace, monospace; font-size:10px; }}
   .band {{ height:2px; width:100%; color:var(--strich); }}
 </style></head><body>
-<h1>Signaturlinien der Saganta-Apps &mdash; {theme}</h1>
+<h1>Signaturlinien der Saganta-Apps</h1>
 <p class="hinweis">Gelesen aus packages/ui/src/apps.ts. Zwei Baender, die hier
 gleich aussehen, sind in der Oberflaeche nicht zu unterscheiden.</p>
 {chr(10).join(zeilen)}
@@ -91,18 +90,17 @@ def main():
     if not CHROME.exists() and not shutil.which("chromium"):
         print(f"Kein Chromium unter {CHROME}; nur die HTML-Dateien geschrieben.")
 
-    for theme in ("dark", "light", "hc"):
-        html = ziel / f"signaturen-{theme}.html"
-        html.write_text(seite(eintraege, theme), encoding="utf-8")
-        if CHROME.exists():
-            subprocess.run(
-                [str(CHROME), "--headless", "--no-sandbox", "--disable-gpu",
-                 "--disable-dev-shm-usage", "--hide-scrollbars",
-                 "--virtual-time-budget=3000",
-                 f"--screenshot={ziel}/signaturen-{theme}.png",
-                 "--window-size=760,700", f"file://{html}"],
-                capture_output=True)
-            print(f"  {ziel}/signaturen-{theme}.png")
+    html = ziel / "signaturen.html"
+    html.write_text(seite(eintraege), encoding="utf-8")
+    if CHROME.exists():
+        subprocess.run(
+            [str(CHROME), "--headless", "--no-sandbox", "--disable-gpu",
+             "--disable-dev-shm-usage", "--hide-scrollbars",
+             "--virtual-time-budget=3000",
+             f"--screenshot={ziel}/signaturen.png",
+             "--window-size=760,700", f"file://{html}"],
+            capture_output=True)
+        print(f"  {ziel}/signaturen.png")
     return 1 if kollisionen else 0
 
 

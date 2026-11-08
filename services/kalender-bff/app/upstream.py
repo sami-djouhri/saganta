@@ -90,6 +90,7 @@ async def upstream(
     *,
     params: dict | None = None,
     json: dict | None = None,
+    timeout: float | None = None,
 ) -> httpx.Response:
     """Ein Aufruf an den nativen Kalender, mit Session und Fehlerübersetzung.
 
@@ -104,9 +105,14 @@ async def upstream(
     """
     async with authed_kalender_client() as client:
         try:
-            r = await client.request(method, path, params=params, json=json)
+            r = await client.request(
+                method, path, params=params, json=json,
+                **({"timeout": timeout} if timeout else {}),
+            )
         except httpx.HTTPError as e:
-            raise HTTPException(502, f"kalender upstream unreachable: {e}") from e
+            # repr statt str: eine Zeitueberschreitung hat einen leeren Text,
+            # und „unreachable: " sah im Log aus wie ein toter Dienst.
+            raise HTTPException(502, f"kalender upstream unreachable: {e!r}") from e
     if r.status_code >= 400:
         raise HTTPException(r.status_code, f"kalender error: {r.text[:200]}")
     return r

@@ -332,7 +332,7 @@
           ></div>
         {/each}
       </div>
-      <p class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
+      <p class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
         {#each anteil as teil (teil.art)}
           <span class="inline-flex items-center gap-1">
             <span
@@ -393,7 +393,7 @@
             style="background: {ART_FARBE[block.art] ?? ART_FARBE.puffer}"
           ></span>
 
-          <span class="flex w-12 shrink-0 flex-col justify-center py-2 text-[11px] tabular-nums text-muted">
+          <span class="flex w-12 shrink-0 flex-col justify-center py-2 text-xs tabular-nums text-muted">
             <span>{vorlaeufigeZeiten?.[index]?.start ?? uhrzeit(block.start)}</span>
             <span class="opacity-60">
               {vorlaeufigeZeiten?.[index]?.ende ?? uhrzeit(block.ende)}
@@ -404,12 +404,12 @@
             <span class="flex items-center gap-1.5 text-sm">
               <Icon name={ART_ICON[block.art] ?? 'circle'} size={13} />
               <span class="truncate {verworfen ? 'line-through' : ''}">{block.titel}</span>
-              <span class="shrink-0 text-[11px] text-muted tabular-nums">{dauer(block.minuten)}</span>
+              <span class="shrink-0 text-xs text-muted tabular-nums">{dauer(block.minuten)}</span>
             </span>
             {#if verworfen}
-              <span class="mt-0.5 text-[11px] text-muted">war geplant, fand nicht statt</span>
+              <span class="mt-0.5 text-xs text-muted">war geplant, fand nicht statt</span>
             {:else if block.begruendung}
-              <span class="mt-0.5 truncate text-[11px] text-muted">{block.begruendung}</span>
+              <span class="mt-0.5 truncate text-xs text-muted">{block.begruendung}</span>
             {/if}
           </span>
 

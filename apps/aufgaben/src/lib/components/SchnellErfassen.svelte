@@ -64,7 +64,7 @@
   {#if mehr}
     <div class="mt-3 grid gap-2 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-4">
       <label class="space-y-1">
-        <span class="text-[11px] uppercase tracking-wider text-muted">Fällig</span>
+        <span class="text-xs uppercase tracking-wider text-muted">Fällig</span>
         <input
           type="date"
           name="faellig"
@@ -73,7 +73,7 @@
         />
       </label>
       <label class="space-y-1">
-        <span class="text-[11px] uppercase tracking-wider text-muted">Priorität</span>
+        <span class="text-xs uppercase tracking-wider text-muted">Priorität</span>
         <select
           name="prioritaet"
           class="w-full rounded-md border border-border-stark bg-surface px-2 py-1.5 text-sm"
@@ -84,7 +84,7 @@
         </select>
       </label>
       <label class="space-y-1">
-        <span class="text-[11px] uppercase tracking-wider text-muted">Dauer (min)</span>
+        <span class="text-xs uppercase tracking-wider text-muted">Dauer (min)</span>
         <input
           type="number"
           name="dauer"
@@ -96,7 +96,7 @@
         />
       </label>
       <label class="space-y-1">
-        <span class="text-[11px] uppercase tracking-wider text-muted">Projekt</span>
+        <span class="text-xs uppercase tracking-wider text-muted">Projekt</span>
         <select
           name="projekt"
           class="w-full rounded-md border border-border-stark bg-surface px-2 py-1.5 text-sm"

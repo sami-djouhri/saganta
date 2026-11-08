@@ -6,10 +6,10 @@ import {
   shellApiToken,
   type ShellApiSettings,
 } from '$lib/shell-api';
-import { setThemeCookie } from '@saganta/auth';
 import type { Actions, PageServerLoad } from './$types';
 
-const THEMES = new Set(['auto', 'dark', 'light', 'hc']);
+// Kein Theme mehr: seit 2026-11-02 gibt es nur die Nachtstudie (Entscheid),
+// ein Umschalter waere ein Knopf, der nichts tut.
 const LOCALES = new Set(['de-DE', 'en-US']);
 
 export const load: PageServerLoad = async ({ locals, fetch }) => {
@@ -30,18 +30,13 @@ export const load: PageServerLoad = async ({ locals, fetch }) => {
 };
 
 export const actions: Actions = {
-  save: async ({ request, locals, fetch, cookies, url }) => {
+  save: async ({ request, locals, fetch }) => {
     if (!locals.user) return fail(401, { error: 'no session' });
     if (!env.SHELL_API_BASE_URL) return fail(503, { error: 'shell-api not configured' });
 
     const data = await request.formData();
-    const theme = String(data.get('theme') ?? '');
     const locale = String(data.get('locale') ?? '');
-    if (!THEMES.has(theme)) return fail(400, { error: `Unbekanntes Theme: ${theme}` });
     if (!LOCALES.has(locale)) return fail(400, { error: `Unbekanntes Locale: ${locale}` });
-
-    // Suite-weit propagieren: alle App-Subdomains lesen dieses Cookie fürs Theme.
-    setThemeCookie(cookies, url.hostname, url.protocol === 'https:', theme);
 
     const token = shellApiToken(locals.user, backendSecret());
     try {
@@ -52,7 +47,7 @@ export const actions: Actions = {
         fetch,
         {
           method: 'PATCH',
-          body: JSON.stringify({ theme, locale }),
+          body: JSON.stringify({ locale }),
           headers: { 'Content-Type': 'application/json' },
         },
       );

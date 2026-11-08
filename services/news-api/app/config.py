@@ -56,8 +56,8 @@ class Settings(BaseSettings):
     # Leer = offen (Rückwärtskompatibilität).
     allowed_subs: Annotated[list[str], NoDecode] = []
 
-    # Wer darf Tarife setzen (Pro vergeben)? Bis Stripe live ist, vergibt der Owner
-    # Pro manuell. Leer = niemand (Set-Plan-Endpoint aus).
+    # Wer darf die Kostenbremse eines Kontos setzen (/admin/set-plan)?
+    # Leer = niemand (Endpoint aus).
     admin_subs: Annotated[list[str], NoDecode] = []
 
     # Interne Adresse des auth-service. Dorthin geht der Tarif, denn er gehoert
@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # naechste Tick nach (der laeuft jede Minute). Das glaettet die Spitze,
     # statt jemanden auszulassen.
     briefing_audio_max_per_tick: int = 2
+
+    # Das Briefing kommt zur Aufstehzeit aus dem Schlafplan des Kalenders
+    # (`aufstehen` in Ebene 1), abzueglich dieses Vorlaufs. `delivery_time`
+    # bleibt der Rueckfall, wenn der Kalender keine Zeit liefert.
+    # Vorgabe 0, nicht "fertig vor dem Aufstehen": das fertige Briefing
+    # loest zwei Pushes aufs Telefon aus (ntfy ueber briefing-relay und HA
+    # `briefing_push`), mit Vorlauf also vor dem Wecker.
+    briefing_vorlauf_min: int = 0
 
     # LLM-Gateway (LiteLLM, OpenAI-Format /v1/chat/completions). Leer => keine
     # LLM-Zusammenfassung, Briefing fällt auf Roh-Feed-Summaries zurück (Soft-Fail).
@@ -164,16 +172,6 @@ class Settings(BaseSettings):
     # bisher, nur der unsignierte Header. Muss identisch zu KALENDER_TENANT_SECRET
     # im nativen Kalender sein.
     kalender_tenant_secret: str = ""
-
-    # ── Stripe (Self-Service-Payment für Pro) ───────────────────────────────
-    # Leerer stripe_secret_key => Stripe AUS (Checkout gibt 503, Owner vergibt Pro
-    # weiter manuell via /admin/set-plan). Soft-Fail wie tts_url/llm_gateway.
-    stripe_secret_key: str = ""
-    stripe_webhook_secret: str = ""
-    stripe_price_id_pro: str = ""
-    # Wohin Stripe nach Checkout zurückleitet (absolute URLs im news-Frontend).
-    stripe_success_url: str = ""
-    stripe_cancel_url: str = ""
 
     @field_validator("cors_origins", "allowed_subs", "admin_subs", mode="before")
     @classmethod

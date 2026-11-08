@@ -117,6 +117,9 @@
 
   // Briefe (single-tenant Briefkasten) nur für Berechtigte; Nicht-Owner sehen nur Mail.
   const canSeeLetters = $derived(feed.canSeeLetters);
+  // E-Mail ist seit 2026-11-05 stillgelegt (`mailAktiv` in post-api.ts). Dann
+  // bleibt Post eine Briefliste: keine Reiter, keine Mail-Filter, kein Verfassen.
+  const mailAn = $derived(feed.mailAktiv);
   const tabs = $derived(
     [
       { key: 'all', label: 'Alle' },
@@ -249,13 +252,18 @@
   <div>
     <h1 class="font-display text-4xl tracking-tight">Post</h1>
     <p class="mt-2 text-sm text-muted">
-      {canSeeLetters ? 'Briefe und alle E-Mail-Konten in einer Inbox.' : 'Alle E-Mail-Konten in einer Inbox.'}
-      <span class="ml-1">
-        {#if canSeeLetters}{feed.counts.letters}
-          {feed.counts.letters === 1 ? 'Brief' : 'Briefe'} ·
-        {/if}{feed.counts.mail}
-        {feed.counts.mail === 1 ? 'Mail' : 'Mails'}
-      </span>
+      {#if !mailAn}
+        Deine Briefe.
+        <span class="ml-1">{feed.counts.letters} {feed.counts.letters === 1 ? 'Brief' : 'Briefe'}</span>
+      {:else}
+        {canSeeLetters ? 'Briefe und alle E-Mail-Konten in einer Inbox.' : 'Alle E-Mail-Konten in einer Inbox.'}
+        <span class="ml-1">
+          {#if canSeeLetters}{feed.counts.letters}
+            {feed.counts.letters === 1 ? 'Brief' : 'Briefe'} ·
+          {/if}{feed.counts.mail}
+          {feed.counts.mail === 1 ? 'Mail' : 'Mails'}
+        </span>
+      {/if}
     </p>
   </div>
   <div class="mt-1 flex shrink-0 items-center gap-2">
@@ -268,12 +276,14 @@
         <Icon name="inbox" size={15} /> Briefkasten
       </a>
     {/if}
-    <a
-      href="/accounts"
-      class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted transition-colors duration-fast ease-saganta hover:text-text"
-    >
-      <Icon name="settings" size={15} /> Konten
-    </a>
+    {#if mailAn}
+      <a
+        href="/accounts"
+        class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted transition-colors duration-fast ease-saganta hover:text-text"
+      >
+        <Icon name="settings" size={15} /> Konten
+      </a>
+    {/if}
   </div>
 </header>
 
@@ -308,6 +318,7 @@
 <!-- Werkzeugleiste: Quelle, Filter, Suche, Verfassen -->
 <section class="mb-6 space-y-3">
   <div class="flex flex-wrap items-center gap-2">
+    {#if mailAn}
     <div class="inline-flex rounded-lg border border-border bg-surface-2/30 p-0.5">
       {#each tabs as t (t.key)}
         <a
@@ -326,8 +337,9 @@
         </a>
       {/each}
     </div>
+    {/if}
 
-    {#if opts.source !== 'letter'}
+    {#if mailAn && opts.source !== 'letter'}
       <a
         href={hrefWith({ unread: !opts.unreadOnly })}
         class="rounded-md border px-3 py-1.5 text-sm transition-colors duration-fast ease-saganta {opts.unreadOnly
@@ -348,7 +360,7 @@
       </a>
     {/if}
 
-    {#if feed.accounts.length > 1 && opts.source !== 'letter'}
+    {#if mailAn && feed.accounts.length > 1 && opts.source !== 'letter'}
       <select
         class="rounded-md border border-border-stark bg-surface-2/30 px-2 py-1.5 text-sm text-muted"
         value={opts.accountId ? String(opts.accountId) : ''}
@@ -386,6 +398,7 @@
           />
         </label>
       </form>
+      {#if mailAn}
       <a
         href={hrefWith({ verfassen: 'neu', offen: null })}
         class="inline-flex items-center gap-1.5 rounded-md border border-accent-700 bg-accent-700/10 px-3 py-1.5 text-sm text-akzent transition-colors duration-fast ease-saganta hover:bg-accent-700/20"
@@ -393,6 +406,7 @@
         <Icon name="mail" size={15} />
         Verfassen
       </a>
+      {/if}
     </div>
   </div>
 
@@ -778,12 +792,18 @@
         <Icon name="mail" size={24} />
       </div>
       <p class="text-text">Noch nichts in deiner Post.</p>
-      <p class="mt-1 text-sm text-muted">
-        <a href="/accounts" class="text-akzent hover:text-akzent-stark">Verbinde ein Mailkonto</a>
-        {#if canSeeLetters}
-          oder <a href={briefkastenUrl} class="text-akzent hover:text-akzent-stark">scanne einen Brief</a>
-        {/if}.
-      </p>
+      {#if mailAn}
+        <p class="mt-1 text-sm text-muted">
+          <a href="/accounts" class="text-akzent hover:text-akzent-stark">Verbinde ein Mailkonto</a>
+          {#if canSeeLetters}
+            oder <a href={briefkastenUrl} class="text-akzent hover:text-akzent-stark">scanne einen Brief</a>
+          {/if}.
+        </p>
+      {:else if canSeeLetters}
+        <p class="mt-1 text-sm text-muted">
+          <a href={briefkastenUrl} class="text-akzent hover:text-akzent-stark">Scanne einen Brief</a>.
+        </p>
+      {/if}
     {/if}
   </div>
 {:else}
@@ -835,7 +855,7 @@
             {#if item.tags?.length}
               <div class="mt-1 flex flex-wrap gap-1">
                 {#each item.tags as t (t.id)}
-                  <span class="rounded-full border border-border px-1.5 py-0.5 text-[11px] text-muted/70">
+                  <span class="rounded-full border border-border px-1.5 py-0.5 text-xs text-muted/70">
                     {t.name}
                   </span>
                 {/each}

@@ -115,11 +115,22 @@
       {@const isToday = day === today}
       {@const isSel = day === selectedDay}
       {@const weekend = isWeekend(day)}
-      <button
-        type="button"
+      <!-- div statt button: die Termin-Chips darin sind Knoepfe, und ein Knopf
+           im Knopf ist ungueltiges HTML (der Browser bricht ihn beim Laden auf,
+           svelte-check warnte). Tastatur wie ein Knopf: Enter und Leertaste. -->
+      <div
+        role="button"
+        tabindex="0"
+        aria-label="Tag {day}"
         onclick={() => onSelectDay(day)}
+        onkeydown={(e) => {
+          if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            onSelectDay(day);
+          }
+        }}
         style={dt && DAYTYPE_TINT[dt] ? `background-color:${DAYTYPE_TINT[dt]}` : ''}
-        class="group relative flex min-h-[6.5rem] flex-col gap-1 border-b border-r border-border/70 p-1.5 text-left transition-colors hover:bg-accent-500/[0.06] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-500
+        class="group relative flex min-h-14 cursor-pointer sm:min-h-[6.5rem] flex-col gap-1 border-b border-r border-border/70 p-1.5 text-left transition-colors hover:bg-accent-500/[0.06] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-500
           {idx % 7 === 6 ? 'border-r-0' : ''}
           {idx >= 35 ? 'border-b-0' : ''}
           {!inMonth ? 'opacity-45' : ''}
@@ -139,7 +150,7 @@
           </span>
           {#if dt}
             <span
-              class="hidden items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-muted sm:inline-flex"
+              class="hidden items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-muted sm:inline-flex"
             >
               <span class="h-1.5 w-1.5 rounded-full" style="background-color:{DAYTYPE_DOT[dt]}"
               ></span>
@@ -148,13 +159,25 @@
           {/if}
         </div>
 
+        <!-- Am Handy ist eine Zelle gut 50 px breit; Titel wurden dort zu „0…".
+             Stattdessen ein Punkt je Termin, Tippen auf den Tag zeigt die Liste
+             im Tages-Detail darunter (Entscheid 08.11.). -->
+        {#if chipEvs.length || holiday}
+          <div class="flex flex-wrap gap-1 px-0.5 sm:hidden" aria-hidden="true">
+            {#if holiday}<span class="size-1.5 rounded-full bg-accent-500"></span>{/if}
+            {#each chipEvs.slice(0, 6) as ev (ev.id + day)}
+              <span class="size-1.5 rounded-full" style="background-color:{eventColor(ev, calMeta)}"></span>
+            {/each}
+          </div>
+        {/if}
+
         {#if holiday}
-          <div class="truncate rounded bg-accent-500/15 px-1 py-0.5 text-[10px] text-akzent" title={holiday}>
+          <div class="hidden truncate rounded bg-accent-500/15 px-1 py-0.5 text-xs text-akzent sm:block" title={holiday}>
             {holiday}
           </div>
         {/if}
 
-        <div class="flex flex-1 flex-col gap-0.5 overflow-hidden">
+        <div class="hidden flex-1 flex-col gap-0.5 overflow-hidden sm:flex">
           {#each chipEvs.slice(0, maxChips) as ev (ev.id + day)}
             {@const c = eventColor(ev, calMeta)}
             <button
@@ -163,7 +186,7 @@
                 e.stopPropagation();
                 onSelectEvent(ev);
               }}
-              class="flex items-center gap-1 rounded px-1 py-0.5 text-left text-[10px] leading-tight hover:bg-white/5"
+              class="flex items-center gap-1 rounded px-1 py-0.5 text-left text-xs leading-tight hover:bg-white/5"
               title={ev.title}
             >
               {#if ev.all_day || isBirthdayEvent(ev)}
@@ -176,10 +199,10 @@
             </button>
           {/each}
           {#if chipEvs.length > maxChips}
-            <span class="px-1 text-[10px] text-muted">+{chipEvs.length - maxChips} mehr</span>
+            <span class="px-1 text-xs text-muted">+{chipEvs.length - maxChips} mehr</span>
           {/if}
         </div>
-      </button>
+      </div>
     {/each}
   </div>
 </div>

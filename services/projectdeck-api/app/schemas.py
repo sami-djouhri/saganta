@@ -2,10 +2,11 @@ from datetime import date as date_type  # Pydantic-Feld `date` verschattet sonst
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
+from saganta_dienst.eingang import Eingang
 
 
 # ---------- Project ----------
-class ProjectIn(BaseModel):
+class ProjectIn(Eingang):
     name: str = Field(..., max_length=200)
     slug: str | None = Field(None, max_length=120)  # auto aus name, wenn leer
     description: str | None = None
@@ -46,8 +47,7 @@ class ProjectIn(BaseModel):
     handover_status: str | None = None
 
 
-class ProjectPatch(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+class ProjectPatch(Eingang):
     name: str | None = Field(None, max_length=200)
     description: str | None = None
     type: str | None = None
@@ -128,61 +128,12 @@ class ProjectOut(BaseModel):
     # aus dem ORM-Objekt kommt, sondern in der Listenroute gesetzt wird: ein
     # Aufruf je Projekt waere bei siebzehn Projekten siebzehn Nachfragen.
     open_tasks: int = 0
-
-
-# ---------- Task ----------
-class TaskIn(BaseModel):
-    title: str = Field(..., max_length=300)
-    description: str | None = None
-    status: str = "open"
-    priority: int = Field(3, ge=1, le=5)
-    estimated_minutes: int | None = Field(None, ge=0)
-    remaining_minutes: int | None = Field(None, ge=0)
-    deadline: date_type | None = None
-    can_schedule: bool = True
-    can_split: bool = True
-    min_block_minutes: int | None = Field(None, ge=0)
-    max_block_minutes: int | None = Field(None, ge=0)
-
-
-class TaskPatch(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    title: str | None = Field(None, max_length=300)
-    description: str | None = None
-    status: str | None = None
-    priority: int | None = Field(None, ge=1, le=5)
-    estimated_minutes: int | None = Field(None, ge=0)
-    remaining_minutes: int | None = Field(None, ge=0)
-    deadline: date_type | None = None
-    can_schedule: bool | None = None
-    can_split: bool | None = None
-    min_block_minutes: int | None = Field(None, ge=0)
-    max_block_minutes: int | None = Field(None, ge=0)
-
-
-class TaskOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    project_id: int
-    title: str
-    description: str | None
-    status: str
-    priority: int
-    estimated_minutes: int | None
-    remaining_minutes: int | None
-    deadline: date_type | None
-    can_schedule: bool
-    can_split: bool
-    min_block_minutes: int | None
-    max_block_minutes: int | None
-    scheduled_event_id: str | None
-    completed_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
+    #: Davon mit Prioritaet hoch (Aufgaben-Dienst, `/api/projekte/zaehlung`).
+    open_high: int = 0
 
 
 # ---------- Asset ----------
-class AssetIn(BaseModel):
+class AssetIn(Eingang):
     type: str = Field(..., max_length=40)
     label: str = Field(..., max_length=200)
     value: str = Field(..., max_length=500)
@@ -204,24 +155,20 @@ class AssetOut(BaseModel):
 
 
 # ---------- Milestone ----------
-class MilestoneIn(BaseModel):
+class MilestoneIn(Eingang):
     title: str = Field(..., max_length=300)
     description: str | None = None
     target_date: date_type | None = None
     status: str = "open"
 
 
-class MilestonePatch(BaseModel):
+class MilestonePatch(Eingang):
     """Teilaenderung eines Meilensteins.
 
-    ``extra="ignore"`` wie bei ``TaskPatch`` und ``ProjectPatch``, damit die
-    Form einheitlich bleibt. ⚠️ Das ist zugleich der Punkt, der im
-    Gesamtbefund vom 2026-10-16 als Muster auffiel: ein Tippfehler im
-    Feldnamen wird stillschweigend verworfen, und die Antwort ist trotzdem 200.
-    Siehe docs/FELDNAMEN_BEFUND.md.
+    Unbekannte Feldnamen behandelt ``Eingang`` nach ``SAGANTA_FREMDFELDER``
+    (melden oder ablehnen), siehe docs/FELDNAMEN_BEFUND.md.
     """
 
-    model_config = ConfigDict(extra="ignore")
     title: str | None = Field(None, max_length=300)
     description: str | None = None
     target_date: date_type | None = None
@@ -241,7 +188,7 @@ class MilestoneOut(BaseModel):
 
 
 # ---------- Review ----------
-class ReviewIn(BaseModel):
+class ReviewIn(Eingang):
     review_date: date_type | None = None  # default = heute
     decision: str = Field(..., max_length=60)
     notes: str | None = None
@@ -265,21 +212,8 @@ class ReviewOut(BaseModel):
     created_at: datetime
 
 
-# ---------- TimeBlock ----------
-class TimeBlockOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    project_id: int
-    task_id: int | None
-    calendar_event_id: str | None
-    planned_start: datetime | None
-    planned_end: datetime | None
-    actual_minutes: int | None
-    status: str
-
-
 # ---------- Weekly Focus ----------
-class WeeklyFocusIn(BaseModel):
+class WeeklyFocusIn(Eingang):
     week_iso: str | None = None  # default = aktuelle Woche
     project_ids: list[int] = Field(default_factory=list, max_length=3)
     maintenance_project_ids: list[int] = Field(default_factory=list)
@@ -299,12 +233,12 @@ class WeeklyFocusOut(BaseModel):
 
 
 # ---------- Public Readiness ----------
-class ReadinessItem(BaseModel):
+class ReadinessItem(Eingang):
     done: bool = False
     note: str | None = None
 
 
-class ReadinessPatch(BaseModel):
+class ReadinessPatch(Eingang):
     items: dict[str, ReadinessItem]
 
 
@@ -316,7 +250,7 @@ class ReadinessOut(BaseModel):
 
 
 # ---------- Shutdown-Checkliste ----------
-class ShutdownPatch(BaseModel):
+class ShutdownPatch(Eingang):
     items: dict[str, ReadinessItem]
 
 
@@ -359,43 +293,6 @@ class Finding(BaseModel):
     name: str
     message: str
     bucket: str  # dashboard-Kachel / Bereich
-
-
-# ---------- Kalender-Integration ----------
-class WorkCandidateOut(BaseModel):
-    project_id: int
-    task_id: int | None
-    slug: str
-    title: str
-    estimated_minutes: int
-    deadline: date_type | None
-    priority: int
-    scheduling_mode: str
-    earliest_start: date_type | None = None
-    latest_finish: date_type | None = None
-    min_block_minutes: int | None = None
-    max_block_minutes: int | None = None
-    energy_required: str | None = None
-    focus_required: str | None = None
-    can_split: bool = True
-    can_move: bool = True
-
-
-class PlanResult(BaseModel):
-    project_id: int
-    pushed: int
-    scheduled_blocks: int
-    auto_plan_triggered: bool
-    detail: str
-
-
-class WorkLogIn(BaseModel):
-    task_id: int | None = None
-    calendar_event_id: str | None = None
-    planned_minutes: int | None = None
-    actual_minutes: int = Field(..., ge=0)
-    completed: bool = False
-    notes: str | None = None
 
 
 # ---------- AI ----------

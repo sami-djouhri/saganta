@@ -9,7 +9,7 @@ alles für den Startbildschirm liefert.
 """
 from datetime import date as _date
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from .auth import CurrentUser, Me
@@ -67,7 +67,14 @@ async def bootstrap(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Zeitraum darf 120 Tage nicht überschreiten."
         )
-    r = await upstream("GET", "/api/mobile/bootstrap", params={"start": start, "end": end})
+    # Eigene Zeitgrenze (Befund 2026-11-03): der native Bootstrap brauchte
+    # 4,7 bis 5,6 s fuer das 81-Tage-Fenster der App, die Vorgabe sind 5 s. Die
+    # App bekam deshalb beim Oeffnen meist ein 502 und musste „Erneut" druecken.
+    # Die Rechenzeit ist im Kalender behoben (Tagestypen in einer Abfrage); die
+    # Grenze bleibt hoeher, weil der Dienst mit 0,25 CPU laeuft.
+    r = await upstream(
+        "GET", "/api/mobile/bootstrap", params={"start": start, "end": end}, timeout=30.0
+    )
     return r.json() if r.content else {}
 
 
@@ -163,15 +170,130 @@ async def set_day_type_range(data: DayTypeRangeIn, me: Me = CurrentUser) -> dict
     return r.json() if r.content else {}
 
 
+@router.get("/api/day-type/week-schedule")
+async def wochenplan(me: Me = CurrentUser, week_start: str = Query(..., pattern=_DATE)) -> list:
+    """Sieben Tage ab ``week_start``: Tagestyp, Aufstehen, Bett und Arbeits-/Schulblock.
+
+    Seit 2026-11-07 fuer den Nachtmodus des Saganta Launchers: die Kalender-App
+    holt den Plan nach jedem Abgleich und reicht ihn auf dem Telefon weiter. Die
+    Aufstehzeit je Tagestyp steht nur im nativen Dienst (``sleep_schedule``);
+    hier wird sie nicht nachgebaut, damit es eine Quelle bleibt.
+    """
+    _tag(week_start)
+    r = await upstream("GET", "/api/day-type/week-schedule", params={"week_start": week_start})
+    return r.json() if r.content else []
+
+
 @router.get("/api/day-type/urlaub-bilanz")
 async def urlaub_bilanz(me: Me = CurrentUser, jahr: int = Query(...)) -> dict:
-    """Verbrauchte Urlaubstage eines Jahres.
+    """Urlaubskonto eines Jahres: genommen, geplant, Rest, Vorjahresrest.
 
-    Ohne Jahresanspruch: wie viele Tage zustehen, steht im Arbeitsvertrag und
-    nicht in diesem Dienst. Die Zahl pflegt die App.
+    Anspruch und Verfall liegen seit dem 2026-11-07 im nativen Dienst
+    (`/urlaub-einstellung`), damit App und Web dieselbe Zahl zeigen.
     """
     r = await upstream("GET", "/api/day-type/urlaub-bilanz", params={"jahr": str(jahr)})
     return r.json() if r.content else {}
+
+
+@router.get("/api/day-type/urlaub-einstellung")
+async def urlaub_einstellung(me: Me = CurrentUser) -> dict:
+    r = await upstream("GET", "/api/day-type/urlaub-einstellung")
+    return r.json() if r.content else {}
+
+
+class UrlaubEinstellungIn(BaseModel):
+    anspruch: float | None = Field(None, ge=0, le=100)
+    verfall: str | None = Field(None, pattern=r"^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
+
+
+@router.put("/api/day-type/urlaub-einstellung")
+async def urlaub_einstellung_setzen(data: UrlaubEinstellungIn, me: Me = CurrentUser) -> dict:
+    """Ein nicht geschicktes Feld bleibt; ``anspruch: null`` leert den Anspruch."""
+    r = await upstream("PUT", "/api/day-type/urlaub-einstellung",
+                       json=data.model_dump(exclude_unset=True))
+    return r.json() if r.content else {}
+
+
+# ── Stundenplan (seit 2026-11-07) ────────────────────────────────────────
+@router.get("/api/day-type/stundenplan")
+async def stundenplan(me: Me = CurrentUser) -> dict:
+    r = await upstream("GET", "/api/day-type/stundenplan")
+    return r.json() if r.content else {}
+
+
+class StundeIn(BaseModel):
+    fach: str = Field(..., min_length=1, max_length=60)
+    von: str = Field(..., pattern=_UHRZEIT)
+    bis: str = Field(..., pattern=_UHRZEIT)
+
+
+class StundenplanIn(BaseModel):
+    #: Wochentag "0" (Montag) bis "6"; ein nicht genannter bleibt.
+    stunden: dict[str, list[StundeIn]]
+
+
+@router.put("/api/day-type/stundenplan")
+async def stundenplan_setzen(data: StundenplanIn, me: Me = CurrentUser) -> dict:
+    r = await upstream("PUT", "/api/day-type/stundenplan", json=data.model_dump())
+    return r.json() if r.content else {}
+
+
+class AusfallIn(BaseModel):
+    datum: _date
+    von: str = Field(..., pattern=_UHRZEIT)
+    ausgefallen: bool = True
+
+
+@router.post("/api/day-type/stundenplan/ausfall")
+async def stundenplan_ausfall(data: AusfallIn, me: Me = CurrentUser) -> dict:
+    """Kuerzt an einem Schultag dessen Zeiten (nativer Dienst, `_tagestyp_setzen`)."""
+    r = await upstream("POST", "/api/day-type/stundenplan/ausfall",
+                       json={"datum": data.datum.isoformat(), "von": data.von, "ausgefallen": data.ausgefallen})
+    return r.json() if r.content else {}
+
+
+# ── Zeitkonto (seit 2026-11-07) ──────────────────────────────────────────
+@router.get("/api/day-type/zeitkonto")
+async def zeitkonto(me: Me = CurrentUser) -> dict:
+    r = await upstream("GET", "/api/day-type/zeitkonto")
+    return r.json() if r.content else {}
+
+
+class ZeitkontoPlanTag(BaseModel):
+    wochentag: int = Field(..., ge=0, le=6)
+    soll: int | None = Field(None, ge=0, le=1440)
+    pause: int | None = Field(None, ge=0, le=1440)
+
+
+class ZeitkontoPlanIn(BaseModel):
+    tage: list[ZeitkontoPlanTag]
+
+
+@router.put("/api/day-type/zeitkonto/plan")
+async def zeitkonto_plan(data: ZeitkontoPlanIn, me: Me = CurrentUser) -> dict:
+    r = await upstream("PUT", "/api/day-type/zeitkonto/plan",
+                       json={"tage": [t.model_dump(exclude_none=True) for t in data.tage]})
+    return r.json() if r.content else {}
+
+
+class ZeitkontoEintragIn(BaseModel):
+    art: str = Field("arbeit", pattern=r"^(arbeit|ausgleich|krank_frueher)$")
+    von: str | None = Field(None, pattern=_UHRZEIT)
+    bis: str | None = Field(None, pattern=_UHRZEIT)
+    ist: int | None = Field(None, ge=0, le=1440)
+    notiz: str | None = Field(None, max_length=200)
+
+
+@router.put("/api/day-type/zeitkonto/eintrag/{tag}")
+async def zeitkonto_eintrag(tag: _date, data: ZeitkontoEintragIn, me: Me = CurrentUser) -> dict:
+    r = await upstream("PUT", f"/api/day-type/zeitkonto/eintrag/{tag.isoformat()}",
+                       json=data.model_dump(exclude_none=True))
+    return r.json() if r.content else {}
+
+
+@router.delete("/api/day-type/zeitkonto/eintrag/{tag}", status_code=204)
+async def zeitkonto_eintrag_loeschen(tag: _date, me: Me = CurrentUser) -> None:
+    await upstream("DELETE", f"/api/day-type/zeitkonto/eintrag/{tag.isoformat()}")
 
 
 @router.get("/api/day-type/arbeitszeiten")
@@ -280,4 +402,107 @@ async def account_delete(data: KontoLoeschen, me: Me = CurrentUser) -> dict:
             f'Bestätigung erforderlich: sende confirm="{_LOESCH_BESTAETIGUNG}".',
         )
     r = await upstream("POST", "/api/account/delete", json={"confirm": data.confirm})
+    return r.json() if r.content else {}
+
+
+# ── Jahresansicht ────────────────────────────────────────────────────────
+#: Kalender, deren Ereignisse den Tag BESCHREIBEN statt ihn zu belegen. Ihr
+#: Ergebnis kommt als Tagestyp vom nativen Dienst; als Termin gezaehlt waere
+#: jeder Arbeitstag ein Tag „mit Termin".
+_TAGESTYP_PRAEFIX = "daytype-"
+_FEIERTAG_KALENDER = "daytype-feiertag-0000-0000-000000000000"
+
+
+def _tage_eines_termins(ev: dict, jahr: int) -> list[str]:
+    """Kalendertage, die ein Termin beruehrt, beschnitten aufs Jahr.
+
+    Ein ganztaegiger Termin endet um 00:00 des Folgetags (exklusiv), ein
+    getimter, der um Mitternacht endet, ebenso; beide zaehlen den Folgetag nicht.
+    """
+    try:
+        anfang = _date.fromisoformat(str(ev.get("start", ""))[:10])
+        ende_roh = str(ev.get("end") or ev.get("start") or "")
+        ende = _date.fromisoformat(ende_roh[:10])
+    except ValueError:
+        return []
+    if ende > anfang and ende_roh[11:19] in ("", "00:00:00"):
+        ende = _date.fromordinal(ende.toordinal() - 1)
+    erster = max(anfang, _date(jahr, 1, 1))
+    letzter = min(ende, _date(jahr, 12, 31))
+    return [
+        _date.fromordinal(o).isoformat()
+        for o in range(erster.toordinal(), letzter.toordinal() + 1)
+    ]
+
+
+@router.get("/api/jahr")
+async def jahr_uebersicht(me: Me = CurrentUser, jahr: int = Query(..., ge=2000, le=2100)) -> dict:
+    """Ein Jahr auf einen Blick fuer die App: Tagestyp, Feiertag und Terminzahl je Tag.
+
+    Der Tagestyp kommt fertig vom nativen Dienst (`/api/day-type/bereich`),
+    hier wird er nicht aus den Terminen abgeleitet: eine zweite Ableitung waere
+    eine parallele Daytype-Logik, und die laege irgendwann daneben. Gezaehlt
+    werden nur Termine ausserhalb der Tagestyp-Kalender. Gemessen 2026-11-03:
+    ein Jahr sind rund 0,3 s Termine plus 0,4 s Tagestypen.
+    """
+    anfang = _date(jahr, 1, 1)
+    tage = (_date(jahr, 12, 31) - anfang).days + 1
+    typen = await upstream(
+        "GET", "/api/day-type/bereich",
+        params={"start": anfang.isoformat(), "tage": str(tage)}, timeout=30.0,
+    )
+    termine = await upstream(
+        "GET", "/api/events",
+        params={"start": anfang.isoformat(), "end": f"{jahr}-12-31T23:59:59"}, timeout=30.0,
+    )
+    zahl: dict[str, int] = {}
+    feiertag: dict[str, str] = {}
+    for ev in (termine.json() if termine.content else []) or []:
+        kalender = str(ev.get("calendar_id") or "")
+        if kalender == _FEIERTAG_KALENDER:
+            for tag in _tage_eines_termins(ev, jahr):
+                feiertag[tag] = str(ev.get("title") or "Feiertag")
+            continue
+        if kalender.startswith(_TAGESTYP_PRAEFIX):
+            continue
+        for tag in _tage_eines_termins(ev, jahr):
+            zahl[tag] = zahl.get(tag, 0) + 1
+    return {
+        "jahr": jahr,
+        "tage": [
+            {
+                "date": t["date"],
+                "type": t["type"],
+                "termine": zahl.get(t["date"], 0),
+                "feiertag": feiertag.get(t["date"]),
+            }
+            for t in (typen.json() if typen.content else [])
+        ],
+    }
+
+
+# ── Tagesreview ──────────────────────────────────────────────────────────
+class ReviewIn(BaseModel):
+    """Abend-Rueckblick eines Tages. Leere Felder heissen „nichts eingetragen";
+    der native Dienst setzt nur, was mitkommt (`exclude_unset`)."""
+    what_went_well: str | None = Field(None, max_length=4000)
+    blockers: str | None = Field(None, max_length=4000)
+    carry_over_to_tomorrow: str | None = Field(None, max_length=4000)
+    energy_level: str | None = Field(None, pattern=r"^(low|medium|high)$")
+
+
+@router.get("/api/reviews/{tag}")
+async def review_lesen(tag: str = Path(..., pattern=_DATE), me: Me = CurrentUser) -> dict | None:
+    _tag(tag)
+    r = await upstream("GET", f"/api/reviews/{tag}")
+    return r.json() if r.content else None
+
+
+@router.put("/api/reviews/{tag}")
+async def review_schreiben(data: ReviewIn, tag: str = Path(..., pattern=_DATE), me: Me = CurrentUser) -> dict:
+    """Upsert je Datum. Alle vier Felder gehen immer mit, auch leer: die App
+    zeigt das ganze Formular, und ein geleertes Feld soll leer werden, statt
+    stromaufwaerts den alten Text zu behalten."""
+    _tag(tag)
+    r = await upstream("PUT", f"/api/reviews/{tag}", json=data.model_dump())
     return r.json() if r.content else {}

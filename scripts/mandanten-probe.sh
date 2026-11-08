@@ -36,7 +36,6 @@ set -uo pipefail
 DIENSTE=(
   "notizen-api:saganta-notizen-api"
   "projectdeck-api:saganta-projectdeck-api"
-  "assets-api:saganta-assets-api"
   "news-api:saganta-news-api"
   "mail-api:saganta-mail-api"
   "shell-api:saganta-shell-api"

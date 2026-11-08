@@ -9,7 +9,6 @@ import { auth, pool } from './auth.js';
 const MOBILE_AUDIENCES = new Set([
   'news-api',
   'projectdeck-api',
-  'assets-api',
   'kalender-bff',
   'lager-api',
   'mealprep-api',
@@ -20,6 +19,15 @@ const MOBILE_AUDIENCES = new Set([
   // Tausch mit 400 invalid_audience, und zwar BEVOR die Sitzung geprueft wird,
   // was wie ein Anmeldeproblem aussieht und keines ist.
   'notizen-api',
+  // einkaufsliste-api: die native Einkaufsliste (2026-11-01), dieselbe Kette
+  // wie lager-api (HS256, iss=saganta, Backend prueft aud fail-closed).
+  'einkaufsliste-api',
+  // aufgaben-api: die native Aufgaben-App gegen den eigenen Aufgaben-Dienst
+  // (2026-11-03), dieselbe Kette (HS256, iss=saganta, aud fail-closed).
+  'aufgaben-api',
+  // kontakte-api: die native Kontakte-App gegen den Kontakte-Dienst
+  // (2026-11-07), dieselbe Kette (HS256, iss=saganta, aud fail-closed).
+  'kontakte-api',
 ]);
 // Fail-Fast: ohne echtes Shared-Secret kann der Mobile-Token-Stempel gefälscht
 // werden → Boot abbrechen statt still unsicher laufen. (2026-06-28)

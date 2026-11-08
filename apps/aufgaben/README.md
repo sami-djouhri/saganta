@@ -20,22 +20,21 @@ Getrennt wurde entlang der Frage, die eine Flaeche beantwortet:
 | Was habe ich mir dazu notiert? | Notizen |
 | Woran arbeite ich laenger? | ProjectDeck |
 
-## Eigene Oberflaeche, keine eigene Datenbank
+## Die Aufgaben liegen im eigenen Dienst (seit 2026-11-03)
 
-Aufgaben, Ziele und Projekte liegen weiter in der **einen** Kalender-Engine
-(`kalender:8085`) und werden ueber denselben `kalender-bff` gelesen und
-geschrieben, den auch die Kalender-App benutzt. Das ist kein Zwischenschritt,
-sondern die Entscheidung: eine Aufgabe mit Zeitfenster **ist** ein Termin, und
-die Tagesplanung greift auf beides zugleich zu. Eine zweite Aufgaben-Datenbank
-haette zwei Wahrheiten ergeben und die Verknuepfung Aufgabe/Termin ueber eine
-App-Grenze gezwungen.
+Bis zum 03.11. hatte diese App keine eigene Datenbank: sie las und schrieb
+`/api/todos` am `kalender-bff`, mit der Begruendung, eine Aufgabe mit
+Zeitfenster sei ein Termin. Entschieden wurde dann (dritte bis fuenfte
+Fragerunde, `docs/RICHTUNG.md`) ein **eigener Aufgaben-Dienst**,
+`services/aufgaben-api`, dem die Aufgaben gehoeren; Kalender und ProjectDeck
+sind Konsumenten. Die Kalender-Tabelle war bis dahin leer.
 
-Folgen davon:
-
-- Es gibt **kein** `aufgaben-api` und **kein** Volume.
-- Was der Kalender an Aufgaben anzeigt (die Zaehlung auf der Kachel) und was
-  hier steht, ist derselbe Bestand, nicht eine Kopie.
-- Faellt der `kalender-bff` aus, ist diese App leer und sagt das auch.
+- Gelesen und geschrieben wird ueber `src/lib/server/aufgaben-dienst.ts`. Die
+  Oberflaeche spricht weiter ihr altes Format; uebersetzt wird nur dort.
+- Tagesziele und Tagesbild kommen weiter aus dem Kalender (`kalender-bff`).
+- „Tag planen" geht an den Dienst, der den Planer des Kalenders fragt.
+- Projekte gibt es hier vorerst nicht: die ProjectDeck-Aufgaben ziehen erst
+  spaeter um, die Projektansicht bleibt bis dahin leer.
 
 ## Weniger Vorschlaege, mehr Rueckfrage
 

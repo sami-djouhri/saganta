@@ -106,3 +106,36 @@ async def plan_day(data: PlanDayIn, me: Me = CurrentUser) -> dict:
             params={"date": data.date, "prefer_time": "true"},
         )
     return r.json() if r.content else {}
+
+
+class FremdeAufgabeIn(BaseModel):
+    id: str = Field(..., min_length=1, max_length=64)
+    title: str = Field(..., min_length=1, max_length=500)
+    priority: Literal["dringend", "hoch", "mittel", "niedrig"] = "mittel"
+    estimated_minutes: int | None = Field(default=None, ge=1, le=1440)
+    energy_required: Literal["low", "medium", "high"] | None = None
+    due_date: str | None = Field(default=None, pattern=_DATE)
+
+
+class ZeitraumIn(BaseModel):
+    start: str = Field(..., min_length=16, max_length=40)
+    end: str = Field(..., min_length=16, max_length=40)
+
+
+class VorschlagIn(BaseModel):
+    date: str = Field(..., pattern=_DATE)
+    aufgaben: list[FremdeAufgabeIn] = Field(default_factory=list, max_length=500)
+    belegt: list[ZeitraumIn] = Field(default_factory=list, max_length=500)
+
+
+@router.post("/api/assistant/vorschlag")
+async def vorschlag(data: VorschlagIn, me: Me = CurrentUser) -> dict:
+    """Zeiten fuer Aufgaben aus dem Aufgaben-Dienst (seit 2026-11-03).
+
+    Der Aufgaben-Dienst besitzt die Aufgaben, der Kalender kennt die freie Zeit.
+    Dieser Weg bringt beides zusammen, ohne dass der Kalender eine Kopie haelt:
+    er rechnet auf den mitgeschickten Aufgaben und schreibt nichts. Festgehalten
+    wird beim Aufgaben-Dienst.
+    """
+    r = await _upstream("POST", "/api/schedule/vorschlag", json=data.model_dump(exclude_none=True))
+    return r.json() if r.content else {}

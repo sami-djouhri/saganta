@@ -38,7 +38,6 @@ ZIELE=(
   "lager|apps/app-proxy/lager.env|saganta-lager|app"
   "mealprep|apps/app-proxy/mealprep.env|saganta-mealprep|app"
   "kalender-bff|services/kalender-bff/.env|saganta-kalender-bff|app"
-  "assets-api|services/assets-api/.env|saganta-assets-api|app"
   "news-api|services/news-api/.env|saganta-news-api|app"
   "notizen-api|services/notizen-api/.env|saganta-notizen-api|app"
   "projectdeck-api|services/projectdeck-api/.env|saganta-projectdeck-api|app"
@@ -66,7 +65,7 @@ Aufrufe:
 Vor dem Oeffnen:  python3 scripts/mandanten-pruefung.py <dienst>   muss 0 melden.
 Nach dem Neustart: bash scripts/trennung-beweisen.sh <container> <aud> <pfad> '<json>'
 
-Dienste: mail-api aufgaben fitness lager mealprep kalender-bff assets-api
+Dienste: mail-api aufgaben fitness lager mealprep kalender-bff
          news-api notizen-api projectdeck-api tagebuch-api tagebuch post notizen
 EOF
 }

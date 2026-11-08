@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Icon } from '@saganta/ui';
   import type { KalenderEvent } from '$lib/kalender-bff';
   import {
     type CalMeta,
@@ -24,8 +25,64 @@
     nowMs: number | null;
     onSelectEvent: (ev: KalenderEvent) => void;
     onCreateAt: (dayKey: string, hour: number) => void;
+    /** Ziehen: Tage und Minuten (Raster 15), seit 2026-11-07. Ohne: kein Ziehen. */
+    onMoveEvent?: (ev: KalenderEvent, tage: number, minuten: number) => void;
   }
-  let { days, today, events, calMeta, nowMs, onSelectEvent, onCreateAt }: Props = $props();
+  let { days, today, events, calMeta, nowMs, onSelectEvent, onCreateAt, onMoveEvent }: Props = $props();
+
+  // Ziehen mit Zeiger-Ereignissen statt HTML5-Drag: das gibt es auf dem
+  // Telefon nicht. Maus: ab 6 px Bewegung. Finger: erst nach 400 ms Halten,
+  // sonst kaeme jeder Wischer zum Scrollen als Verschieben an.
+  let zug = $state<{ id: string; dx: number; dy: number } | null>(null);
+  let start: { x: number; y: number; t: number; breite: number; aktiv: boolean; finger: boolean } | null = null;
+  let warte: ReturnType<typeof setTimeout> | undefined;
+  let klickSperre = false;
+
+  function ziehbar(ev: KalenderEvent): boolean {
+    return !!onMoveEvent && !ev.recurrence_rule && !ev.is_recurring_instance && !String(ev.id).includes('::');
+  }
+
+  function runter(e: PointerEvent, ev: KalenderEvent) {
+    if (!ziehbar(ev) || e.button !== 0) return;
+    const spalte = (e.currentTarget as HTMLElement).parentElement;
+    start = { x: e.clientX, y: e.clientY, t: Date.now(), breite: spalte?.clientWidth ?? 100, aktiv: false, finger: e.pointerType === 'touch' };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    if (start.finger) {
+      warte = setTimeout(() => {
+        if (start) { start.aktiv = true; zug = { id: ev.id, dx: 0, dy: 0 }; }
+      }, 400);
+    }
+  }
+
+  function bewegen(e: PointerEvent, ev: KalenderEvent) {
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (!start.aktiv) {
+      if (start.finger) {
+        // Vor dem Halten bewegt: das ist Scrollen, nicht Ziehen.
+        if (Math.hypot(dx, dy) > 8) { clearTimeout(warte); start = null; }
+        return;
+      }
+      if (Math.hypot(dx, dy) < 6) return;
+      start.aktiv = true;
+    }
+    e.preventDefault();
+    zug = { id: ev.id, dx, dy };
+  }
+
+  function hoch(ev: KalenderEvent) {
+    clearTimeout(warte);
+    const s = start;
+    start = null;
+    if (!s?.aktiv || !zug) { zug = null; return; }
+    const tage = Math.round(zug.dx / s.breite);
+    const minuten = Math.round((zug.dy / HOUR_H) * 4) * 15;
+    zug = null;
+    klickSperre = true;
+    setTimeout(() => (klickSperre = false), 0);
+    if (tage !== 0 || minuten !== 0) onMoveEvent?.(ev, tage, minuten);
+  }
 
   const HOUR_H = 46; // px pro Stunde
 
@@ -192,8 +249,11 @@
     class="grid border-b border-border bg-surface/40"
     style="grid-template-columns: 3rem repeat(7, 1fr)"
   >
-    <div class="border-r border-border px-1 py-1 text-right font-mono text-[9px] uppercase text-muted/70">
-      ganztg
+    <!-- Sinnbild statt „GANZTG": in 12 px passte das Wort nicht mehr in die
+         3-rem-Spalte und lief in die erste Stundenzahl. -->
+    <div class="flex items-center justify-end border-r border-border px-1.5 text-muted/70" title="Ganztägig">
+      <Icon name="sun" size={14} />
+      <span class="sr-only">Ganztägig</span>
     </div>
     {#each days as d (d)}
       {@const cell = layout.byDay.get(d)}
@@ -206,7 +266,7 @@
             style={dtype && DAYTYPE_TINT[dtype]
               ? `background-color:${DAYTYPE_TINT[dtype]}`
               : `background-color:${eventColor(ev, calMeta)}22`}
-            class="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] hover:brightness-125"
+            class="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-xs hover:brightness-125"
             title={ev.title}
           >
             <span
@@ -226,7 +286,9 @@
     <div class="relative border-r border-border" style="height:{layout.height}px">
       {#each layout.hours as h (h)}
         <div
-          class="absolute right-1 -translate-y-1/2 font-mono text-[10px] text-muted"
+          class="absolute right-1 font-mono text-xs text-muted {h === layout.startHour
+            ? 'translate-y-0.5'
+            : '-translate-y-1/2'}"
           style="top:{(h - layout.startHour) * HOUR_H}px"
         >
           {String(h).padStart(2, '0')}
@@ -260,7 +322,7 @@
               ? DAYTYPE_TINT[dtype]
               : 'rgba(255,255,255,0.04)'}; border-color:{dtype ? DAYTYPE_DOT[dtype] : '#8a8aa0'}"
           >
-            <span class="px-1 text-[9px] uppercase tracking-wide text-muted">{dtype ? DAYTYPE_LABEL[dtype] : ''}</span>
+            <span class="px-1 text-xs uppercase tracking-wide text-muted">{dtype ? DAYTYPE_LABEL[dtype] : ''}</span>
           </div>
         {/each}
 
@@ -271,11 +333,18 @@
             type="button"
             onclick={(e) => {
               e.stopPropagation();
+              if (klickSperre) return;
               onSelectEvent(b.ev);
             }}
-            class="absolute overflow-hidden rounded-md border-l-2 px-1 py-0.5 text-left text-[10px] leading-tight shadow-sm hover:brightness-125"
+            onpointerdown={(e) => runter(e, b.ev)}
+            onpointermove={(e) => bewegen(e, b.ev)}
+            onpointerup={() => hoch(b.ev)}
+            onpointercancel={() => { clearTimeout(warte); start = null; zug = null; }}
+            class="absolute overflow-hidden rounded-md border-l-2 px-1 py-0.5 text-left text-xs leading-tight shadow-sm hover:brightness-125"
             style="top:{b.top}px; height:{b.height}px; left:calc({(b.lane / b.lanes) *
-              100}% + 2px); width:calc({100 / b.lanes}% - 4px); background-color:{c}26; border-color:{c}"
+              100}% + 2px); width:calc({100 / b.lanes}% - 4px); background-color:{c}26; border-color:{c};{zug?.id === b.ev.id
+              ? ` transform:translate(${zug.dx}px, ${zug.dy}px); z-index:20; touch-action:none; cursor:grabbing;`
+              : ziehbar(b.ev) ? ' cursor:grab;' : ''}"
             title="{fmtTime(b.ev.start_at ?? b.ev.start ?? '')} {b.ev.title}"
           >
             <div class="truncate font-medium text-text">{b.ev.title}</div>

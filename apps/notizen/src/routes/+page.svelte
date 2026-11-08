@@ -83,7 +83,7 @@
         <h2 class="text-xs font-semibold uppercase tracking-wide text-muted">Notizbücher</h2>
         <button
           type="button"
-          class="text-muted hover:text-text"
+          class="grid size-9 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text"
           onclick={() => (buchFormOffen = !buchFormOffen)}
           aria-label="Notizbuch anlegen"
           title="Notizbuch anlegen"
@@ -114,10 +114,12 @@
         </form>
       {/if}
 
-      <nav class="mt-2 flex flex-col gap-0.5 text-sm">
+      <!-- Am Handy eine Zeile Chips statt einer Liste: sonst begannen die
+           Notizen erst nach einem halben Bildschirm Seitenleiste. -->
+      <nav class="mt-2 flex flex-wrap gap-1.5 text-sm lg:flex-col lg:flex-nowrap lg:gap-0.5">
         <a
           href={filterAdresse('buch', null)}
-          class="rounded-md px-2 py-1.5 {!data.notizbuch
+          class="rounded-full border border-border px-3 py-1.5 lg:rounded-md lg:border-0 lg:px-2 {!data.notizbuch
             ? 'bg-surface-2 text-text'
             : 'text-muted hover:text-text'}">Alle</a
         >
@@ -125,7 +127,7 @@
           <div class="group flex items-center gap-1">
             <a
               href={filterAdresse('buch', String(buch.id))}
-              class="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 {data.notizbuch ===
+              class="min-w-0 flex-1 truncate rounded-full border border-border px-3 py-1.5 lg:rounded-md lg:border-0 lg:px-2 {data.notizbuch ===
               String(buch.id)
                 ? 'bg-surface-2 text-text'
                 : 'text-muted hover:text-text'}"
@@ -137,7 +139,7 @@
               method="POST"
               action="?/notizbuchLoeschen"
               use:enhance
-              class="opacity-0 transition-opacity group-hover:opacity-100"
+              class="hidden transition-opacity lg:block lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
             >
               <input type="hidden" name="id" value={buch.id} />
               <button
@@ -154,7 +156,7 @@
       </nav>
 
       {#if data.tags.length}
-        <h2 class="mt-6 text-xs font-semibold uppercase tracking-wide text-muted">Tags</h2>
+        <h2 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted lg:mt-6">Tags</h2>
         <div class="mt-2 flex flex-wrap gap-1">
           {#each data.tags as tag (tag)}
             <a
@@ -169,7 +171,7 @@
 
       <a
         href={filterAdresse('archiv', data.archivierte ? null : '1')}
-        class="mt-6 flex items-center gap-2 text-sm {data.archivierte
+        class="mt-4 flex min-h-9 items-center gap-2 text-sm lg:mt-6 {data.archivierte
           ? 'text-text'
           : 'text-muted hover:text-text'}"
       >

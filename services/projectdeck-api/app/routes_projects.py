@@ -1,18 +1,18 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+import httpx
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
+from . import aufgaben_dienst
 from .auth import CurrentUser, Me
 from .db import get_db
-from .enums import PUBLIC_READINESS_ITEMS, SHUTDOWN_CHECKLIST_ITEMS, TaskStatus
+from .enums import PUBLIC_READINESS_ITEMS, SHUTDOWN_CHECKLIST_ITEMS
 from .models import (
     Project,
     ProjectAsset,
     ProjectMilestone,
     ProjectReview,
-    ProjectTask,
     PublicReadiness,
     ShutdownChecklist,
 )
@@ -31,9 +31,6 @@ from .schemas import (
     ReviewOut,
     ShutdownOut,
     ShutdownPatch,
-    TaskIn,
-    TaskOut,
-    TaskPatch,
 )
 from .util import slugify, today
 
@@ -74,21 +71,15 @@ def list_projects(
         q = q.filter(Project.client_id == client_id)
     projekte = q.order_by(Project.priority.asc(), Project.updated_at.desc()).all()
 
-    # Offene Aufgaben in EINER Abfrage nachschlagen. Ueber `p.tasks` je Projekt
-    # zu gehen waere bequemer und ergaebe eine Nachfrage je Kachel.
-    offen: dict[int, int] = {}
-    if projekte:
-        offen = dict(
-            db.query(ProjectTask.project_id, func.count(ProjectTask.id))
-            .filter(
-                ProjectTask.project_id.in_([p.id for p in projekte]),
-                ProjectTask.status != TaskStatus.DONE,
-            )
-            .group_by(ProjectTask.project_id)
-            .all()
-        )
+    # Offene Aufgaben je Projekt in EINEM Aufruf am Aufgaben-Dienst.
+    # Fehlt die Antwort, bleibt der Zaehler 0. Das ist hier vertretbar:
+    # er ist eine Anzeige an der Kachel, kein Urteil wie ein Befund.
+    je_slug = (aufgaben_dienst.zaehlung(me) or {}) if projekte else {}
     return [
-        ProjectOut.model_validate(p).model_copy(update={"open_tasks": offen.get(p.id, 0)})
+        ProjectOut.model_validate(p).model_copy(update={
+            "open_tasks": je_slug.get(p.slug, {}).get("offen", 0),
+            "open_high": je_slug.get(p.slug, {}).get("hoch", 0),
+        })
         for p in projekte
     ]
 
@@ -134,6 +125,11 @@ def patch_project(
 @router.delete("/{project_id}", status_code=204)
 def delete_project(project_id: int, me: Me = CurrentUser, db: Session = Depends(get_db)) -> None:
     p = _owned_project(db, me, project_id)
+    # Zuerst die Aufgaben loesen, dann das Projekt loeschen: ein frei
+    # gewordener Slug wird wieder vergeben, und ein neues Projekt erbte
+    # sonst die Aufgaben des alten. Antwortet der Dienst nicht, bleibt das
+    # Projekt stehen (503), statt Aufgaben mit einem toten Bezug zu hinterlassen.
+    _durch(me, "POST", f"/api/projekte/{p.slug}/loesen")
     db.delete(p)
     db.commit()
 
@@ -147,65 +143,119 @@ def archive_project(project_id: int, me: Me = CurrentUser, db: Session = Depends
     return p
 
 
-# ---------- Tasks ----------
-@router.get("/{project_id}/tasks", response_model=list[TaskOut])
-def list_tasks(project_id: int, me: Me = CurrentUser, db: Session = Depends(get_db)) -> list[ProjectTask]:
-    _owned_project(db, me, project_id)
-    return (
-        db.query(ProjectTask)
-        .filter(ProjectTask.project_id == project_id)
-        .order_by(ProjectTask.priority.asc(), ProjectTask.created_at.asc())
-        .all()
-    )
+# ---------- Aufgaben (im Aufgaben-Dienst) ----------
+#
+# Sechste Fragerunde (04.11.): das ProjectDeck zeigt die Aufgaben eines
+# Projekts, legt an und hakt ab, ohne eigene Kopie. Diese Routen reichen an
+# `aufgaben-api` durch und antworten in dessen Form (Kennung ist eine UUID).
+# Das Projekt setzt dieser Dienst selbst; `projekt` und `liste_id` aus dem
+# Rumpf werden verworfen, umgehaengt wird in der App Saganta Aufgaben.
+
+_NICHT_DURCHREICHEN = {"projekt", "liste_id"}
 
 
-@router.post("/{project_id}/tasks", response_model=TaskOut, status_code=201)
-def create_task(
-    project_id: int, payload: TaskIn, me: Me = CurrentUser, db: Session = Depends(get_db)
-) -> ProjectTask:
-    _owned_project(db, me, project_id)
-    t = ProjectTask(project_id=project_id, **payload.model_dump())
-    if t.remaining_minutes is None:
-        t.remaining_minutes = t.estimated_minutes
-    db.add(t)
-    db.commit()
-    db.refresh(t)
-    return t
+def _durch(me: Me, methode: str, pfad: str, **kw):
+    try:
+        return aufgaben_dienst.aufruf(me, methode, pfad, **kw)
+    except aufgaben_dienst.AufgabenNichtErreichbar as exc:
+        raise HTTPException(503, "Aufgaben-Dienst nicht erreichbar") from exc
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("detail", "Aufgaben-Dienst lehnte ab")
+        except ValueError:
+            detail = "Aufgaben-Dienst lehnte ab"
+        raise HTTPException(exc.response.status_code, detail) from exc
 
 
-@router.patch("/{project_id}/tasks/{task_id}", response_model=TaskOut)
-def patch_task(
+def _aufgabe_im_projekt(me: Me, p: Project, aufgabe_id: str) -> dict:
+    """404, wenn die Aufgabe nicht zu diesem Projekt gehoert (auch fremde)."""
+    aufgabe = _durch(me, "GET", f"/api/aufgaben/{aufgabe_id}")
+    if aufgabe.get("projekt") != p.slug:
+        raise HTTPException(404, "Aufgabe nicht gefunden")
+    return aufgabe
+
+
+@router.get("/{project_id}/aufgaben/alt/{alte_id}")
+def aufgabe_nach_alter_kennung(
+    project_id: int, alte_id: int, me: Me = CurrentUser, db: Session = Depends(get_db)
+) -> dict:
+    """Die Aufgabe, die beim Umzug aus ``project_tasks`` Zeile ``alte_id`` wurde.
+
+    Fuer die App: ihre Offline-Warteschlange kann Haken aus 0.8.x mit der
+    alten Zahl-Kennung halten. Statt sie zu verwerfen, loest sie die Kennung
+    hier ueber ``herkunft = projectdeck:<id>`` auf (Entscheid 05.11.).
+    """
+    p = _owned_project(db, me, project_id)
+    treffer = _durch(me, "GET", "/api/aufgaben", params={"herkunft": f"projectdeck:{alte_id}"}) or []
+    treffer = [a for a in treffer if a.get("projekt") == p.slug]
+    if not treffer:
+        raise HTTPException(404, "Aufgabe nicht gefunden")
+    return treffer[0]
+
+
+@router.get("/{project_id}/aufgaben")
+def aufgaben_liste(
     project_id: int,
-    task_id: int,
-    payload: TaskPatch,
+    erledigte: bool = Query(False),
     me: Me = CurrentUser,
     db: Session = Depends(get_db),
-) -> ProjectTask:
-    _owned_project(db, me, project_id)
-    t = db.get(ProjectTask, task_id)
-    if not t or t.project_id != project_id:
-        raise HTTPException(404, "task not found")
-    fields = payload.model_dump(exclude_unset=True)
-    for k, v in fields.items():
-        setattr(t, k, v)
-    if fields.get("status") == "done" and not t.completed_at:
-        t.completed_at = datetime.now(timezone.utc)
-        t.remaining_minutes = 0
-    db.commit()
-    db.refresh(t)
-    return t
+) -> list[dict]:
+    p = _owned_project(db, me, project_id)
+    return _durch(me, "GET", "/api/aufgaben", params={"projekt": p.slug, "erledigte": erledigte})
 
 
-@router.delete("/{project_id}/tasks/{task_id}", status_code=204)
-def delete_task(
-    project_id: int, task_id: int, me: Me = CurrentUser, db: Session = Depends(get_db)
-) -> None:
-    _owned_project(db, me, project_id)
-    t = db.get(ProjectTask, task_id)
-    if not t or t.project_id != project_id:
-        raise HTTPException(404, "task not found")
-    db.delete(t)
-    db.commit()
+@router.post("/{project_id}/aufgaben", status_code=201)
+def aufgabe_anlegen(
+    project_id: int,
+    rumpf: dict = Body(...),
+    me: Me = CurrentUser,
+    db: Session = Depends(get_db),
+) -> dict:
+    p = _owned_project(db, me, project_id)
+    daten = {k: v for k, v in rumpf.items() if k not in _NICHT_DURCHREICHEN}
+    return _durch(me, "POST", "/api/aufgaben", json={**daten, "projekt": p.slug})
+
+
+@router.put("/{project_id}/aufgaben/{aufgabe_id}")
+def aufgabe_aendern(
+    project_id: int,
+    aufgabe_id: str,
+    rumpf: dict = Body(...),
+    me: Me = CurrentUser,
+    db: Session = Depends(get_db),
+) -> dict:
+    p = _owned_project(db, me, project_id)
+    _aufgabe_im_projekt(me, p, aufgabe_id)
+    daten = {k: v for k, v in rumpf.items() if k not in _NICHT_DURCHREICHEN}
+    return _durch(me, "PUT", f"/api/aufgaben/{aufgabe_id}", json=daten)
+
+
+@router.post("/{project_id}/aufgaben/{aufgabe_id}/erledigt")
+def aufgabe_abhaken(
+    project_id: int, aufgabe_id: str, me: Me = CurrentUser, db: Session = Depends(get_db)
+) -> dict:
+    p = _owned_project(db, me, project_id)
+    _aufgabe_im_projekt(me, p, aufgabe_id)
+    return _durch(me, "POST", f"/api/aufgaben/{aufgabe_id}/erledigt")
+
+
+@router.post("/{project_id}/aufgaben/{aufgabe_id}/offen")
+def aufgabe_aufmachen(
+    project_id: int, aufgabe_id: str, me: Me = CurrentUser, db: Session = Depends(get_db)
+) -> dict:
+    p = _owned_project(db, me, project_id)
+    _aufgabe_im_projekt(me, p, aufgabe_id)
+    return _durch(me, "POST", f"/api/aufgaben/{aufgabe_id}/offen")
+
+
+@router.delete("/{project_id}/aufgaben/{aufgabe_id}", status_code=204)
+def aufgabe_loeschen(
+    project_id: int, aufgabe_id: str, me: Me = CurrentUser, db: Session = Depends(get_db)
+) -> Response:
+    p = _owned_project(db, me, project_id)
+    _aufgabe_im_projekt(me, p, aufgabe_id)
+    _durch(me, "DELETE", f"/api/aufgaben/{aufgabe_id}")
+    return Response(status_code=204)
 
 
 # ---------- Assets ----------

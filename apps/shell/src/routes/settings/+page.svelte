@@ -13,15 +13,6 @@
   let saved = $derived(page.url.searchParams.get('ok') === '1');
   let submitting = $state(false);
 
-  // Deutsch statt „Dark (Default)" / „Light": die Oberflaeche ist deutsch, und
-  // welcher Wert die Vorgabe ist, gehoert nicht in die Auswahl, sondern in den
-  // Text daneben. Seit 2026-09-27 ist die Vorgabe „Automatisch".
-  const themes = [
-    { value: 'auto', label: 'Automatisch (folgt dem Gerät)' },
-    { value: 'light', label: 'Hell' },
-    { value: 'dark', label: 'Dunkel' },
-    { value: 'hc', label: 'Hochkontrast' },
-  ];
   const locales = [
     { value: 'de-DE', label: 'Deutsch (DE)' },
     { value: 'en-US', label: 'English (US)' },
@@ -36,7 +27,7 @@
 <section class="space-y-6">
   <header class="space-y-1">
     <h1 class="font-display text-3xl">Einstellungen</h1>
-    <p class="text-muted">Darstellung und Sprache. Gilt für alle Saganta-Apps.</p>
+    <p class="text-muted">Sprache. Gilt für alle Saganta-Apps.</p>
   </header>
 
   {#if data.user}
@@ -81,24 +72,6 @@
       };
     }}
   >
-    <div class="space-y-2">
-      <label for="theme" class="block text-sm font-medium">Darstellung</label>
-      <select
-        id="theme"
-        name="theme"
-        class="min-h-11 w-full rounded-md border border-border-stark bg-surface px-3 py-2 text-text"
-        value={data.settings.theme}
-        aria-describedby="theme-hinweis"
-      >
-        {#each themes as t (t.value)}
-          <option value={t.value}>{t.label}</option>
-        {/each}
-      </select>
-      <p id="theme-hinweis" class="text-sm text-muted">
-        „Automatisch" ist die Vorgabe und wechselt mit der Einstellung deines Geräts.
-      </p>
-    </div>
-
     <div class="space-y-2">
       <label for="locale" class="block text-sm font-medium">Sprache</label>
       <select

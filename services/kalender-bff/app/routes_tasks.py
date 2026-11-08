@@ -30,12 +30,23 @@ _PROJEKT_STATUS = r"^(active|paused|completed)$"
 
 # ── Todos (Aufgaben) ─────────────────────────────────────────────────────
 class TodoIn(BaseModel):
+    """Neue Aufgabe.
+
+    ``project_id``, ``goal_id`` und ``energy_required`` seit 2026-11-03. Bis
+    dahin kannte nur ``TodoPatch`` sie, und Pydantic verwirft unbekannte Felder
+    ohne Fehler: die Web-App schickte beim Anlegen das gewaehlte Projekt mit,
+    der BFF liess es fallen, und die Aufgabe stand ohne Projekt da. Erst beim
+    Bearbeiten (PUT) kam es an. Aufgefallen beim Bau der Android-App.
+    """
     title: str = Field(..., min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=2000)
     priority: str = Field(default="mittel", pattern=_PRIORITY)
     due_date: str | None = Field(default=None, pattern=_DATE)
     due_time: str | None = Field(default=None, pattern=_TIME)
     estimated_minutes: int | None = Field(default=None, ge=1, le=1440)
+    energy_required: str | None = Field(default=None, pattern=_ENERGY)
+    project_id: str | None = None
+    goal_id: str | None = None
 
 
 @router.get("/api/todos")
@@ -286,3 +297,20 @@ async def update_project(
 @router.delete("/api/projects/{project_id}", status_code=204)
 async def delete_project(project_id: str, me: Me = CurrentUser) -> None:
     await _upstream("DELETE", f"/api/projects/{project_id}")
+
+
+# ── Suche ────────────────────────────────────────────────────────────────
+@router.get("/api/search")
+async def suche(
+    me: Me = CurrentUser,
+    q: str = Query(..., min_length=1, max_length=100),
+    limit: int = Query(8, ge=1, le=25),
+) -> dict:
+    """Volltextsuche ueber Termine, Aufgaben, Tagesziele und Kontakte.
+
+    Reicht die Suche des nativen Dienstes durch, die bisher nur dessen eigene
+    Oberflaeche erreichte. Die App sucht offline zuerst in ihrem Zwischenspeicher
+    und fragt hier nach dem, was ausserhalb ihres Fensters liegt.
+    """
+    r = await _upstream("GET", "/api/search", params={"q": q, "limit": limit})
+    return r.json() if r.content else {"query": q, "results": []}

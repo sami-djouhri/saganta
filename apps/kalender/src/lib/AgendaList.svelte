@@ -104,7 +104,7 @@
         <h3 class="flex items-start gap-2 pt-1 font-mono text-sm uppercase tracking-wider text-muted sm:flex-col sm:gap-1">
           <span class="text-text">{dayLabel(day, nowMs)}</span>
           {#if dayTypeByDay.get(day)}
-            <span class="w-fit rounded-full border border-border px-2 py-0.5 text-[10px] normal-case tracking-normal text-muted">
+            <span class="w-fit rounded-full border border-border px-2 py-0.5 text-xs normal-case tracking-normal text-muted">
               {dayTypeByDay.get(day)}
             </span>
           {/if}
@@ -168,7 +168,7 @@
                       <div
                         class="absolute right-0 z-20 mt-1 w-56 space-y-1 rounded-lg border border-border bg-surface-2 p-1.5 shadow-lg"
                       >
-                        <p class="px-2 pb-1 pt-0.5 text-[11px] text-muted">
+                        <p class="px-2 pb-1 pt-0.5 text-xs text-muted">
                           Wiederkehrend, was soll entfallen?
                         </p>
                         <form method="POST" action="?/eventDelete" use:enhance>

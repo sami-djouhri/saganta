@@ -6,15 +6,15 @@ export const handle: Handle = createBetterAuthHandle({
   cfg: getAuthConfig,
   // Podcast-Feed + Audio-Enclosures müssen OHNE Login erreichbar sein (Podcast-/
   // Alexa-Apps haben keine Session). Schutz allein über den unguessable feed_token.
+  // `/` ist seit 2026-11-05 nicht mehr öffentlich: dort stand eine Werbeseite
+  // mit Tarifen (Landing), also das am 21.10. abgeschaffte Produkt. Wie in der
+  // Shell schickt der Hook Abgemeldete jetzt zur Anmeldung.
   publicPaths: [
-    '/', // öffentliche Marketing-/Landingpage für Nicht-Eingeloggte (Feed für Eingeloggte)
     '/healthz',
     '/robots.txt',
-    '/sitemap.xml',
     '/favicon.ico',
     '/login',
     '/tools/saganta-briefing-player.sh', // Self-Serve-Player-Download
-    '/briefing/stripe/webhook', // Stripe ruft ohne Login; Schutz = Signaturprüfung im Backend
     /^\/briefing\/feed\/[^/]+\.xml$/,
     // Audio und JSON, jeweils mit und ohne Datum (ohne Datum = neuestes Briefing).
     // `today` ist ausgenommen: /briefing/audio/today ist der Player-Proxy MIT

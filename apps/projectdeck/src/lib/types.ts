@@ -37,26 +37,42 @@ export interface Project {
   last_reviewed_at: string | null;
   /** Nicht erledigte Aufgaben; die Listenroute zaehlt sie in einer Abfrage. */
   open_tasks?: number;
+  /** Davon mit Prioritaet hoch. */
+  open_high?: number;
   created_at: string;
   updated_at: string;
 }
 
-export interface Task {
-  id: number;
+/**
+ * Eine Aufgabe aus dem Aufgaben-Dienst (`aufgaben-api`), durchgereicht ueber
+ * `/api/projects/{id}/aufgaben`. Die Kennung ist eine UUID, keine Zahl:
+ * seit dem Umzug (Nov. 2026) haelt das ProjectDeck keine eigene Kopie mehr.
+ */
+export interface Aufgabe {
+  id: string;
+  titel: string;
+  notiz: string | null;
+  prioritaet: 'hoch' | 'mittel' | 'niedrig';
+  faellig: string | null;
+  tag: string | null;
+  start: string | null;
+  ende: string | null;
+  dauer_min: number | null;
+  erledigt: boolean;
+  erledigt_am: string | null;
+  projekt: string | null;
+  wartet: boolean;
+  wartet_grund: string | null;
+  wartet_bis: string | null;
+  /** Seit 08.11. vom Aufgaben-Dienst mitgeliefert; aeltere Antworten haben es nicht. */
+  geaendert_am?: string | null;
+}
+
+/** Eine Zeile aus GET /api/aufgaben: die Aufgabe samt ihrem Projekt. */
+export interface AufgabeUebersicht extends Aufgabe {
   project_id: number;
-  title: string;
-  description: string | null;
-  status: string;
-  priority: number;
-  estimated_minutes: number | null;
-  remaining_minutes: number | null;
-  deadline: string | null;
-  can_schedule: boolean;
-  can_split: boolean;
-  min_block_minutes: number | null;
-  max_block_minutes: number | null;
-  scheduled_event_id: string | null;
-  completed_at: string | null;
+  project_name: string;
+  project_status: string;
 }
 
 export interface Asset {
@@ -129,17 +145,6 @@ export interface Finding {
   name: string;
   message: string;
   bucket: string;
-}
-
-export interface TimeBlock {
-  id: number;
-  project_id: number;
-  task_id: number | null;
-  calendar_event_id: string | null;
-  planned_start: string | null;
-  planned_end: string | null;
-  actual_minutes: number | null;
-  status: string;
 }
 
 export interface Dashboard {

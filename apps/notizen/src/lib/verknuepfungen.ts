@@ -50,8 +50,8 @@ export const TYP_SYMBOL: Record<VerknuepfungsTyp, string> = {
  * heraus durch den Tunnel in einen anderen Cookie-Raum.
  *
  * Jetzt entstehen sie über den geteilten Katalog im Raum des Aufrufers, und die
- * Ziele gibt es: Aufgaben und Ziele in der neuen Aufgaben-App, Kontakte im
- * Kalender (dort existiert die Route). `host` ist der Host der laufenden
+ * Ziele gibt es: Aufgaben und Ziele in der neuen Aufgaben-App, Kontakte in
+ * Saganta Kontakte. `host` ist der Host der laufenden
  * Anfrage, nicht der des Ziels.
  */
 export function zielAdresse(
@@ -72,14 +72,9 @@ export function zielAdresse(
     case 'projekt':
       return `${appUrlById('projectdeck', host)}/projekte/${encodeURIComponent(ref)}`;
     case 'kontakt':
-      // **Bewusst kein Link.** Der BFF kann Kontakte (`routes_contacts.py`),
-      // aber es gibt in Saganta keine Oberflaeche dafuer: die Kalender-App hat
-      // genau eine Seite. Eine Adresse zu bilden, hinter der nichts steht, ist
-      // schlechter als gar keine: der unverlinkte Eintrag zeigt weiterhin, worauf
-      // sich die Notiz bezieht, und behauptet nicht, man koenne dorthin.
-      // (Dasselbe Muster wie 2026-09-12, „Adressen ohne Ziel sind leer, nicht
-      // erfunden".) Sobald es eine Kontaktseite gibt, gehoert sie hierher.
-      return null;
+      // Seit 2026-11-07 gibt es die Kontaktseite: Saganta Kontakte. Bis dahin
+      // stand hier bewusst kein Link, weil es keine Oberflaeche gab.
+      return `${appUrlById('kontakte', host)}/k/${encodeURIComponent(ref)}`;
     case 'brief':
       return `${appUrlById('post', host)}/?brief=${encodeURIComponent(ref)}`;
     default:

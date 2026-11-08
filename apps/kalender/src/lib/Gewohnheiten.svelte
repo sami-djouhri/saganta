@@ -57,18 +57,24 @@
 <section class="space-y-4 rounded-xl border border-border bg-surface-2/40 p-4">
   <div class="flex items-baseline justify-between gap-3">
     <h3 class="font-mono text-xs uppercase tracking-wider text-muted">Gewohnheiten</h3>
-    {#if offen.length > 0}
-      <span class="text-[11px] font-semibold text-warnung">
-        {offen.length} wartet auf Antwort
-      </span>
-    {/if}
+    <div class="flex items-baseline gap-3">
+      {#if offen.length > 0}
+        <span class="text-xs font-semibold text-warnung">
+          {offen.length} wartet auf Antwort
+        </span>
+      {/if}
+      <!-- Anlegen und Aendern seit 2026-11-08 auf eigener Seite (Gleichstand-Luecke 2). -->
+      <a href="/gewohnheiten" class="text-xs text-muted underline-offset-2 hover:text-text hover:underline"
+        >verwalten</a
+      >
+    </div>
   </div>
 
   {#if fortschritt.length === 0 && sitzungen.length === 0}
     <p class="text-sm leading-relaxed text-muted">
       Keine Gewohnheiten angelegt. Gewohnheiten sind wiederkehrende Vorhaben mit
       Wochenziel, der Kalender plant die Sitzungen selbst in freie Fenster und
-      meldet sie per Push.
+      meldet sie per Push. <a href="/gewohnheiten" class="text-akzent hover:underline">Gewohnheit anlegen</a>
     </p>
   {/if}
 
@@ -81,7 +87,7 @@
               class="border-l-2 pl-2 text-sm font-medium"
               style:border-color={g.color || '#4a9eff'}>{g.name}</span
             >
-            <span class="shrink-0 font-mono text-[11px] tabular-nums text-muted">
+            <span class="shrink-0 font-mono text-xs tabular-nums text-muted">
               {ist(g).toFixed(1)} / {soll(g).toFixed(1)} h
             </span>
           </div>
@@ -108,7 +114,7 @@
 
   {#if offen.length > 0}
     <div class="space-y-2">
-      <h4 class="font-mono text-[11px] uppercase tracking-wider text-warnung">
+      <h4 class="font-mono text-xs uppercase tracking-wider text-warnung">
         Wartet auf Antwort
       </h4>
       {#each offen as s (s.id)}
@@ -118,7 +124,7 @@
         >
           <div class="flex items-baseline justify-between gap-3">
             <strong class="text-sm font-medium">{s.habit_name ?? 'Gewohnheit'}</strong>
-            <span class="shrink-0 font-mono text-[11px] tabular-nums text-muted">
+            <span class="shrink-0 font-mono text-xs tabular-nums text-muted">
               {fmtDate(s.start)} · {spanne(s.start, s.end)}
             </span>
           </div>
@@ -151,7 +157,7 @@
               >
             </form>
           </div>
-          <p class="text-[11px] leading-snug text-muted">
+          <p class="text-xs leading-snug text-muted">
             Verwerfen lässt den Scheduler in derselben Woche einen Ersatztermin suchen.
           </p>
         </article>
@@ -161,7 +167,7 @@
 
   {#if geplant.length > 0}
     <div class="space-y-1.5">
-      <h4 class="font-mono text-[11px] uppercase tracking-wider text-muted">Geplant</h4>
+      <h4 class="font-mono text-xs uppercase tracking-wider text-muted">Geplant</h4>
       {#each geplant as s (s.id)}
         <article
           class="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-border border-l-2 bg-surface/40 px-3 py-2"
@@ -170,22 +176,33 @@
           <div class="min-w-0">
             <span class="text-sm">{s.habit_name ?? 'Gewohnheit'}</span>
             <span
-              class="ml-2 text-[11px]"
+              class="ml-2 text-xs"
               class:text-erfolg={s.status === 'accepted'}
               class:text-muted={s.status !== 'accepted'}>{ZUSTAND[s.status] ?? s.status}</span
             >
           </div>
           <div class="flex items-baseline gap-2">
-            <span class="font-mono text-[11px] tabular-nums text-muted">
+            <span class="font-mono text-xs tabular-nums text-muted">
               {fmtDate(s.start)} · {spanne(s.start, s.end)}
             </span>
-            {#if s.status === 'accepted'}
+            {#if s.status === 'completed' || (s.status === 'accepted' && new Date(s.end) < new Date())}
+              <!-- Erledigt oder vorbei: zuruecknehmbar, ohne Neuplanung (seit 2026-11-07). -->
+              <form method="POST" action="?/sitzungAktion" use:enhance>
+                <input type="hidden" name="id" value={s.id} />
+                <input type="hidden" name="aktion" value="nicht_gemacht" />
+                <button
+                  type="submit"
+                  class="rounded border border-border px-2 py-0.5 text-xs text-muted hover:bg-surface-2"
+                  >nicht gemacht</button
+                >
+              </form>
+            {:else if s.status === 'accepted'}
               <form method="POST" action="?/sitzungAktion" use:enhance>
                 <input type="hidden" name="id" value={s.id} />
                 <input type="hidden" name="aktion" value="cancelled" />
                 <button
                   type="submit"
-                  class="rounded border border-border px-2 py-0.5 text-[11px] text-muted hover:bg-surface-2"
+                  class="rounded border border-border px-2 py-0.5 text-xs text-muted hover:bg-surface-2"
                   >absagen</button
                 >
               </form>

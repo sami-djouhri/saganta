@@ -5,6 +5,7 @@ export { default as AppSwitcher } from './components/AppSwitcher.svelte';
 export { default as CommandPalette } from './components/CommandPalette.svelte';
 export { default as Spinner } from './components/Spinner.svelte';
 export { default as PageContainer } from './components/PageContainer.svelte';
+export { default as AppRahmen, type NavEintrag } from './components/AppRahmen.svelte';
 export { default as UpdateBanner } from './components/UpdateBanner.svelte';
 export { default as AppHinweis } from './components/AppHinweis.svelte';
 export { default as NotizenBlock } from './components/NotizenBlock.svelte';

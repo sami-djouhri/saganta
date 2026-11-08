@@ -29,13 +29,13 @@ class ProfileOut(BaseModel):
 
 
 class PlanOut(BaseModel):
+    """Die Kostenbremse des Kontos. ``plan`` traegt den gespeicherten Wert
+    (``free`` = begrenzt, ``pro`` = volle Rechenzeit), ``voll`` die Antwort."""
+
     plan: str
     features: dict
-    pro_benefits: list[str]
-    is_pro: bool
-    # Steuert das UI: True => „Jetzt upgraden"-Button (Stripe), False => mailto-Fallback.
-    stripe_enabled: bool = False
-    plan_status: str | None = None
+    voll: bool
+    voller_umfang: list[str]
 
 
 class ProfilePatch(BaseModel):

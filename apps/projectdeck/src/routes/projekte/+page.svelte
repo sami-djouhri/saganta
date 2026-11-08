@@ -15,6 +15,31 @@
 
   let gefiltert = $derived(Boolean(data.filter?.type || data.filter?.status));
 
+  // Die Liste kommt nach Projekt-Prioritaet vom Dienst; "offen" sortiert hier
+  // nach hoch, dann offen, bei Gleichstand bleibt die Reihenfolge des Dienstes.
+  let sortiert = $derived(
+    data.sortierung === 'prioritaet'
+      ? data.projects
+      : [...data.projects].sort(
+          (a, b) => (b.open_high ?? 0) - (a.open_high ?? 0) || (b.open_tasks ?? 0) - (a.open_tasks ?? 0),
+        ),
+  );
+
+  const SORTIERUNGEN: [string, string][] = [
+    ['offen', 'nach Offenem'],
+    ['prioritaet', 'nach Priorität'],
+  ];
+
+  /** Adresse mit geaenderter Sortierung, die Filter bleiben stehen. */
+  function mitSortierung(wert: string): string {
+    const q = new URLSearchParams();
+    if (data.filter?.type) q.set('type', data.filter.type);
+    if (data.filter?.status) q.set('status', data.filter.status);
+    if (wert !== 'offen') q.set('sort', wert);
+    const s = q.toString();
+    return s ? `/projekte?${s}` : '/projekte';
+  }
+
   /** Wie oft kommt jeder Wert vor, und zwar ueber ALLE Projekte.
    *
    * Bewusst `data.alleProjekte` und nicht `data.projects`: sobald ein Filter
@@ -112,30 +137,39 @@
 -->
 <div class="mt-4 flex flex-col gap-2 rounded-lg border border-border bg-surface-2/20 p-3">
   <div class="flex flex-wrap items-center gap-2">
-    <span class="w-14 shrink-0 text-[11px] uppercase tracking-wide text-muted">Alle</span>
+    <span class="w-14 shrink-0 text-xs uppercase tracking-wide text-muted">Alle</span>
     <a
       href="/projekte"
       class="rounded-md border px-2 py-1 text-xs {gefiltert
         ? 'border-border text-muted'
         : 'border-accent-500/60 bg-surface-2'}"
     >
-      {data.projects.length} Projekte
+      {(data.alleProjekte ?? data.projects).length} Projekte
     </a>
+    <span class="ml-auto text-xs uppercase tracking-wide text-muted">Sortiert</span>
+    {#each SORTIERUNGEN as [wert, label] (wert)}
+      <a
+        href={mitSortierung(wert)}
+        class="rounded-md border px-2 py-1 text-xs {data.sortierung === wert
+          ? 'border-accent-500/60 bg-surface-2'
+          : 'border-border text-muted'}">{label}</a
+      >
+    {/each}
   </div>
   {#each ACHSEN as achse (achse.feld)}
     {@const werte = zaehle(achse.feld)}
     {#if werte.length}
       <div class="flex flex-wrap items-center gap-2">
-        <span class="w-14 shrink-0 text-[11px] uppercase tracking-wide text-muted">{achse.titel}</span>
+        <span class="w-14 shrink-0 text-xs uppercase tracking-wide text-muted">{achse.titel}</span>
         {#each werte as [wert, anzahl] (wert)}
           <a
-            href="/projekte?{achse.feld}={wert}"
+            href="/projekte?{achse.feld}={wert}{data.sortierung === 'prioritaet' ? '&sort=prioritaet' : ''}"
             class="rounded-md border px-2 py-1 text-xs {data.filter?.[achse.feld] === wert
               ? 'border-accent-500/60 bg-surface-2'
               : 'border-border text-muted'}"
           >
             {achse.labels[wert] ?? wert}
-            <span class="text-[10px] opacity-70">{anzahl}</span>
+            <span class="text-xs opacity-70">{anzahl}</span>
           </a>
         {/each}
       </div>
@@ -144,5 +178,5 @@
 </div>
 
 <div class="mt-6">
-  <ProjectGrid projects={data.projects} empty="Noch keine Projekte, leg dein erstes an." />
+  <ProjectGrid projects={sortiert} empty="Noch keine Projekte, leg dein erstes an." />
 </div>

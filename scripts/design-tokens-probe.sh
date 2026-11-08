@@ -63,7 +63,7 @@ gebaut=0
 # nicht mehr gibt.
 #
 # Es sind ZWEI, und die zweite hat gefehlt. Zuerst stand hier allein
-# `theme.css`. Am 2026-10-24 legte eine parallele Sitzung
+# `theme.css`. Am 2026-10-24 legte eine gleichzeitige Aenderung
 # `packages/ui/src/components/NotizenBlock.svelte` an, das `bg-fehler` und
 # `border-fehler` benutzt. Weil die Token-Datei `@source "../../ui/src/**"`
 # setzt, gehoeren die geteilten Komponenten in die Erwartung JEDER App, und
@@ -180,28 +180,20 @@ for app in "${APPS[@]}"; do
   fi
 done
 
-# ── Theme-Schalter: das HTML und der Handle muessen denselben Wert meinen ────
+# ── Nur dunkel: kein heller Zweig und kein Theme-Selektor in der Quelle ──────
 #
-# `createBetterAuthHandle` biegt das gewaehlte Theme per `replaceAll` ins
-# gerenderte HTML. Sucht es einen Wert, den kein `app.html` mehr traegt, dann
-# gibt es KEINEN Fehler: die Umschaltung findet nichts und tut still nichts,
-# und alle Apps bleiben in der Vorgabe haengen. Genau das waere beim Wechsel
-# von `dark` auf `auto` am 2026-09-27 passiert, haette man nur eine Seite
-# angefasst. Deshalb wird der Gleichstand hier gemessen und nicht zugesichert.
-HANDLE_WERT=$(grep -oE "replaceAll\('data-theme=\\\\?\"([a-z]+)" \
-  packages/auth/src/better-auth.ts | grep -oE '[a-z]+$' | head -1)
-theme_fehler=0
-if [ -z "$HANDLE_WERT" ]; then
-  echo "Theme-Schalter: konnte den gesuchten Wert in better-auth.ts nicht lesen."
-  theme_fehler=1
+# Entscheid 2026-11-02: es gibt nur die Nachtstudie. Bis dahin stand hier
+# die Pruefung, dass Handle und app.html denselben `data-theme`-Wert meinen;
+# der Umschalter ist weg, und mit ihm diese Pruefung. Was jetzt gesichert wird:
+# kommt ein `prefers-color-scheme: light` oder ein `[data-theme=...]` zurueck,
+# gibt es wieder einen Zustand, den niemand gewaehlt hat.
+# Kommentare werden vorher entfernt: die Quelle erklaert die Geschichte.
+theme_fehler=$(perl -0777 -pe 's{/\*.*?\*/}{}gs' "$TOKENQUELLE" \
+  | grep -cE "prefers-color-scheme|\[data-theme" || true)
+if [ "$theme_fehler" -eq 0 ]; then
+  echo "Nur dunkel ok: kein heller Zweig und kein Theme-Selektor in $TOKENQUELLE."
 else
-  for html in apps/*/src/app.html; do
-    grep -qF "data-theme=\"$HANDLE_WERT\"" "$html" && continue
-    echo "Theme-Schalter: $html traegt nicht data-theme=\"$HANDLE_WERT\" (Handle sucht den)."
-    theme_fehler=$((theme_fehler + 1))
-  done
-  [ "$theme_fehler" -eq 0 ] &&
-    echo "Theme-Schalter ok: alle app.html tragen data-theme=\"$HANDLE_WERT\"."
+  echo "Nur dunkel VERLETZT: $theme_fehler Zeile(n) mit prefers-color-scheme oder [data-theme in $TOKENQUELLE."
 fi
 gesamt_fehler=$((gesamt_fehler + theme_fehler))
 

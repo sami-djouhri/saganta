@@ -4,8 +4,9 @@ export const APP_ID = 'notizen';
 export const APP_NAME = 'Notizen';
 
 export const NAV = [
-  { href: '/', label: 'Alle Notizen', icon: 'pen' },
-  { href: '/freigaben', label: 'Geteilte Links', icon: 'globe' },
+  { href: '/', label: 'Alle Notizen', kurz: 'Notizen', icon: 'pen' },
+  { href: '/freigaben', label: 'Geteilte Links', kurz: 'Geteilt', icon: 'globe' },
+  { href: '/papierkorb', label: 'Papierkorb', icon: 'trash' },
 ] as const;
 
 /** Was von einem konfigurierten Kurz-Namen zu halten ist. */

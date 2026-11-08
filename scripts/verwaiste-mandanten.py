@@ -37,13 +37,23 @@ AUFRUF
 
     python3 scripts/verwaiste-mandanten.py          # Bericht
     python3 scripts/verwaiste-mandanten.py --json   # maschinenlesbar
+    python3 scripts/verwaiste-mandanten.py --herzschlag   # zusaetzlich nach Prometheus (Timer)
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import time
+
+from konto_soll import laeuft, ruht
+
+TEXTFILE = os.environ.get(
+    "KONTO_WACHE_TEXTFILE",
+    "/var/lib/node_exporter/textfile_collector/konto-wache-verwaist.prom",
+)
 
 # Container, Suchmuster fuer die Datenbank, und die Spalten, die einen Mandanten
 # bezeichnen. Die Namen weichen bewusst ab (`owner_sub`, `sub`, `owner`,
@@ -56,7 +66,6 @@ DIENSTE = [
     # (Container, Glob-Muster fuer die SQLite-Datei)
     ("saganta-notizen-api", "/data/*.db /app/data/*.db"),
     ("saganta-tagebuch-api", "/data/*.db /app/data/*.db"),
-    ("saganta-assets-api", "/data/*.db /app/data/*.db"),
     ("saganta-projectdeck-api", "/data/*.db /app/data/*.db"),
     ("saganta-news-api", "/data/*.db /app/data/*.db"),
     ("saganta-mail-api", "/data/*.db /app/data/*.db"),
@@ -202,10 +211,18 @@ def main() -> int:
     gueltig = echte_konten | set(BEKANNT_OHNE_KONTO)
     bericht = {}
     unerreichbar = []
+    ruhend = {}
     for container, muster in DIENSTE:
-        code, _ = lauf(["docker", "inspect", "-f", "{{.State.Running}}", container])
-        if code != 0:
-            unerreichbar.append(container)
+        # Bis 2026-11-08 stand hier nur der Rueckgabewert von `docker inspect`.
+        # Der ist auch fuer einen GESTOPPTEN Container 0, und dessen leere Antwort
+        # wurde als "0 Mandant(en) mit Daten" gemeldet: briefkasten und tagebuch
+        # sahen sauber aus, waehrend niemand hineingesehen hatte.
+        if not laeuft(container):
+            soll = ruht(container)
+            if soll:
+                ruhend[container] = soll
+            else:
+                unerreichbar.append(container)
             continue
         ergebnis = subs_im_dienst(container, muster) or leer()
         gefunden = ergebnis.get("subs", {})
@@ -216,9 +233,13 @@ def main() -> int:
             "lokale_konten": ergebnis.get("lokale_konten", {}),
         }
 
+    if "--herzschlag" in sys.argv:
+        herzschlag(bericht, unerreichbar, ruhend)
+
     if "--json" in sys.argv:
         print(json.dumps(
-            {"konten": len(gueltig), "dienste": bericht, "unerreichbar": unerreichbar},
+            {"konten": len(gueltig), "dienste": bericht, "unerreichbar": unerreichbar,
+             "ruhend": ruhend},
             indent=2, ensure_ascii=False,
         ))
         return 0
@@ -230,7 +251,10 @@ def main() -> int:
     print(f"Konten in der Anmelde-Datenbank: {len(echte_konten)}"
           f"  (plus {len(BEKANNT_OHNE_KONTO)} begruendete Ausnahme(n))")
     if unerreichbar:
-        print(f"Nicht erreichbar (laeuft nicht): {', '.join(unerreichbar)}")
+        print(f"Nicht erreichbar (laeuft nicht, soll laufen): {', '.join(unerreichbar)}")
+    if ruhend:
+        print("Ruht laut control-map, Bestand ungeprueft: "
+              + ", ".join(f"{c} ({z})" for c, z in sorted(ruhend.items())))
     print()
     summe, lokal_summe = 0, 0
     for container, d in bericht.items():
@@ -248,15 +272,55 @@ def main() -> int:
     print()
     if summe:
         print(f"{summe} verwaiste(r) Mandant(en). Sie haben Daten und kein Konto.")
-        print("Loeschen geht heute nur im kalender (/api/account/delete); fuer die")
-        print("uebrigen Dienste fehlt die Route. Siehe Modulkopf.")
+        print("Abraeumen: scripts/konto-loeschen.py --sub <sub> (Vorschau, dann --loeschen);")
+        print("im Kalender von Hand, der Befehl steht in dessen Bericht.")
     else:
         print("Kein verwaister Mandant: jeder Bestand mit Sub gehoert einem Konto.")
     if lokal_summe:
         print(f"{lokal_summe} Konto/Konten ohne Saganta-Bindung. Das ist eine ZWEITE")
         print("Anmeldetuer in dieselbe App, und sie zaehlt nicht als gemeinsamer")
         print("Bestand. Pruefen, ob sie gewollt ist und ob ihre Registrierung zu ist.")
-    return 1 if (summe or lokal_summe) else 0
+    return 1 if (summe or lokal_summe or unerreichbar) else 0
+
+
+def herzschlag(bericht: dict, unerreichbar: list, ruhend: dict) -> None:
+    """Lauf und Befunde nach Prometheus. Keine Kennungen in den Metriken: dass
+    etwas verwaist ist, genuegt zum Nachsehen, welcher Sub, steht im Journal."""
+    ordner = os.path.dirname(TEXTFILE)
+    if not os.path.isdir(ordner):
+        print(f"(kein Collector-Ordner {ordner}, kein Herzschlag geschrieben)")
+        return
+    zeilen = [
+        "# HELP homelab_konto_verwaist_lauf_zeitstempel Unix-Zeit des letzten Laufs (verwaiste Mandanten)",
+        "# TYPE homelab_konto_verwaist_lauf_zeitstempel gauge",
+        f'homelab_konto_verwaist_lauf_zeitstempel {int(time.time())}',
+        "# HELP saganta_konto_verwaist Mandanten mit Daten und ohne Konto, je Dienst",
+        "# TYPE saganta_konto_verwaist gauge",
+    ]
+    for container, d in sorted(bericht.items()):
+        zeilen.append(f'saganta_konto_verwaist{{dienst="{container}"}} {len(d["verwaist"])}')
+    zeilen += [
+        "# HELP saganta_konto_lokale_konten Konten ohne Saganta-Bindung, je Dienst",
+        "# TYPE saganta_konto_lokale_konten gauge",
+    ]
+    for container, d in sorted(bericht.items()):
+        zeilen.append(f'saganta_konto_lokale_konten{{dienst="{container}"}} '
+                      f'{sum(d["lokale_konten"].values())}')
+    zeilen += [
+        "# HELP saganta_konto_verwaist_unerreichbar Dienste, die laufen sollen und nicht laufen",
+        "# TYPE saganta_konto_verwaist_unerreichbar gauge",
+        f'saganta_konto_verwaist_unerreichbar {len(unerreichbar)}',
+        "# HELP saganta_konto_verwaist_ruhend Dienste, die laut control-map ruhen (ungeprueft)",
+        "# TYPE saganta_konto_verwaist_ruhend gauge",
+        f'saganta_konto_verwaist_ruhend {len(ruhend)}',
+    ]
+    tmp = TEXTFILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(zeilen) + "\n")
+        os.replace(tmp, TEXTFILE)
+    except OSError as fehler:
+        print(f"(Herzschlag nicht schreibbar: {fehler})")
 
 
 if __name__ == "__main__":

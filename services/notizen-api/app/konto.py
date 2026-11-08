@@ -52,6 +52,7 @@ PLAN = loeschen.Plan(
     # sie tragen eine eigene ``owner_sub``-Spalte, und ein Eintrag, dessen
     # Mandant von dem der Notiz abweicht, wuerde sonst unbemerkt liegenbleiben.
     schritte=(
+        loeschen.eigene("papierkorb", warum="Kopien geloeschter Notizen (30 Tage)"),
         loeschen.eigene("freigaben", warum="Freigabe-Chiffrat und Merkmal"),
         loeschen.eigene("anhaenge", warum="Metadaten der Anhaenge"),
         loeschen.eigene("verknuepfungen", warum="Bezuege auf Termine, Aufgaben, Briefe"),

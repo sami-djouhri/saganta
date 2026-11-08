@@ -19,9 +19,10 @@ function safeNext(raw: string | null, eigenerHost?: string): string {
   return sicheresZiel(raw, eigenerHost);
 }
 
-// Absoluter Callback für Verifizierungs-Mail (nach Klick → Startseite mit Banner).
+// Absoluter Callback für Verifizierungs-Mail (nach Klick → Anmeldung mit Hinweis).
+// Bis 2026-11-01 zeigte die Landing auf `/` den Hinweis; die gibt es nicht mehr.
 function verifyCallback(origin: string): string {
-  return `${origin}/?verified=1`;
+  return `${origin}/login?verified=1`;
 }
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -34,7 +35,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
     captchaEnabled: captchaEnabled(),
     // Nach erfolgreichem Passwort-Reset (/reset → /login?reset=1).
     resetDone: url.searchParams.get('reset') === '1',
-    // Landing-CTAs verlinken auf /login?mode=register → direkt im Register-Tab starten.
+    // Nach Klick auf den Bestätigungslink (verifyCallback).
+    verified: url.searchParams.get('verified') === '1',
+    // `/login?mode=register` → direkt im Register-Tab starten.
     initialMode: url.searchParams.get('mode') === 'register' ? 'register' : 'login',
     // `selectedPlan` ist am 2026-10-25 entfallen. Den Parameter `?plan=` setzten
     // ausschliesslich die CTAs der Preisseite, und die gibt es seit demselben Tag

@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # nativen Kalender sein.
     kalender_tenant_secret: str = ""
 
+    # Die Aufgaben liegen im Aufgaben-Dienst (sechste Fragerunde, 04.11.).
+    # Dieser Dienst spricht ihn im Namen des Aufrufers an, mit einem eigenen
+    # 60-s-Token fuer `aufgaben-api`, gestempelt mit `jwt_secret`.
+    aufgaben_api_url: str = "http://saganta-aufgaben-api:8000"
+    aufgaben_timeout_seconds: float = 8.0
+
     # Optionaler KI-Layer, aus per Vorgabe. Erwartet ein OpenAI-kompatibles
     # /v1/chat/completions (llama.cpp, vLLM, Ollama und dergleichen).
     #

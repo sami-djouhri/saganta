@@ -203,7 +203,7 @@
           class="rounded-md px-3 py-1.5 text-sm text-muted hover:text-text">Abbrechen</button
         >
         <span class="flex-1"></span>
-        <span class="text-[11px] text-muted">hängt am {TYP_NAME[typ]}</span>
+        <span class="text-xs text-muted">hängt am {TYP_NAME[typ]}</span>
       </div>
     </form>
   {:else}

@@ -13,7 +13,9 @@
  */
 import type { Aufgabe } from './aufgaben-bff';
 
-export const PRIORITAETEN = ['dringend', 'hoch', 'mittel', 'niedrig'] as const;
+// Drei Worte seit dem Aufgaben-Dienst (2026-11-03). `dringend` bleibt unten in Rang
+// und Stil, damit ein Altbestand nicht ohne Farbe dasteht.
+export const PRIORITAETEN = ['hoch', 'mittel', 'niedrig'] as const;
 export type Prioritaet = (typeof PRIORITAETEN)[number];
 
 const PRIO_RANG: Record<string, number> = {
@@ -75,7 +77,9 @@ export function istUeberfaellig(a: Aufgabe, heute: string): boolean {
 
 /** Fuer heute eingeplant: entweder ein Zeitfenster oder ein Plantag. */
 export function istHeuteGeplant(a: Aufgabe, heute: string): boolean {
-  if (a.planned_date === heute) return true;
+  // Auch ein vergangener Tag: was gestern dran war und liegen blieb, gehoert
+  // auf heute (wie in der Android-App und im Planer, seit 2026-11-03).
+  if (a.planned_date && a.planned_date <= heute) return true;
   return !!a.scheduled_start && a.scheduled_start.slice(0, 10) === heute;
 }
 
@@ -189,7 +193,9 @@ export function tagesGruppen(alle: Aufgabe[], heute: string): Gruppe[] {
  */
 export function pool(alle: Aufgabe[], heute: string): Aufgabe[] {
   return alle
-    .filter((a) => istOffen(a) && !gehoertZuHeute(a, heute) && !a.due_date)
+    // Ohne Frist UND ohne Tag: eine auf naechste Woche geschobene Aufgabe
+    // ist kein Vorrat, sonst schoepfte „Tag planen" sie heute wieder ab.
+    .filter((a) => istOffen(a) && !gehoertZuHeute(a, heute) && !a.due_date && !a.planned_date)
     .sort(nachDringlichkeit);
 }
 

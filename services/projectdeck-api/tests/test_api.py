@@ -13,11 +13,16 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import aufgaben_dienst  # noqa: E402
 from app.auth import Me, verify_jwt  # noqa: E402
 from app.db import init_db  # noqa: E402
 from app.main import app  # noqa: E402
 
+from tests.aufgaben_nachbau import Nachbau  # noqa: E402
+
 app.dependency_overrides[verify_jwt] = lambda: Me(sub="tester", email="t@t")
+# Die Aufgaben liegen im Aufgaben-Dienst; hier steht er im Speicher.
+aufgaben_dienst.aufruf = Nachbau()
 init_db()
 client = TestClient(app)
 
@@ -61,8 +66,8 @@ class TestProjectLifecycle(unittest.TestCase):
         ).json()
         # planbarer Task → erscheint im Deadline Center
         client.post(
-            f"/api/projects/{ed['id']}/tasks",
-            json={"title": "Shop-Update", "estimated_minutes": 240, "can_schedule": True},
+            f"/api/projects/{ed['id']}/aufgaben",
+            json={"titel": "Shop-Update", "dauer_min": 240},
         )
 
         dc = client.get("/api/deadline-center").json()
@@ -86,15 +91,6 @@ class TestProjectLifecycle(unittest.TestCase):
         self.assertEqual(updated["status"], "frozen")
         self.assertEqual(updated["priority"], 4)
         self.assertIsNotNone(updated["last_reviewed_at"])
-
-    def test_frozen_not_auto_schedulable(self):
-        p = client.post("/api/projects", json={"name": "Frozen", "status": "frozen"}).json()
-        client.post(
-            f"/api/projects/{p['id']}/tasks",
-            json={"title": "x", "estimated_minutes": 60},
-        )
-        r = client.post(f"/api/projects/{p['id']}/plan")
-        self.assertEqual(r.status_code, 409)
 
     def test_assets_roundtrip(self):
         p = client.post("/api/projects", json={"name": "Assets-Test"}).json()
@@ -294,6 +290,82 @@ class TestDashboard(unittest.TestCase):
         self.assertIn("tiles", d)
         self.assertIn("counts", d)
         self.assertIn("client_projects", d["tiles"])
+
+
+class TestFremdfelder(unittest.TestCase):
+    """Ein Tippfehler im Feldnamen faellt nicht mehr wortlos weg.
+
+    Befund und Verfahren: docs/FELDNAMEN_BEFUND.md. Hier wird geprueft, dass die
+    Schemas des Dienstes wirklich am Vorfahren haengen; die Mechanik selbst
+    testet services/_geteilt/tests/test_eingang.py.
+    """
+
+    def setUp(self):
+        self._alt = os.environ.get("SAGANTA_FREMDFELDER")
+        pid = client.post("/api/projects", json={"name": "Fremdfeld-Test"}).json()["id"]
+        self.pid = pid
+        self.mid = client.post(f"/api/projects/{pid}/milestones", json={"title": "m"}).json()["id"]
+
+    def tearDown(self):
+        if self._alt is None:
+            os.environ.pop("SAGANTA_FREMDFELDER", None)
+        else:
+            os.environ["SAGANTA_FREMDFELDER"] = self._alt
+
+    def test_jedes_eingangsschema_haengt_am_vorfahren(self):
+        # Das Soll kommt aus den Namen, nicht aus einer zweiten Liste: wer ein
+        # neues *In oder *Patch von BaseModel ableitet, wird hier rot.
+        import inspect
+
+        from pydantic import BaseModel
+        from saganta_dienst.eingang import Eingang
+
+        from app import schemas
+
+        eingaenge = [
+            n for n, k in inspect.getmembers(schemas, inspect.isclass)
+            if issubclass(k, BaseModel) and k.__module__ == schemas.__name__
+            and (n.endswith("In") or n.endswith("Patch"))
+        ]
+        # 9 seit dem Umzug der Aufgaben (Nov. 2026): TaskIn, TaskPatch und
+        # WorkLogIn sind mit ihren Routen entfallen. Die Untergrenze faengt nur
+        # eine Namensaenderung ab, die die Suche oben leerlaufen liesse.
+        self.assertGreaterEqual(len(eingaenge), 9)
+        ohne = [n for n in eingaenge if not issubclass(getattr(schemas, n), Eingang)]
+        self.assertEqual(ohne, [])
+
+    def test_melden_nimmt_an_und_schreibt_eine_zeile(self):
+        os.environ["SAGANTA_FREMDFELDER"] = "melden"
+        with self.assertLogs("uvicorn.error", level="WARNING") as log:
+            r = client.patch(
+                f"/api/projects/{self.pid}/milestones/{self.mid}",
+                json={"status": "done", "staus": "x"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["status"], "done")
+        self.assertIn("MilestonePatch", "\n".join(log.output))
+
+    def test_ablehnen_gibt_422_und_aendert_nichts(self):
+        os.environ["SAGANTA_FREMDFELDER"] = "ablehnen"
+        with self.assertLogs("uvicorn.error", level="WARNING"):
+            r = client.patch(
+                f"/api/projects/{self.pid}/milestones/{self.mid}",
+                json={"status": "done", "staus": "x"},
+            )
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("staus", r.text)
+        m = [m for m in client.get(f"/api/projects/{self.pid}/milestones").json() if m["id"] == self.mid][0]
+        self.assertEqual(m["status"], "open")
+
+    def test_ablehnen_trifft_auch_das_anlegen(self):
+        # Der erste Fall im Befund war ein Anlegen (due_date statt target_date).
+        os.environ["SAGANTA_FREMDFELDER"] = "ablehnen"
+        with self.assertLogs("uvicorn.error", level="WARNING"):
+            r = client.post(
+                f"/api/projects/{self.pid}/milestones",
+                json={"title": "m", "due_date": "2026-12-01"},
+            )
+        self.assertEqual(r.status_code, 422)
 
 
 if __name__ == "__main__":

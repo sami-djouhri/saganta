@@ -10,12 +10,13 @@
   import AktivitaetsInsights from '$lib/AktivitaetsInsights.svelte';
   import AktivitaetsFeedback from '$lib/AktivitaetsFeedback.svelte';
   import Gewohnheiten from '$lib/Gewohnheiten.svelte';
+  import JetztDran from '$lib/JetztDran.svelte';
   import MonthGrid from '$lib/MonthGrid.svelte';
   import WeekGrid from '$lib/WeekGrid.svelte';
   import AgendaList from '$lib/AgendaList.svelte';
   import EventModal from '$lib/EventModal.svelte';
   import Tagesdecke from '$lib/Tagesdecke.svelte';
-  import { invalidateAll, goto } from '$app/navigation';
+  import { invalidateAll, goto, replaceState } from '$app/navigation';
   import {
     buildCalMeta,
     byStart,
@@ -58,6 +59,22 @@
   // Zeiten vom Server kommen und nicht aus der Annahme des Browsers.
   let deckeLaeuft = $state(false);
   let deckeFehler = $state<string | null>(null);
+
+  /** Termin per Ziehen verschieben: neue Zeiten an `eventVerschieben`, dann neu laden. */
+  async function terminVerschieben(ev: { id: string; start_at?: string; end_at?: string; start?: string; end?: string }, tage: number, minuten: number) {
+    const verschoben = (iso: string | undefined) => {
+      if (!iso) return null;
+      const d = new Date(iso.slice(0, 19));
+      d.setDate(d.getDate() + tage);
+      d.setMinutes(d.getMinutes() + minuten);
+      const z = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}:00`;
+    };
+    const start = verschoben(ev.start_at ?? ev.start);
+    const end = verschoben(ev.end_at ?? ev.end);
+    if (!start || !end) return;
+    await deckeAktion('eventVerschieben', { id: ev.id, start, end });
+  }
 
   async function deckeAktion(action: string, felder: Record<string, string>) {
     deckeLaeuft = true;
@@ -158,6 +175,20 @@
     if (isEditable(ev)) openEdit(ev);
     else selectedDay = dayKeyOf(ev); // Feiertag/Geburtstag/Serie → Tages-Detail
   }
+  // Aus der Suche: `?termin=<id>` oeffnet den Termin in der gezeigten Woche
+  // (seit 2026-11-08). Eine Serie trifft ihr erstes Vorkommen, dessen Kennung
+  // ist `<id>::<datum>`. Danach faellt der Parameter aus der Adresse, sonst
+  // oeffnete jedes Neuladen den Termin erneut.
+  onMount(() => {
+    const kennung = $page.url.searchParams.get('termin');
+    if (!kennung) return;
+    const treffer = items.find((ev) => ev.id === kennung || ev.id.startsWith(`${kennung}::`));
+    if (treffer) onSelectEvent(treffer);
+    const ohne = new URL($page.url);
+    ohne.searchParams.delete('termin');
+    // Erst nach dem Router-Start: direkt in onMount kann replaceState werfen.
+    setTimeout(() => replaceState(ohne, {}), 0);
+  });
   function onCreateAt(dayKey: string, hour: number): void {
     const h = String(hour).padStart(2, '0');
     const h2 = String(Math.min(23, hour + 1)).padStart(2, '0');
@@ -276,12 +307,39 @@
         <p class="font-mono text-xs uppercase tracking-widest text-muted">Saganta · Kalender</p>
         <h1 class="font-display text-4xl capitalize leading-tight">{headerTitle}</h1>
       </div>
-      <button
-        type="button"
-        onclick={() => openCreate(data.today)}
-        class="shrink-0 rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-accent-ink hover:bg-accent-400"
-        >+ Termin</button
-      >
+      <!-- Bricht am Handy um: die vier Elemente brauchen gut 420 px, und ohne
+           flex-wrap lief die ganze Seite 50 px seitlich ueber (Sichtprobe 08.11.). -->
+      <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+        <!-- Suche ueber Termine, Aufgaben, Ziele, Kontakte seit 2026-11-08. -->
+        <form method="GET" action="/suche" role="search" class="basis-full sm:basis-auto">
+          <input
+            type="search"
+            name="q"
+            maxlength="100"
+            placeholder="Suchen"
+            aria-label="Im Kalender suchen"
+            class="w-full rounded-lg border border-border-stark bg-surface px-3 py-2 text-sm text-text sm:w-44"
+          />
+        </form>
+        <!-- Orte (Zuhause, Arbeit) seit 2026-11-01: daraus entstehen die Wege. -->
+        <a
+          href="/orte"
+          class="rounded-lg border border-border-stark px-4 py-2 text-sm text-muted hover:text-text"
+          >Orte</a
+        >
+        <!-- Urlaubskonto und Zeitkonto seit 2026-11-07. -->
+        <a
+          href="/konten"
+          class="rounded-lg border border-border-stark px-4 py-2 text-sm text-muted hover:text-text"
+          >Urlaub & Zeit</a
+        >
+        <button
+          type="button"
+          onclick={() => openCreate(data.today)}
+          class="rounded-lg bg-accent-500 px-4 py-2 text-sm font-medium text-accent-ink hover:bg-accent-400"
+          >+ Termin</button
+        >
+      </div>
     </div>
 
     <!-- Ansichts-Umschalter + Navigation -->
@@ -308,39 +366,43 @@
       </div>
 
       {#if data.view === 'month'}
-        <span class="mx-1 h-5 w-px bg-border"></span>
-        <a
-          href="/?view=month&month={shiftMonth(data.month, -1)}"
-          class="grid size-8 place-items-center rounded-md border border-border text-muted hover:text-text"
-          aria-label="Vorheriger Monat"><Icon name="chevron-left" size={18} /></a
-        >
-        <a
-          href="/?view=month"
-          class="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text">Heute</a
-        >
-        <a
-          href="/?view=month&month={shiftMonth(data.month, 1)}"
-          class="grid size-8 place-items-center rounded-md border border-border text-muted hover:text-text"
-          aria-label="Nächster Monat"><Icon name="chevron-right" size={18} /></a
-        >
+        <span class="mx-1 hidden h-5 w-px bg-border sm:block"></span>
+        <div class="flex items-center gap-2">
+          <a
+            href="/?view=month&month={shiftMonth(data.month, -1)}"
+            class="grid size-10 place-items-center rounded-md border border-border text-muted hover:text-text sm:size-8"
+            aria-label="Vorheriger Monat"><Icon name="chevron-left" size={18} /></a
+          >
+          <a
+            href="/?view=month"
+            class="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text">Heute</a
+          >
+          <a
+            href="/?view=month&month={shiftMonth(data.month, 1)}"
+            class="grid size-10 place-items-center rounded-md border border-border text-muted hover:text-text sm:size-8"
+            aria-label="Nächster Monat"><Icon name="chevron-right" size={18} /></a
+          >
+        </div>
       {:else if data.view === 'week'}
-        <span class="mx-1 h-5 w-px bg-border"></span>
-        <a
-          href="/?view=week&week={shiftDay(data.week, -7)}"
-          class="grid size-8 place-items-center rounded-md border border-border text-muted hover:text-text"
-          aria-label="Vorherige Woche"><Icon name="chevron-left" size={18} /></a
-        >
-        <a
-          href="/?view=week"
-          class="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text">Heute</a
-        >
-        <a
-          href="/?view=week&week={shiftDay(data.week, 7)}"
-          class="grid size-8 place-items-center rounded-md border border-border text-muted hover:text-text"
-          aria-label="Nächste Woche"><Icon name="chevron-right" size={18} /></a
-        >
+        <span class="mx-1 hidden h-5 w-px bg-border sm:block"></span>
+        <div class="flex items-center gap-2">
+          <a
+            href="/?view=week&week={shiftDay(data.week, -7)}"
+            class="grid size-10 place-items-center rounded-md border border-border text-muted hover:text-text sm:size-8"
+            aria-label="Vorherige Woche"><Icon name="chevron-left" size={18} /></a
+          >
+          <a
+            href="/?view=week"
+            class="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text">Heute</a
+          >
+          <a
+            href="/?view=week&week={shiftDay(data.week, 7)}"
+            class="grid size-10 place-items-center rounded-md border border-border text-muted hover:text-text sm:size-8"
+            aria-label="Nächste Woche"><Icon name="chevron-right" size={18} /></a
+          >
+        </div>
       {:else}
-        <span class="mx-1 h-5 w-px bg-border"></span>
+        <span class="mx-1 hidden h-5 w-px bg-border sm:block"></span>
         {#each data.allowedDays as n (n)}
           <a
             href={agendaHref({ days: n })}
@@ -409,6 +471,7 @@
               {nowMs}
               {onSelectEvent}
               {onCreateAt}
+              onMoveEvent={terminVerschieben}
             />
           </div>
         </div>
@@ -439,7 +502,7 @@
             <div class="flex items-center gap-2">
               <h2 class="font-display text-lg">{dayLabel(selectedDay, nowMs)}</h2>
               {#if selectedDayType}
-                <span class="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted"
+                <span class="rounded-full border border-border px-2 py-0.5 text-xs text-muted"
                   >{selectedDayType}</span
                 >
               {/if}
@@ -485,6 +548,16 @@
           >
         </section>
       {/if}
+
+      <!-- Zeit von Hand (seit 2026-11-08): laufender Timer und was gerade dran
+           ist. Ganz oben, weil ein laufender Timer sonst unbemerkt weiterzählt. -->
+      <JetztDran
+        timer={data.zeitTimer}
+        belege={data.zeitBelege}
+        termine={data.termineHeute}
+        sitzungen={data.habitSessions}
+        fehler={data.zeitFehler}
+      />
 
       <!-- Dein Tag (adaptiver Sekretär), der tägliche Anker: Check-in +
            „Wie lief's?" sollen das Erste sein, was ins Auge fällt. -->
@@ -607,7 +680,7 @@
                   {/each}
                 </ul>
                 {#if data.reviewable.length > 5}
-                  <p class="text-[11px] text-muted">
+                  <p class="text-xs text-muted">
                     +{data.reviewable.length - 5} ältere warten noch auf eine Rückmeldung.
                   </p>
                 {/if}
@@ -620,7 +693,7 @@
               <div>
                 <div class="mb-3 flex items-baseline justify-between">
                   <h4 class="font-mono text-xs uppercase tracking-wider text-muted">Zeit-Verteilung</h4>
-                  <span class="text-[10px] text-muted">{rangeLabel} · {fmtH(timeStats.total)}</span>
+                  <span class="text-xs text-muted">{rangeLabel} · {fmtH(timeStats.total)}</span>
                 </div>
                 <div class="space-y-2">
                   {#each timeStats.rows as r (r.name)}
@@ -671,7 +744,7 @@
             </div>
             <div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2.5">
               {#each daytypeLegend as d (d.label)}
-                <div class="flex items-center gap-1.5 text-[11px]">
+                <div class="flex items-center gap-1.5 text-xs">
                   <span class="h-2 w-2 shrink-0 rounded-[3px]" style="background-color:{d.color}"></span>
                   <span class="text-muted">{d.label}</span>
                 </div>

@@ -42,10 +42,9 @@ def profil_mit_tarif(db: Session, me) -> BriefingProfile:
     jeder Anfrage im ``plan``-Claim mit.
 
     Der Abgleich passiert hier, weil dies die eine Stelle ist, an der ein
-    angemeldeter Nutzer und sein Profil zusammentreffen. Kuendigt jemand, meldet
-    Stripe es zwar direkt ans Konto, aber ein Weg, auf dem der Spiegel auch ohne
-    Stripe nachzieht (Owner setzt von Hand, Datenbank restauriert), ist die
-    billigere Absicherung gegen zwei Wahrheiten.
+    angemeldeter Nutzer und sein Profil zusammentreffen. Aendert der Owner die
+    Kostenbremse am Konto oder wird die Datenbank restauriert, zieht der
+    Spiegel hier nach; das ist die billigere Absicherung gegen zwei Wahrheiten.
     """
     prof = get_or_create_profile(db, me.sub)
     konto_tarif = tarife.normalisiere(getattr(me, "plan", None))
@@ -159,9 +158,8 @@ def render_audio(db: Session, sub: str, for_date: date | None = None) -> bool:
         # zuverlaessig durchsetzen kann.
         return False
     voice = prof.voice if prof else ""
-    # Premium-Stimme (LLM-redigierte, natürliche Fassung) nur für Pro; Free bekommt
-    # den deterministischen Sprech-Text. Das ist zugleich das Kosten-Gating (LLM-Calls
-    # nur für zahlende Nutzer).
+    # Redigierte Sprech-Fassung (LLM) nur mit voller Rechenzeit; begrenzt bekommt
+    # den deterministischen Sprech-Text. Das ist die Kostenbremse fuer LLM-Aufrufe.
     if plans.features(prof.plan if prof else None)["premium_voice"]:
         narration, herkunft = briefing_assembly.spoken_narration(ub.content or {})
     else:

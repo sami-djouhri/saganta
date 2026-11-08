@@ -190,51 +190,11 @@ services:
       retries: 3
     <<: *hardening
 
-  # Saganta Assets: Eigen-Assets + Mirror lager.electronics + Marktwatch-Wertkopplung.
-  # Ersetzt das geplante snipe-it (nie deployed). Live-Wert via marktwatch /crawl/search Median.
-  assets:
-    build:
-      context: ..
-      dockerfile: apps/assets/Dockerfile
-      args:
-        # In-App-Updater: Git-SHA (Build-Arg), vom Deploy gestempelt.
-        APP_VERSION: ${APP_VERSION:-dev}
-    container_name: saganta-assets
-    mem_limit: 256m
-    memswap_limit: 256m
-    env_file: ../apps/assets/.env
-    environment:
-      <<: *app-umgebung
-    networks: [eingang-net, kern-net]
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    <<: *hardening
+  # Saganta Assets (assets + assets-api) ist am 2026-11-01 im Lager
+  # aufgegangen (docker/lager/RICHTUNG.md, Stufe 2). Baum in
+  # docker/_retired/saganta-assets-2026-11-01, das Volume assets-data bleibt
+  # bis zur naechsten Aufraeumrunde stehen (nur Spiegelzeilen der Lager-Elektronik).
 
-  assets-api:
-    build:
-      context: ../services/assets-api
-      additional_contexts:
-        geteilt: ../services/_geteilt
-    container_name: saganta-assets-api
-    mem_limit: 256m
-    memswap_limit: 256m
-    env_file: ../services/assets-api/.env
-    volumes:
-      - assets-data:/data
-    networks: [kern-net]
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    <<: *hardening
-
-  # Saganta News: multiuser Familien-News aus öffentlichen RSS/Atom-Feeds (Stage 1).
-  # Bewusst getrennt vom privaten nachrichten-Service (host:8104). Edge-Routing in
-  # tardis: news.home.arpa → saganta-news:3000.
   news:
     build:
       context: ..
@@ -393,6 +353,31 @@ services:
       retries: 3
     <<: *hardening
 
+  # Auth-Gating Reverse-Proxy (apps/app-proxy) vor der Einkaufsliste
+  # (docker/einkaufsliste, eigener Dienst seit 2026-11-01). Nur .home.
+  # env-Datei legt einkaufsliste/scripts/env-anlegen.sh an (Handgriff).
+  saganta-einkaufsliste:
+    build:
+      context: ..
+      dockerfile: apps/app-proxy/Dockerfile
+    container_name: saganta-einkaufsliste
+    mem_limit: 256m
+    memswap_limit: 256m
+    # required: false, sonst bricht JEDES `docker compose` dieses Stapels,
+    # solange die Datei fehlt. Ohne sie antwortet nur dieser Dienst mit 500.
+    env_file:
+      - path: ../apps/app-proxy/einkaufsliste.env
+        required: false
+    environment:
+      <<: *app-umgebung
+    networks: [eingang-net, kern-net]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
   # Post-Aggregations-BFF: mail-api (IMAP) + briefkasten (Briefe/Vertraege).
   # Reine Aggregation, kein Schema-Merge. Edge post.saganta.de.
   saganta-post:
@@ -408,6 +393,11 @@ services:
     env_file: ../apps/post/.env
     environment:
       <<: *app-umgebung
+      # Leer = E-Mail-Haelfte aus (`mailAktiv` in apps/post/src/lib/post-api.ts),
+      # Post ist dann eine Briefliste. Steht hier und nicht in der .env, weil
+      # `environment` die `env_file` schlaegt und der Schalter sichtbar sein soll.
+      # Reaktivieren: Zeile entfernen und das Profil an `mail-api` unten auch.
+      MAIL_API_BASE_URL: ""
     networks: [eingang-net, kern-net]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
@@ -419,6 +409,7 @@ services:
   # --- Auth (better-auth): ersetzt Authelia/Zitadel-OIDC ---
   # Rein intern: nur die BFFs sprechen server-to-server mit /api/auth/*.
   # Kein Edge/Tunnel, der Browser erreicht den Login über shell (saganta.de/login).
+  # kern-net fuer die BFFs, `saganta-tresor-net` fuer die eigene Datenbank.
   saganta-auth:
     build:
       context: ..
@@ -429,7 +420,7 @@ services:
     env_file: ../apps/auth-service/.env
     environment:
       <<: *app-umgebung
-    networks: [kern-net]
+    networks: [kern-net, saganta-tresor-net]
     depends_on:
       saganta-auth-db:
         condition: service_healthy
@@ -454,7 +445,13 @@ services:
     mem_limit: 256m
     memswap_limit: 256m
     env_file: ../apps/auth-service/db.env
-    networks: [kern-net]
+    # Ausschliesslich `saganta-tresor-net`: hier liegen die Passwort-Hashes
+    # aller Konten, und gerufen wird die Datenbank von genau einem Dienst,
+    # saganta-auth. Bis 2026-11-07 hing sie in cc-core neben mosquitto,
+    # host-junior, brain-bus und rund 35 weiteren Containern (Messung in
+    # docs/CC_CORE_AUSZUG_MESSUNG_2026-10-09.md). Backup und Skripte gehen
+    # ueber `docker exec`, nicht uebers Netz, und brauchen deshalb nichts.
+    networks: [saganta-tresor-net]
     volumes:
       - saganta-auth-db-data:/var/lib/postgresql/data
       # Das Schema legt beim ersten Start die Datenbank selbst an. Vorher
@@ -514,6 +511,12 @@ services:
     mem_limit: 256m
     memswap_limit: 256m
     env_file: ../services/projectdeck-api/.env
+    environment:
+      # Unbekannte Feldnamen im Rumpf: ignorieren | melden | ablehnen
+      # (services/_geteilt/saganta_dienst/eingang.py, docs/FELDNAMEN_BEFUND.md).
+      # Auf ablehnen erst, wenn `docker logs saganta-projectdeck-api | grep Fremdfelder`
+      # eine Woche leer bleibt.
+      SAGANTA_FREMDFELDER: melden
     volumes:
       - projectdeck-data:/data
     networks: [kern-net, app-net]
@@ -529,7 +532,7 @@ services:
   # apps/mail (saganta-mail) RETIRED 2026-07-18 (Post←Mail-Merge Stufe B): die
   # E-Mail-Konten-Verwaltung lebt jetzt in `post` unter /accounts. saganta-mail war
   # ohnehin nie ans Edge geroutet (postfach.saganta.de hatte keine nginx-Route).
-  # Das Backend `mail-api` bleibt aktiv: post nutzt es.
+  # Das Backend `mail-api` ist seit 2026-11-05 ebenfalls stillgelegt (siehe dort).
   # `apps/mail/` ist am 2026-10-03 entfernt (Entscheid). Rueckweg nur
   # ueber die git-Historie, nicht mehr ueber den Arbeitsbaum: ein stillgelegtes
   # Frontend, das noch im Baum liegt, wird bei jeder Umgestaltung mitgepflegt und
@@ -596,13 +599,12 @@ services:
   # Aufgaben, Tagesziele und die Tagesplanung. Ausgelagert aus der Kalender-App
   # (2026-09-13), die dreizehn Baustellen auf einer Seite trug.
   #
-  # **Eigene Oberflaeche, KEINE eigene Datenbank.** Der Bestand liegt weiter in
-  # der einen Kalender-Engine und wird ueber denselben `kalender-bff` gelesen und
-  # geschrieben, den auch die Kalender-App benutzt. Eine Aufgabe mit Zeitfenster
-  # IST ein Termin; eine zweite Datenbank haette zwei Wahrheiten ergeben.
-  # Deshalb steht hier auch kein Volume.
+  # Die Aufgaben liegen seit dem 2026-11-03 im eigenen Dienst `aufgaben-api`
+  # (Entscheid, docs/RICHTUNG.md). Bis dahin lagen sie in der
+  # Kalender-Engine; die blieb dabei leer (0 Zeilen), es gab nichts umzuziehen.
+  # Tagesziele und Tagesbild kommen weiter ueber den `kalender-bff`.
   #
-  # `cc-core` fuer kalender-bff und notizen-api (die Notiz-Verknuepfung),
+  # `cc-core` fuer aufgaben-api, kalender-bff und notizen-api,
   # `cc-proxy` fuer den Edge. `cc-apps` braucht es nicht: an keinen nativen
   # Dienst wird direkt geredet.
   aufgaben:
@@ -620,6 +622,36 @@ services:
       # Interne Adresse, kein Geheimnis: versioniert statt in einer ungetrackten
       # Datei (gleiche Begruendung wie bei saganta-shell).
       # (`NOTIZEN_API_BASE_URL` kommt seit dem 2026-10-24 aus dem Anker oben.)
+      KALENDER_BFF_BASE_URL: http://saganta-kalender-bff:8000
+      # Die Aufgaben selbst liegen seit dem 2026-11-03 im eigenen Dienst; der
+      # Kalender liefert weiter Tagesziele und Tagesbild.
+      AUFGABEN_API_BASE_URL: http://saganta-aufgaben-api:8000
+    networks: [eingang-net, kern-net]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Saganta Kontakte (seit 2026-11-07). Daten im eigenen Dienst `kontakte-api`,
+  # Terminsuche ueber den kalender-bff; beide in cc-core (kern-net).
+  kontakte:
+    build:
+      context: ..
+      dockerfile: apps/kontakte/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    container_name: saganta-kontakte
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file:
+      - path: ../apps/kontakte/.env
+        required: false
+    environment:
+      <<: *app-umgebung
+      # Interne Adressen, kein Geheimnis: versioniert wie bei aufgaben.
+      KONTAKTE_API_BASE_URL: http://saganta-kontakte-api:8000
       KALENDER_BFF_BASE_URL: http://saganta-kalender-bff:8000
     networks: [eingang-net, kern-net]
     healthcheck:
@@ -681,9 +713,69 @@ services:
       retries: 3
     <<: *hardening
 
+  # Aufgaben-Dienst (seit 2026-11-03): der eine Ort, an dem Aufgaben liegen.
+  # Kalender und ProjectDeck sind Konsumenten (docs/RICHTUNG.md). Spricht fuer
+  # freie Zeit, Kapazitaet und Tagesziele den kalender-bff im Namen des
+  # Aufrufers, deshalb kern-net; nach draussen braucht er nichts.
+  aufgaben-api:
+    build:
+      context: ../services/aufgaben-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-aufgaben-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    # `required: false`: fehlt die Datei, scheiterte sonst JEDER Compose-Aufruf
+    # dieses Projekts, auch fuer fremde Dienste (gemessen 2026-11-03). Der
+    # Dienst selbst bricht ohne JWT_SECRET beim Start ab (config.py).
+    env_file:
+      - path: ../services/aufgaben-api/.env
+        required: false
+    volumes:
+      - aufgaben-data:/data
+    networks: [kern-net]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Kontakte-Dienst (seit 2026-11-07): der eine Ort, an dem Kontakte liegen.
+  # Vorher die Tabelle `contacts` im Kalender (umgezogen mit denselben
+  # Kennungen). Spiegelt Geburtstage und Jahrestage ueber den kalender-bff in
+  # den Kalender, der daran erinnert; deshalb kern-net, nach draussen nichts.
+  kontakte-api:
+    build:
+      context: ../services/kontakte-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-kontakte-api
+    mem_limit: 256m
+    memswap_limit: 256m
+    # `required: false` aus demselben Grund wie bei aufgaben-api.
+    env_file:
+      - path: ../services/kontakte-api/.env
+        required: false
+    volumes:
+      - kontakte-data:/data
+    networks: [kern-net]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # STILLGELEGT seit 2026-11-05 (RICHTUNG.md, erste Runde: gemessen 0 Konten,
+  # 0 Nachrichten, am 05.11. auch 0 Anfragen in 30 Tagen). Das Profil haelt den
+  # Dienst aus jedem `up` heraus; Rezept und Volume `mail-data` bleiben fuer eine
+  # Reaktivierung, wie `ai-tts` auf LXC 100. Wer ihn zurueckholt, setzt auch
+  # `MAIL_API_BASE_URL` bei saganta-post wieder.
   # mail-api braucht ausgehenden Zugriff auf fremde IMAP/SMTP-Server (993/465/587).
   # cc-core muss Egress erlauben, sonst füllt sich MailAccount.last_error (wie news-api RSS).
   mail-api:
+    profiles: ["stillgelegt"]
     build:
       context: ../services/mail-api
       additional_contexts:
@@ -704,6 +796,10 @@ services:
 
 volumes:
   shell-data:
+  aufgaben-data:
+  kontakte-data:
+  # Verwaist seit 2026-11-01 (siehe oben), bleibt deklariert, damit kein
+  # `docker compose down -v` es versehentlich als fremd behandelt.
   assets-data:
   news-data:
   mail-data:
@@ -758,3 +854,13 @@ networks:
     ipam:
       config:
         - subnet: 172.32.90.0/24
+  # Netztrennung Stufe 1 (entschieden 2026-10-10): nur saganta-auth und
+  # saganta-auth-db, `internal` wie tagebuch-net, also ohne Weg nach draussen.
+  # Wie tagebuch-net gehoert es in beide Welten gleich und steht deshalb nicht
+  # in der Homelab-Sicht (override.lan).
+  saganta-tresor-net:
+    name: saganta-tresor-net
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.32.91.0/24

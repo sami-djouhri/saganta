@@ -248,3 +248,13 @@ describe('datumsEtikett', () => {
     expect(datumsEtikett('2026-09-20', HEUTE)).toBe('So, 20.09.');
   });
 });
+
+describe('angeheftete Tage (seit dem Aufgaben-Dienst)', () => {
+  const heute = '2026-11-03';
+  it('gestern geheftet und offen steht heute', () => {
+    expect(istHeuteGeplant(a({ id: 'g', planned_date: '2026-11-02' }), heute)).toBe(true);
+  });
+  it('an einen spaeteren Tag geheftet ist kein Vorrat', () => {
+    expect(pool([a({ id: 'm', planned_date: '2026-11-10' })], heute)).toEqual([]);
+  });
+});

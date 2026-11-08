@@ -67,8 +67,12 @@ RUN chmod -R a+rX /app/dist
 # `devDependencies` bleibt bewusst aussen vor (tsx/typescript gehoeren nicht in
 # die Laufzeit).
 #
-# `--legacy-peer-deps` ist seit dem 2026-10-28 Pflicht, sonst ist dieser
-# Dienst NICHT MEHR BAUBAR: npm 10.9.9 (im aktuellen node:22-slim) bricht beim
+# npm 12 statt des mitgelieferten npm 10.9.x (Entscheid 2026-11-04,
+# Weg A). Vom 28.10. bis 04.11. stand hier stattdessen `--legacy-peer-deps`
+# (Weg B): das baute, lockerte aber die Peer-Pruefung des Anmeldedienstes, also
+# genau die Pruefung, die bei Auth am meisten zaehlt. npm 12 behebt den
+# Werkzeugfehler und laesst die Aufloesung unangetastet. Der Hintergrund,
+# unveraendert: ohne einen der beiden Wege ist dieser Dienst NICHT BAUBAR: npm 10.9.9 (im aktuellen node:22-slim) bricht beim
 # Aufloesen der Peer-Dependencies von better-auth mit `Cannot read properties of
 # null (reading 'edgesOut')` ab. Gemessen am selben Tag: `pg` allein geht durch,
 # die drei zusammen nicht, und der Fehler hat mit dem Quelltext nichts zu tun --
@@ -80,7 +84,9 @@ RUN chmod -R a+rX /app/dist
 COPY --from=build /repo/laufzeit-deps.txt /tmp/laufzeit-deps.txt
 RUN printf '{"name":"saganta-auth","private":true,"type":"module"}\n' > /app/package.json \
  && echo "Laufzeit-Abhaengigkeiten (Stand des Lockfiles):" && cat /tmp/laufzeit-deps.txt \
- && npm install --omit=optional --no-audit --no-fund --legacy-peer-deps $(cat /tmp/laufzeit-deps.txt) \
+ && npm install -g --no-audit --no-fund npm@12.2.1 \
+ && echo "npm $(npm --version)" \
+ && npm install --omit=optional --no-audit --no-fund $(cat /tmp/laufzeit-deps.txt) \
  && rm -f /tmp/laufzeit-deps.txt \
  && npm cache clean --force \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx

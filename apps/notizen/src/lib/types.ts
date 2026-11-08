@@ -53,6 +53,15 @@ export interface Freigabe {
   schluessel_quelle: 'fragment' | 'passwort' | null;
 }
 
+/** Eine geloeschte Notiz, 30 Tage zurueckholbar (Papierkorb seit 2026-11-07). */
+export interface PapierkorbEintrag {
+  id: number;
+  titel: string;
+  geloescht_am: string;
+  /** So viele Anhaenge hatte sie; sie kommen nicht mit zurueck. */
+  anhaenge: number;
+}
+
 export interface NotizKurz {
   id: number;
   titel: string;

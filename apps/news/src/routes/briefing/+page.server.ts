@@ -175,21 +175,6 @@ export const actions: Actions = {
     }
   },
 
-  checkout: async ({ locals, fetch }) => {
-    if (!locals.user) return fail(401, { error: 'not authenticated' });
-    let url: string;
-    try {
-      const res = await briefingFetch<{ url: string }>(requireBase(), '/checkout', locals.user, fetch, {
-        method: 'POST',
-      });
-      url = res.url;
-    } catch (err) {
-      // 503 = Stripe (noch) nicht konfiguriert → UI zeigt weiter den mailto-Fallback.
-      return fail(503, { error: 'Zahlung ist noch nicht aktiviert', checkoutUnavailable: true });
-    }
-    redirect(303, url);
-  },
-
   rotateFeed: async ({ locals, fetch }) => {
     if (!locals.user) return fail(401, { error: 'not authenticated' });
     try {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
-  import { Icon, kalenderCaptureUrl } from '@saganta/ui';
+  import { Icon, appUrlById, kalenderCaptureUrl } from '@saganta/ui';
   import type { BriefingItem } from '$lib/briefing-api';
   import { haKonfiguration } from '$lib/heimautomation';
   import type { PageData, ActionData } from './$types';
@@ -11,12 +11,10 @@
   }
   let { data, form }: Props = $props();
 
-  const isPro = $derived(data.configured ? (data.plan?.is_pro ?? false) : false);
-  const proBenefits = $derived(data.configured ? (data.plan?.pro_benefits ?? []) : []);
-  // Stripe an => Self-Service-Checkout-Button; sonst mailto-Fallback (early sales).
-  const stripeEnabled = $derived(data.configured ? (data.plan?.stripe_enabled ?? false) : false);
-  const upgradeMailto =
-    'mailto:sami@djouhri.de?subject=Saganta%20Briefing%20Pro&body=Ich%20m%C3%B6chte%20Briefing%20Pro%20freischalten.';
+  // Kostenbremse: begrenzt oder volle Rechenzeit. Bis 2026-11-05 hiess das
+  // Free/Pro und trug einen Kaufknopf; Saganta ist privat, es gibt nichts zu kaufen.
+  const voll = $derived(data.configured ? (data.plan?.voll ?? false) : false);
+  const vollerUmfang = $derived(data.configured ? (data.plan?.voller_umfang ?? []) : []);
 
   // Aktuelle Interessen als Map (tag -> weight) für Vorauswahl.
   const currentInterests = $derived(
@@ -160,44 +158,28 @@
     <div class="flex items-center gap-3">
       <p class="font-mono text-sm uppercase tracking-widest text-muted">Saganta · Mein Briefing</p>
       <span
-        class="rounded-full px-2 py-0.5 font-mono text-xs {isPro
+        class="rounded-full px-2 py-0.5 font-mono text-xs {voll
           ? 'bg-accent-500/20 text-akzent'
           : 'border border-border text-muted'}"
+        title="Kostenbremse dieses Kontos"
       >
-        {isPro ? 'Pro' : 'Free'}
+        {voll ? 'Rechenzeit: voll' : 'Rechenzeit: begrenzt'}
       </span>
     </div>
     <h1 class="font-display text-4xl leading-tight">Dein Morgen, auf den Punkt.</h1>
     <p class="text-muted">Wähle deine Themen, der Rest passiert automatisch.</p>
   </header>
 
-  {#if data.configured && !isPro}
-    <div class="rounded-xl border border-accent-500/40 bg-accent-500/5 p-5">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p class="font-display text-lg">Mehr aus deinem Briefing – mit Pro</p>
-          <ul class="mt-2 space-y-1 text-sm text-muted">
-            {#each proBenefits as b (b)}<li>✓ {b}</li>{/each}
-          </ul>
-        </div>
-        {#if stripeEnabled}
-          <form method="POST" action="?/checkout" use:enhance>
-            <button
-              type="submit"
-              class="rounded-lg bg-accent-500 px-5 py-2.5 text-sm font-medium text-black hover:bg-accent-400"
-            >
-              Pro holen · ~4 €/Mon
-            </button>
-          </form>
-        {:else}
-          <a
-            href={upgradeMailto}
-            class="rounded-lg bg-accent-500 px-5 py-2.5 text-sm font-medium text-black hover:bg-accent-400"
-          >
-            Pro holen · ~4 €/Mon
-          </a>
-        {/if}
-      </div>
+  {#if data.configured && !voll}
+    <div class="rounded-xl border border-border-stark bg-surface-2 p-5">
+      <p class="font-display text-lg">Dieses Konto hat begrenzte Rechenzeit</p>
+      <p class="mt-1 text-sm text-muted">
+        Sprachsynthese und KI-Redaktion kosten Rechenzeit im Haus. Mit voller Rechenzeit kommt dazu:
+      </p>
+      <ul class="mt-2 space-y-1 text-sm text-muted">
+        {#each vollerUmfang as b (b)}<li>✓ {b}</li>{/each}
+      </ul>
+      <p class="mt-2 text-xs text-muted">Freischalten kann der Owner.</p>
     </div>
   {/if}
 
@@ -324,7 +306,7 @@
                 </button>
               </div>
               <pre
-                class="max-h-72 overflow-auto rounded border border-border bg-surface-2 p-2 font-mono text-[11px] leading-relaxed">{yaml}</pre>
+                class="max-h-72 overflow-auto rounded border border-border bg-surface-2 p-2 font-mono text-xs leading-relaxed">{yaml}</pre>
               <p class="text-xs text-muted">
                 In die <code class="font-mono">configuration.yaml</code> einfügen, Home Assistant
                 neu starten. Zwei Zeilen im Skript sind anzupassen: deine TTS-Entität und dein
@@ -344,10 +326,9 @@
         >
           {showAdvanced ? '− ' : '+ '}Erweitert: an mein Smart Home senden
         </button>
-        {#if showAdvanced && !isPro}
-          <div class="mt-3 rounded border border-accent-500/40 bg-accent-500/5 p-3 text-xs">
-            <span class="font-medium">Webhook-Zustellung ist ein Pro-Feature.</span>
-            <a href={upgradeMailto} class="ml-1 text-akzent underline">Pro holen</a>
+        {#if showAdvanced && !voll}
+          <div class="mt-3 rounded border border-border-stark bg-surface p-3 text-xs">
+            Webhook-Zustellung braucht volle Rechenzeit.
           </div>
         {:else if showAdvanced}
           <form method="POST" action="?/setWebhook" use:enhance class="mt-3 space-y-2">
@@ -410,12 +391,12 @@
 
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="space-y-1 text-sm">
-          <span class="text-muted">Eigene Stichwörter{isPro ? '' : ' (Pro)'}</span>
+          <span class="text-muted">Eigene Stichwörter{voll ? '' : ' (volle Rechenzeit)'}</span>
           <input
             name="free_topics"
             value={(data.profile?.free_topics ?? []).join(', ')}
-            placeholder={isPro ? 'z. B. solaranlage, heimserver' : 'Pro-Feature'}
-            disabled={!isPro}
+            placeholder={voll ? 'z. B. solaranlage, heimserver' : 'nur mit voller Rechenzeit'}
+            disabled={!voll}
             class="w-full rounded border border-border-stark bg-surface px-2 py-1 disabled:opacity-50"
           />
         </label>
@@ -424,15 +405,16 @@
           <select name="length" value={data.profile?.length ?? 'mittel'} class="w-full rounded border border-border-stark bg-surface px-2 py-1">
             <option value="kurz">Kurz</option>
             <option value="mittel">Mittel</option>
-            <option value="lang" disabled={!isPro}>Lang{isPro ? '' : ' (Pro)'}</option>
+            <option value="lang" disabled={!voll}>Lang{voll ? '' : ' (volle Rechenzeit)'}</option>
           </select>
         </label>
         <label class="flex items-center gap-2 text-sm">
           <input type="checkbox" name="audio_enabled" checked={data.profile?.audio_enabled ?? true} /> Audio jeden Morgen erzeugen
         </label>
         <label class="space-y-1 text-sm">
-          <span class="text-muted">Weckzeit (Hinweis)</span>
+          <span class="text-muted">Ersatzzeit (HH:MM)</span>
           <input name="delivery_time" value={data.profile?.delivery_time ?? '05:00'} class="w-full rounded border border-border-stark bg-surface px-2 py-1" />
+          <span class="block text-xs text-muted">Das Briefing kommt zu deiner Aufstehzeit aus dem Kalender. Diese Zeit gilt nur, wenn der Kalender keine kennt.</span>
         </label>
         <label class="space-y-1 text-sm">
           <span class="text-muted">Wetter-Ort (Name)</span>
@@ -520,7 +502,7 @@
                   </span>
                 {/if}
               </div>
-              <a href="https://kalender.saganta.de" class="text-xs text-muted underline hover:text-akzent-stark">
+              <a href={appUrlById('calendar', data.host)} class="text-xs text-muted underline hover:text-akzent-stark">
                 Kalender öffnen
               </a>
             </div>

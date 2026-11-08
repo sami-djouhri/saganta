@@ -156,7 +156,7 @@
               placeholder="z. B. 30"
               class="w-full rounded-md border border-border-stark bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent-500"
             />
-            <span class="block text-[11px] text-muted"
+            <span class="block text-xs text-muted"
               >Ohne Angabe kann die Tagesplanung sie nicht einplanen.</span
             >
           </label>

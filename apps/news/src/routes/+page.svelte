@@ -1,7 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { Icon, kalenderCaptureUrl } from '@saganta/ui';
-  import Landing from '$lib/Landing.svelte';
   import type { PageData } from './$types';
 
   interface Props {
@@ -61,15 +60,12 @@
   }
 </script>
 
-{#if !data.user}
-  <Landing />
-{:else}
 <section class="space-y-6">
   <header class="space-y-2">
     <p class="font-mono text-sm uppercase tracking-widest text-muted">Saganta · News</p>
     <h1 class="font-display text-4xl leading-tight">Was heute wichtig ist.</h1>
     <p class="text-muted">
-      {data.feed.total} Artikel{data.bookmarked ? ' · nur Bookmarks' : ''}.
+      {data.feed.total} Artikel{data.bookmarked ? ' · nur gemerkte' : ''}.
     </p>
   </header>
 
@@ -88,7 +84,7 @@
         ? 'border-warm-500 text-kupfer'
         : 'border-border text-muted hover:text-text'}"
     >
-      <Icon name="bookmark" size={13} filled={data.bookmarked} /> Bookmarks
+      <Icon name="bookmark" size={13} filled={data.bookmarked} /> Gemerkt
     </a>
     {#each uniqueBy(data.sources, (s) => s.id) as s (s.id)}
       <a
@@ -112,7 +108,7 @@
   {#if data.feed.items.length === 0 && !failure}
     <p class="rounded border border-border bg-surface-2 px-4 py-6 text-center text-muted">
       {#if data.bookmarked}
-        Noch keine Bookmarks.
+        Noch nichts gemerkt.
       {:else if data.source}
         Keine Artikel von „{data.sources.find((s) => s.slug === data.source)?.name ??
           data.source}".
@@ -133,7 +129,7 @@
             {#if imBriefing.has(item.id)}
               <a
                 href="/briefing"
-                class="rounded-full border border-accent-500/50 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-akzent hover:bg-accent-500/10"
+                class="rounded-full border border-accent-500/50 px-2 py-0.5 font-mono text-xs uppercase tracking-wider text-akzent hover:bg-accent-500/10"
                 title="Dieser Artikel steht in deinem heutigen Briefing"
               >
                 Im Briefing
@@ -162,7 +158,7 @@
               class="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs transition-colors duration-fast ease-saganta {item.bookmarked
                 ? 'text-kupfer'
                 : 'text-muted hover:text-text'}"
-              title={item.bookmarked ? 'Bookmark entfernen' : 'Bookmarken'}
+              title={item.bookmarked ? 'Nicht mehr merken' : 'Merken'}
             >
               <Icon name="bookmark" size={13} filled={item.bookmarked} />
               {item.bookmarked ? 'Gemerkt' : 'Merken'}
@@ -193,4 +189,3 @@
     {/each}
   </ul>
 </section>
-{/if}

@@ -126,6 +126,18 @@ export const SAGANTA_APPS: SagantaApp[] = [
     tags: ['core', 'productivity'],
   },
   {
+    id: 'kontakte',
+    name: 'Kontakte',
+    description: 'Menschen mit Telefon, Mail, Adresse, Geburtstag und Jahrestagen. Verknüpft mit Terminen und Notizen.',
+    sub: 'kontakte',
+    // Heim-only wie die ganze Suite seit dem 21.10.: kein `.saganta.de`-Name.
+    nurHeim: true,
+    icon: 'users',
+    // Zwei Punkte, eine Luecke: Menschen nebeneinander.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px, currentColor 5px 8px, transparent 8px 16px)',
+    tags: ['core', 'productivity'],
+  },
+  {
     id: 'notizen',
     name: 'Notizen',
     description: 'Notizbücher, Anhänge, geteilte Notizen.',
@@ -187,16 +199,6 @@ export const SAGANTA_APPS: SagantaApp[] = [
     tags: ['core'],
   },
   {
-    id: 'assets',
-    name: 'Besitz',
-    description: 'Geräte, Garantien, Marktwerte.',
-    sub: 'assets',
-    icon: 'box',
-    // Kurze Marken in gleichem Abstand, eine Reihe Inventaretiketten.
-    signatur: 'repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 11px)',
-    tags: ['productivity'],
-  },
-  {
     id: 'fitness',
     name: 'Fitness',
     description: 'Trainingspläne und erfasste Sätze.',
@@ -219,11 +221,82 @@ export const SAGANTA_APPS: SagantaApp[] = [
   {
     id: 'lager',
     name: 'Lager',
-    description: 'Vorräte und Bestände.',
+    // Seit 2026-11-01 auch Technik & Sachen (vorher die App „Besitz“).
+    description: 'Vorräte, Haushalt, Technik und Sachen.',
     sub: 'lager',
     icon: 'archive',
     // Gleich breite Faecher, gleich breite Zwischenraeume.
     signatur: 'repeating-linear-gradient(90deg, currentColor 0 11px, transparent 11px 22px)',
+    tags: ['productivity'],
+  },
+  {
+    id: 'einkaufsliste',
+    name: 'Einkaufsliste',
+    // Eigener Dienst seit 2026-11-01 (docker/einkaufsliste), nur im Heimnetz.
+    description: 'Was fehlt, von selbst aus Vorrat und Essensplan.',
+    sub: 'einkaufsliste',
+    nurHeim: true,
+    icon: 'shopping-cart',
+    // Kurze, ungleiche Striche wie Zeilen auf einem Zettel.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 14px, transparent 14px 18px, currentColor 18px 26px, transparent 26px 30px, currentColor 30px 34px, transparent 34px 44px)',
+    tags: ['productivity'],
+  },
+  {
+    id: 'finanzen',
+    name: 'Finanzen',
+    // Eigener Dienst (docker/finanzen, host :8151) hinter Authelia, nur im
+    // Heimnetz. Kopf, Farben und Signatur im Saganta-Bild seit 2026-11-01.
+    description: 'Konten, Prognose, Budgets und Depot.',
+    sub: 'finanzen',
+    nurHeim: true,
+    icon: 'trending-up',
+    // Zwei schmale Striche, dann Abstand: die Spaltenlinien eines Kassenbuchs.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 6px, currentColor 6px 9px, transparent 9px 22px)',
+    tags: ['productivity'],
+  },  // Die vier Hausdienste kamen am 2026-11-02 dazu (Plan "Apps vereinheitlichen",
+  // Stufe 1.3): eigene Dienste, nur im Heimnetz, Kopf aus saganta-kopf.js.
+  {
+    id: 'medien',
+    name: 'Medien',
+    description: 'Filme, Serien, Bücher, Spiele und Musik: Bestand, Verkauf, Bewertung.',
+    sub: 'medien',
+    nurHeim: true,
+    icon: 'library',
+    // Ungleiche Ruecken nebeneinander, wie im Regal.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 5px, currentColor 5px 6px, transparent 6px 8px, currentColor 8px 12px, transparent 12px 22px)',
+    tags: ['productivity'],
+  },
+  {
+    id: 'wissen',
+    name: 'Wissen',
+    description: 'Eine Suche über das Offline-Wissen: Wiki, Bücher, Dokumente, Anleitungen.',
+    sub: 'wissen',
+    nurHeim: true,
+    icon: 'lightbulb',
+    // Spalten eines Lexikons: breit, schmal, Abstand.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 8px, transparent 8px 10px, currentColor 10px 12px, transparent 12px 20px)',
+    tags: ['productivity'],
+  },
+  {
+    id: 'bibliothek',
+    name: 'Bibliothek',
+    description: 'Die Hausbibliothek zum Lesen, mit Lesestand und Notizen.',
+    sub: 'bibliothek',
+    nurHeim: true,
+    icon: 'book-open',
+    // Lange und kurze Zeilen wie auf einer Buchseite.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 24px, transparent 24px 30px, currentColor 30px 40px, transparent 40px 46px)',
+    tags: ['productivity'],
+  },
+  {
+    id: 'karten',
+    name: 'Karten',
+    description: 'Offline-Karten mit Suche, Routen und Bus und Bahn.',
+    sub: 'karten',
+    nurHeim: true,
+    icon: 'map',
+    // Strich und Punkt wie eine Grenzlinie auf der Karte.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 12px, transparent 12px 16px, currentColor 16px 17px, transparent 17px 21px)',
     tags: ['productivity'],
   },
 ];

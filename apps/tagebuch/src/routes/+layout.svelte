@@ -1,6 +1,6 @@
 <script lang="ts">
   import '../app.css';
-  import { TopBar, Button, Icon, UpdateBanner, CommandPalette, buildAppCommands } from '@saganta/ui';
+  import { TopBar, UpdateBanner, CommandPalette, buildAppCommands } from '@saganta/ui';
   import { APP_NAME, APP_ID } from '$lib/meta';
   import type { LayoutData } from './$types';
 
@@ -14,15 +14,7 @@
 <UpdateBanner />
 <div class="min-h-dvh bg-surface text-text">
   {#if data.user}
-    <TopBar app={APP_NAME} user={data.user} currentAppId={APP_ID} host={data.host}>
-      {#snippet actions()}
-        <form method="POST" action="/logout">
-          <Button type="submit" variant="ghost" size="sm" aria-label="Abmelden" title="Abmelden">
-            <Icon name="log-out" size={16} />
-          </Button>
-        </form>
-      {/snippet}
-    </TopBar>
+    <TopBar app={APP_NAME} user={data.user} currentAppId={APP_ID} host={data.host} />
     <CommandPalette commands={buildAppCommands(APP_ID, data.host)} />
     <!-- Keine Seitenleiste: es gibt eine Seite. Die Navigation ist die Zeit,
          und die liegt als Datumsleiste bei dem Text, zu dem sie gehört. -->

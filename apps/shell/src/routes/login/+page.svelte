@@ -96,6 +96,11 @@
           Passwort geändert. Du kannst dich jetzt anmelden.
         </p>
       {/if}
+      {#if data.verified}
+        <p class="mb-4 rounded-lg border border-erfolg/40 bg-erfolg/10 px-3 py-2 text-center text-sm text-erfolg">
+          E-Mail bestätigt. Du kannst dich jetzt anmelden.
+        </p>
+      {/if}
       <div class="rounded-2xl border border-border bg-surface-2/80 p-6 shadow-xl shadow-black/30 backdrop-blur-sm">
         <form
           method="POST"

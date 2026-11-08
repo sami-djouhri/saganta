@@ -4,6 +4,7 @@ import {
   getLetterDetail,
   getMailBody,
   loadFeed,
+  mailAktiv,
   sendMail,
   setMailState,
   snoozeLetter,
@@ -34,6 +35,7 @@ const EMPTY: FeedResult = {
   hasMore: false,
   options: EMPTY_OPTIONS,
   canSeeLetters: false,
+  mailAktiv: false,
 };
 
 function readOptions(url: URL): FeedOptions {
@@ -190,7 +192,17 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
   if (!locals.user) return { feed: EMPTY, offenerBrief: null, offeneMail: null, entwurf: null };
 
   const darfBriefe = canAccessLetters(locals.user);
-  const feed = await loadFeed(locals.user, fetch, readOptions(url), darfBriefe);
+  const mailAn = mailAktiv();
+  const optionen = readOptions(url);
+  if (!mailAn) {
+    // Ohne Mail gibt es nur Briefe, und die kennen weder gelesen noch markiert.
+    // Ein alter Link mit `?unread=1` blendete sonst still alles aus.
+    optionen.source = 'all';
+    optionen.unreadOnly = false;
+    optionen.starredOnly = false;
+    optionen.accountId = undefined;
+  }
+  const feed = await loadFeed(locals.user, fetch, optionen, darfBriefe);
 
   // Das geoeffnete Element haengt jetzt an der Adresse statt an einem
   // Formular-Ergebnis. Zwei Dinge gehen damit, die vorher nicht gingen: der
@@ -202,7 +214,9 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
   let offenerBrief: LetterDetail | null = null;
   let fehler: string | null = null;
 
-  if (offen?.source === 'mail') {
+  if (offen?.source === 'mail' && !mailAn) {
+    fehler = 'E-Mail ist in Post stillgelegt.';
+  } else if (offen?.source === 'mail') {
     try {
       offeneMail = await getMailBody(locals.user, fetch, offen.id);
       // Eine geoeffnete Nachricht ist gelesen. Vorher musste man das zusaetzlich
@@ -234,14 +248,15 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
   }
 
   const modusRoh = url.searchParams.get('verfassen');
-  const entwurf = istModus(modusRoh)
-    ? baueEntwurf(
-        modusRoh,
-        offeneMail,
-        feed.accounts.map((a) => a.email),
-        absenderFuer(offeneMail, feed.accounts),
-      )
-    : null;
+  const entwurf =
+    mailAn && istModus(modusRoh)
+      ? baueEntwurf(
+          modusRoh,
+          offeneMail,
+          feed.accounts.map((a) => a.email),
+          absenderFuer(offeneMail, feed.accounts),
+        )
+      : null;
 
   return { feed, offeneMail, offenerBrief, entwurf, ladeFehler: fehler };
 };
@@ -258,6 +273,7 @@ export const actions: Actions = {
   setState: async ({ locals, fetch, request }) => {
     if (!locals.user) return fail(401, { error: 'not authenticated' });
     const fd = await request.formData();
+    if (!mailAktiv()) return fail(410, { error: 'E-Mail ist in Post stillgelegt.' });
     const ref = itemRef(fd);
     if (!ref || ref.source !== 'mail') return fail(400, { error: 'bad item ref' });
     const state: { is_read?: boolean; is_starred?: boolean } = {};
@@ -309,6 +325,7 @@ export const actions: Actions = {
   // Briefe sind read-only (briefkasten kennt keinen Versand).
   send: async ({ locals, fetch, request, url }) => {
     if (!locals.user) return fail(401, { error: 'not authenticated' });
+    if (!mailAktiv()) return fail(410, { sendError: 'E-Mail ist in Post stillgelegt.' });
     const fd = await request.formData();
     const accountId = Number(fd.get('account_id'));
     const to = splitAddresses(String(fd.get('to') ?? ''));

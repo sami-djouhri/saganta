@@ -8,9 +8,8 @@ import type {
   Milestone,
   Project,
   Readiness,
+  Aufgabe,
   Review,
-  Task,
-  TimeBlock,
 } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -28,27 +27,36 @@ export const load: PageServerLoad = async ({ locals, fetch, params }) => {
   }
   const u = locals.user;
   const base = `/api/projects/${project.id}`;
-  const [tasks, assets, milestones, reviews, readiness, shutdown, timeBlocks] = await Promise.all([
-    api<Task[]>(u, `${base}/tasks`, fetch),
+  // Aufgaben liegen im Aufgaben-Dienst; offene und erledigte sind dort zwei
+  // Abfragen. Faellt der Dienst aus, bleibt die Projektansicht bedienbar und
+  // sagt das, statt „Keine Aufgaben" zu behaupten.
+  const aufgabenLaden = Promise.all([
+    api<Aufgabe[]>(u, `${base}/aufgaben`, fetch),
+    api<Aufgabe[]>(u, `${base}/aufgaben?erledigte=true`, fetch),
+  ]).then(
+    ([offen, erledigt]) => ({ aufgaben: [...offen, ...erledigt], aufgabenFehlen: false }),
+    () => ({ aufgaben: [] as Aufgabe[], aufgabenFehlen: true }),
+  );
+  const [{ aufgaben, aufgabenFehlen }, assets, milestones, reviews, readiness, shutdown] = await Promise.all([
+    aufgabenLaden,
     api<Asset[]>(u, `${base}/assets`, fetch),
     api<Milestone[]>(u, `${base}/milestones`, fetch),
     api<Review[]>(u, `${base}/reviews`, fetch),
     api<Readiness>(u, `${base}/readiness`, fetch),
     api<Readiness>(u, `${base}/shutdown`, fetch),
-    api<TimeBlock[]>(u, `/api/projects/${project.id}/time-blocks`, fetch).catch(() => []),
   ]);
   // Notizen zum Projekt. Fail-soft im Anschluss: faellt die notizen-api aus,
   // fehlt der Block, und die Projektansicht bleibt vollstaendig bedienbar.
   const notizen = await notizenZuEinem('projekt', project.slug, notizAnschluss(locals, fetch));
   return {
     project,
-    tasks,
+    aufgaben,
+    aufgabenFehlen,
     assets,
     milestones,
     reviews,
     readiness,
     shutdown,
-    timeBlocks,
     notizen,
   };
 };
@@ -105,37 +113,49 @@ export const actions: Actions = {
   addTask: async ({ request, locals, fetch, params }) => {
     const p = await resolve(locals, fetch, params.slug);
     const f = await request.formData();
-    const title = String(f.get('title') ?? '').trim();
-    if (!title) return fail(400, { error: 'Titel fehlt' });
-    await api(locals.user!, `/api/projects/${p.id}/tasks`, fetch, {
-      method: 'POST',
-      body: JSON.stringify({
-        title,
-        estimated_minutes: num(f.get('estimated_minutes')),
-        priority: num(f.get('priority')) ?? 3,
-        can_schedule: f.get('can_schedule') === 'on',
-        deadline: f.get('deadline') || null,
-      }),
-    });
+    const titel = String(f.get('titel') ?? '').trim();
+    if (!titel) return fail(400, { error: 'Titel fehlt' });
+    const prioritaet = String(f.get('prioritaet') ?? 'mittel');
+    try {
+      await api(locals.user!, `/api/projects/${p.id}/aufgaben`, fetch, {
+        method: 'POST',
+        body: JSON.stringify({
+          titel,
+          dauer_min: num(f.get('dauer_min')),
+          prioritaet: ['hoch', 'mittel', 'niedrig'].includes(prioritaet) ? prioritaet : 'mittel',
+          faellig: f.get('faellig') || null,
+        }),
+      });
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
     return { ok: true };
   },
 
   taskStatus: async ({ request, locals, fetch, params }) => {
     const p = await resolve(locals, fetch, params.slug);
     const f = await request.formData();
-    await api(locals.user!, `/api/projects/${p.id}/tasks/${f.get('id')}`, fetch, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: f.get('status') }),
-    });
+    const ziel = f.get('erledigt') === 'ja' ? 'erledigt' : 'offen';
+    try {
+      await api(locals.user!, `/api/projects/${p.id}/aufgaben/${f.get('id')}/${ziel}`, fetch, {
+        method: 'POST',
+      });
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
     return { ok: true };
   },
 
   deleteTask: async ({ request, locals, fetch, params }) => {
     const p = await resolve(locals, fetch, params.slug);
     const f = await request.formData();
-    await api(locals.user!, `/api/projects/${p.id}/tasks/${f.get('id')}`, fetch, {
-      method: 'DELETE',
-    });
+    try {
+      await api(locals.user!, `/api/projects/${p.id}/aufgaben/${f.get('id')}`, fetch, {
+        method: 'DELETE',
+      });
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
     return { ok: true };
   },
 
@@ -245,45 +265,6 @@ export const actions: Actions = {
       body: JSON.stringify({ items }),
     });
     return { ok: true };
-  },
-
-  plan: async ({ locals, fetch, params }) => {
-    const p = await resolve(locals, fetch, params.slug);
-    try {
-      const res = await api<{ detail: string; scheduled_blocks?: number }>(
-        locals.user!,
-        `/api/projects/${p.id}/plan`,
-        fetch,
-        { method: 'POST' },
-      );
-      return { ok: true, planResult: res.detail, planScheduled: res.scheduled_blocks ?? 0 };
-    } catch (err) {
-      return fail(502, { error: String(err) });
-    }
-  },
-
-  worklog: async ({ request, locals, fetch, params }) => {
-    const p = await resolve(locals, fetch, params.slug);
-    const f = await request.formData();
-    const actual = num(f.get('actual_minutes'));
-    if (actual === undefined || actual < 0) return fail(400, { error: 'Minuten fehlen' });
-    const body: Record<string, unknown> = {
-      actual_minutes: actual,
-      completed: f.get('completed') === 'on',
-    };
-    const cev = String(f.get('calendar_event_id') ?? '').trim();
-    const tid = num(f.get('task_id'));
-    if (cev) body.calendar_event_id = cev;
-    if (tid !== undefined) body.task_id = tid;
-    try {
-      await api(locals.user!, `/api/projects/${p.id}/worklog`, fetch, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-      return { ok: true };
-    } catch (err) {
-      return fail(502, { error: String(err) });
-    }
   },
 
   ai: async ({ request, locals, fetch, params }) => {

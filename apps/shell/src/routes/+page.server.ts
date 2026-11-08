@@ -1,5 +1,5 @@
 import { env } from '$env/dynamic/private';
-import { fail } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import { issueBackendToken } from '@saganta/auth';
 import { LifeOpsClient, type TodayBriefing } from '@saganta/sdk-lifeops';
 import { appsFallback, type SagantaApp } from '$lib/apps';
@@ -108,23 +108,12 @@ export const load: PageServerLoad = async ({ locals, fetch, setHeaders, url }) =
   // Browser-/Edge-Cache hängenbleibt.
   setHeaders({ 'cache-control': 'no-store' });
 
-  // Nicht eingeloggt → öffentliche Landing. Kein Dashboard-Backend-Load nötig.
-  // (+page.svelte rendert die Landing-Komponente, wenn kein user gesetzt ist.)
+  // Nicht eingeloggt → Anmeldung. Hier stand bis 2026-11-01 eine Werbeseite
+  // (Landing) mit Tarifen, also das am 21.10. abgeschaffte Produkt (Entscheid
+  // 01.11.: loeschen). Relativ umgeleitet, damit es im Raum des Aufrufers bleibt;
+  // `?verified=1` aus alten Bestaetigungsmails wird durchgereicht.
   if (!locals.user) {
-    return {
-      verified: url.searchParams.get('verified') === '1',
-      apps: [] as AppTile[],
-      briefing: undefined as TodayBriefing | undefined,
-      briefkastenStats: null as BriefkastenStats | null,
-      aufgaben: null as AufgabenStand | null,
-      notizen: null as NotizenStand | null,
-      failures: {} as {
-        shellApi?: string;
-        lifeops?: string;
-        kalender?: string;
-        notizen?: string;
-      },
-    };
+    redirect(303, url.searchParams.get('verified') === '1' ? '/login?verified=1' : '/login');
   }
 
   // Owner-Gate fuers Homelab-Briefing: life-ops (Personal-COO) + briefkasten-Stats
@@ -253,7 +242,7 @@ export const load: PageServerLoad = async ({ locals, fetch, setHeaders, url }) =
     }
   }
 
-  return { apps, briefing, briefkastenStats, aufgaben, notizen, failures, verified: false, isOwner };
+  return { apps, briefing, briefkastenStats, aufgaben, notizen, failures, isOwner };
 };
 
 export const actions: Actions = {

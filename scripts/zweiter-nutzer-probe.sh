@@ -46,7 +46,6 @@ PRUEFUNGEN=(
   "notizen-api:saganta-notizen-api:notizen-api:/api/notizen:getrennt"
   "projectdeck-api:saganta-projectdeck-api:projectdeck-api:/api/projects:getrennt"
   "projectdeck-api:saganta-projectdeck-api:projectdeck-api:/api/focus:getrennt"
-  "assets-api:saganta-assets-api:assets-api:/api/assets:getrennt"
   "news-api:saganta-news-api:news-api:/api/news/feed:gemeinsam"
   "news-api:saganta-news-api:news-api:/api/news/briefing/history:getrennt"
   "mail-api:saganta-mail-api:mail-api:/api/mail/accounts:getrennt"

@@ -5,7 +5,7 @@ feed_token geschützt (kein Login-Credential in fremden Apps).
 from datetime import date
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -34,7 +34,6 @@ from .services import (
     delivery,
     plans,
     podcast_feed,
-    stripe_service,
     tarif_konto,
 )
 from .services import interest_taxonomy as tax
@@ -66,57 +65,23 @@ def list_interests(me: Me = CurrentUser) -> list[InterestOption]:
     return [InterestOption(tag=t, label=tax.label_for(t)) for t in tax.SELECTABLE_TAGS]
 
 
-# ── Tarif / Freemium ────────────────────────────────────────────────────────
+# ── Kostenbremse ────────────────────────────────────────────────────────────
 @router.get("/plan", response_model=PlanOut)
 def get_plan(me: Me = CurrentUser, db: Session = Depends(get_db)) -> PlanOut:
     prof = briefing_service.profil_mit_tarif(db, me)
-    plan = prof.plan or "free"
+    plan = prof.plan or plans.BEGRENZT
     return PlanOut(
         plan=plan,
         features=plans.features(plan),
-        pro_benefits=plans.PRO_BENEFITS,
-        is_pro=(plan == plans.PRO),
-        stripe_enabled=stripe_service.enabled(),
-        plan_status=prof.plan_status,
+        voll=(plan == plans.VOLL),
+        voller_umfang=plans.VOLLER_UMFANG,
     )
 
 
-# ── Stripe Self-Service-Payment ─────────────────────────────────────────────
-@router.post("/checkout")
-def create_checkout(me: Me = CurrentUser, db: Session = Depends(get_db)) -> dict:
-    """Startet den Stripe-Checkout für Pro. 503 wenn Stripe (noch) nicht konfiguriert
-    ist → Frontend fällt auf den mailto-Kontakt zurück."""
-    if not stripe_service.enabled():
-        raise HTTPException(503, "Zahlung ist noch nicht aktiviert")
-    try:
-        url = stripe_service.create_checkout_session(me.sub, me.email, db)
-    except Exception as exc:
-        log.error("stripe.checkout.error", sub=me.sub, error=str(exc)[:200])
-        raise HTTPException(502, "Checkout konnte nicht gestartet werden")
-    return {"url": url}
-
-
-@router.post("/stripe/webhook")
-async def stripe_webhook(
-    request: Request,
-    stripe_signature: str = Header(None, alias="Stripe-Signature"),
-    db: Session = Depends(get_db),
-) -> dict:
-    """Stripe-Webhook (KEIN Login, nur Signatur-Verify). Setzt plan bei Kauf,
-    entzieht ihn bei Kündigung. Idempotent gegen Retries."""
-    if not stripe_service.enabled() or not settings.stripe_webhook_secret:
-        raise HTTPException(503, "Stripe nicht konfiguriert")
-    if not stripe_signature:
-        raise HTTPException(400, "Signatur fehlt")
-    payload = await request.body()
-    try:
-        return stripe_service.handle_webhook_event(payload, stripe_signature, db)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        # Ungültige Signatur / Parse-Fehler → 400, Stripe wiederholt später.
-        log.error("stripe.webhook.error", error=str(exc)[:200])
-        raise HTTPException(400, "Webhook-Verifizierung fehlgeschlagen")
+# Hier standen bis zum 05.11.2026 ein Stripe-Checkout (`/checkout`) und der
+# Stripe-Webhook. Saganta ist seit dem 21.10. privat, und eine Bezahlseite auf
+# einer privaten Suite ist eine Tuer ins Nichts (RICHTUNG.md, vierte Runde).
+# Die drei leeren Stripe-Spalten in `briefing_profiles` bleiben (zweite Runde).
 
 
 def _require_admin(me: Me) -> None:
@@ -132,12 +97,12 @@ def admin_set_plan(
     me: Me = CurrentUser,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Vergibt/entzieht Pro. Owner-gegatet (settings.admin_subs), bis Stripe live ist.
-    Später ersetzt ein Stripe-Webhook diesen manuellen Pfad.
+    """Setzt die Kostenbremse eines Kontos: ``free`` = begrenzt, ``pro`` = volle
+    Rechenzeit. Owner-gegatet (settings.admin_subs); das ist der einzige Weg.
 
     Schreibt ans Konto (auth-DB) und in den Spiegel. Ginge es nur in den
     Spiegel, waere die Vergabe hier wirksam und in den sechs anderen Backends
-    unsichtbar: der Nutzer haette Pro im Briefing und `free` im Token.
+    unsichtbar: der Nutzer haette volle Rechenzeit im Briefing und `free` im Token.
     """
     _require_admin(me)
     am_konto = tarif_konto.setze_tarif(target_sub, plan, "manuell")
@@ -483,9 +448,9 @@ def patch_delivery(
     data = payload.model_dump(exclude_unset=True)
     if "webhook_url" in data:
         wanted = (data["webhook_url"] or "").strip() or None
-        # Webhook-Zustellung ist ein Pro-Feature.
+        # Webhook-Zustellung gehoert zur vollen Rechenzeit (Kostenbremse).
         if wanted and not plans.features(prof.plan)["webhook"]:
-            raise HTTPException(402, "Webhook-Zustellung ist ein Pro-Feature")
+            raise HTTPException(403, "Webhook-Zustellung ist fuer dieses Konto nicht freigeschaltet")
         dc.webhook_url = wanted
     if "webhook_secret" in data:
         dc.webhook_secret = (data["webhook_secret"] or "").strip() or None

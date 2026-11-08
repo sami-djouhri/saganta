@@ -26,6 +26,13 @@ COPY --from=geteilt . /geteilt
 RUN pip install --no-deps /geteilt && chmod -R a+rX /geteilt
 
 COPY app ./app
+# Bytecode im Image ablegen. python:*-slim kommt OHNE .pyc der Standardbibliothek,
+# PYTHONDONTWRITEBYTECODE verhindert, dass pip sie nebenbei erzeugt, und zur
+# Laufzeit ist das rootfs read-only: jeder Python-Start (Dienst UND jeder
+# Healthcheck alle 30 s) kompilierte urllib/http/email/re aus dem Quelltext neu.
+# Gemessen 2026-10-31 an notizen-api: 12 auf 5 ms/s CPU im Leerlauf.
+# compileall schreibt explizit und ist von PYTHONDONTWRITEBYTECODE unberuehrt.
+RUN python -m compileall -q "$(python -c 'import sysconfig;print(sysconfig.get_path("stdlib"))')" /geteilt /app
 # Host-Datei-Permissions können restriktiv sein (z. B. 600 bei frisch erzeugten
 # Dateien) → non-root appuser könnte Module nicht lesen. a+rX macht Dateien
 # lesbar und Verzeichnisse betretbar, unabhängig von den Quell-Permissions.

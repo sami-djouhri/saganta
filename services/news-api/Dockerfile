@@ -32,6 +32,13 @@ COPY --from=geteilt . /geteilt
 RUN pip install --no-deps /geteilt && chmod -R a+rX /geteilt
 
 COPY app ./app
+# Bytecode im Image ablegen. python:*-slim kommt OHNE .pyc der Standardbibliothek,
+# PYTHONDONTWRITEBYTECODE verhindert, dass pip sie nebenbei erzeugt, und zur
+# Laufzeit ist das rootfs read-only: jeder Python-Start (Dienst UND jeder
+# Healthcheck alle 30 s) kompilierte urllib/http/email/re aus dem Quelltext neu.
+# Gemessen 2026-10-31: 423 ms CPU je Healthcheck gegen ~150 ms bei Images mit .pyc.
+# compileall schreibt explizit und ist von PYTHONDONTWRITEBYTECODE unberuehrt.
+RUN python -m compileall -q "$(python -c 'import sysconfig;print(sysconfig.get_path("stdlib"))')" /geteilt /app
 # Neu hinzugefügte Quelldateien können restriktive Host-Mode-Bits tragen (0600) →
 # non-root appuser könnte sie sonst nicht importieren. Welt-lesbar erzwingen.
 RUN chmod -R a+rX /app

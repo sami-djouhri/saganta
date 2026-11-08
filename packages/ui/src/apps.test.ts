@@ -94,7 +94,7 @@ describe('appsFuer', () => {
 
   it('enthaelt die Apps, die im alten Katalog fehlten', () => {
     const ids = appsFuer('shell.home.arpa').map((a) => a.id);
-    for (const id of ['aufgaben', 'notizen', 'assets', 'fitness', 'lager', 'mealprep']) {
+    for (const id of ['aufgaben', 'notizen', 'fitness', 'lager', 'mealprep']) {
       expect(ids).toContain(id);
     }
   });

@@ -18,7 +18,7 @@
 
 <UpdateBanner />
 
-<div class="min-h-dvh bg-surface text-text" data-theme="auto">
+<div class="min-h-dvh bg-surface text-text">
   <TopBar app="Post" user={data.user} currentAppId="post" host={data.host} />
   {#if data.user}<CommandPalette commands={buildAppCommands('post', data.host)} />{/if}
   <PageContainer breite="lesen">

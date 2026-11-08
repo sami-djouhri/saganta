@@ -1,8 +1,9 @@
-"""Den Tarif am Konto setzen, nicht nur im Briefing-Profil.
+"""Die Kostenbremse am Konto setzen, nicht nur im Briefing-Profil.
 
-Warum es diesen Umweg gibt: Der Stripe-Webhook landet hier, weil in diesem
-Dienst das Briefing-Produkt und der Stripe-Schluessel liegen. Die Wahrheit ueber
-den Tarif gehoert aber ans Konto (``user.plan`` in der auth-DB), denn nur von
+Warum es diesen Umweg gibt: Gesetzt wird sie hier (``/admin/set-plan``),
+weil in diesem Dienst das Briefing liegt, das sie bremst. Bis zum 05.11.2026
+kam ein zweiter Aufrufer hinzu, der Stripe-Webhook, der mit dem
+Privat-Entscheid entfallen ist. Die Wahrheit gehoert aber ans Konto (``user.plan`` in der auth-DB), denn nur von
 dort erreicht sie ueber den ``plan``-Claim alle sieben Backends. Bis zum
 02.09.2026 schrieb der Webhook ausschliesslich in ``briefing_profiles.plan``,
 also in eine Tabelle, die kein anderer Dienst sieht.
@@ -56,11 +57,8 @@ def _token(ziel_sub: str) -> str:
 def setze_tarif(sub: str, plan: str, status: str | None = None) -> bool:
     """Setzt den Tarif am Konto. Gibt zurueck, ob es geklappt hat.
 
-    Wirft bewusst nicht: der Aufrufer ist der Stripe-Webhook, und ein
-    Ausnahmefehler dort wuerde Stripe eine Wiederholung schicken, die denselben
-    Fehler noch einmal produziert. Stattdessen wird laut protokolliert und der
-    Spiegel im Briefing-Profil trotzdem gesetzt, damit der Kunde sein Produkt
-    bekommt. Der Abgleich ``scripts/tarif-abgleich.sh`` findet die Luecke.
+    Wirft bewusst nicht: es wird laut protokolliert und der Spiegel im
+    Briefing-Profil trotzdem gesetzt, der Aufrufer meldet beides getrennt. Der Abgleich ``scripts/tarif-abgleich.sh`` findet die Luecke.
     """
     if not settings.auth_service_url:
         log.error("tarif.konto.keine_url", sub=sub, plan=plan)

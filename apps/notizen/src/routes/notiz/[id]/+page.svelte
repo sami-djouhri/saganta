@@ -195,7 +195,7 @@
         action="?/loeschen"
         use:enhance
         onsubmit={(e) => {
-          if (!confirm('Diese Notiz endgültig löschen?')) e.preventDefault();
+          if (!confirm('Diese Notiz in den Papierkorb legen? Dort bleibt sie 30 Tage.')) e.preventDefault();
           else verlassenErlaubt = true;
         }}
       >

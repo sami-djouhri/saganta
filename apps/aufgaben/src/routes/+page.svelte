@@ -28,6 +28,16 @@
   // Der Bearbeiten-Dialog. Bewusst ein lokaler Zustand und kein Routenwechsel:
   // eine Aufgabe zu oeffnen soll die Liste nicht verlassen.
   let bearbeitet = $state<Aufgabe | null>(null);
+  // Ein Link mit `?aufgabe=<id>` (aus dem ProjectDeck) oeffnet die Aufgabe
+  // gleich; je geladener Kennung einmal, damit Schliessen geschlossen bleibt.
+  let zuletztGeoeffnet = '';
+  $effect(() => {
+    const g = data.geoeffnet;
+    if (g && g.id !== zuletztGeoeffnet) {
+      zuletztGeoeffnet = g.id;
+      bearbeitet = g;
+    }
+  });
   const notizenZu = $derived(bearbeitet ? (data.notizenNach[bearbeitet.id] ?? []) : []);
 
   const plan = $derived(
@@ -184,8 +194,21 @@
           <li
             class="flex items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2"
           >
+            <form method="POST" action="?/zielUmschalten" use:enhance class="shrink-0">
+              <input type="hidden" name="id" value={z.id} />
+              <input type="hidden" name="erreicht" value={z.status === 'achieved' ? '1' : '0'} />
+              <button
+                type="submit"
+                class="flex size-5 items-center justify-center rounded border {z.status === 'achieved'
+                  ? 'border-accent-500/60 text-akzent'
+                  : 'border-border text-transparent hover:text-muted'}"
+                aria-label={z.status === 'achieved'
+                  ? `Ziel „${z.title}“ wieder öffnen`
+                  : `Ziel „${z.title}“ erreicht`}><Icon name="check" size={13} /></button
+              >
+            </form>
             <span
-              class="shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] {z.priority === 'A'
+              class="shrink-0 rounded border px-1.5 py-0.5 font-mono text-xs {z.priority === 'A'
                 ? 'border-accent-500/60 text-akzent'
                 : 'border-border text-muted'}">{z.priority}</span
             >

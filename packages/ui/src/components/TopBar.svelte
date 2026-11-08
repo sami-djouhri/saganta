@@ -20,6 +20,11 @@
     /** Optionaler Account-Dropdown-Inhalt (z. B. Einstellungen/Abmelden). Ohne
      *  menu rendert die TopBar das Standard-Konto-Menue (siehe unten). */
     menu?: import('svelte').Snippet;
+    /**
+     * Abmelde-Route der App (POST, im eigenen Origin). Steht als letzter Punkt
+     * im Standard-Konto-Menue; `false` laesst ihn weg.
+     */
+    abmelden?: string | false;
   }
   let {
     app,
@@ -30,6 +35,7 @@
     host,
     actions,
     menu,
+    abmelden = '/logout',
   }: Props = $props();
 
   // Ohne ausdrückliche `shellUrl` die Shell im Raum des Aufrufers.
@@ -68,7 +74,9 @@
 
   Bewusst absolute URLs auf die Shell: die Sub-Apps liegen auf eigenen Hostnamen,
   ein relativer Pfad zeigte dort ins Leere. Abmelden steht hier NICHT drin, das
-  bringt jede App als eigene Route mit.
+  bringt jede App als eigene Route mit (`abmelden`); seit 2026-11-08 steht es
+  hier als letzter Punkt. Vorher sass es in fuenf Apps als loses Symbol neben
+  dem Konto-Knopf, in kalender, post und news gab es gar keinen Weg dazu.
 -->
 {#snippet standardMenu()}
   <a
@@ -92,6 +100,17 @@
   >
     <Icon name="settings" size={16} /> Einstellungen
   </a>
+  {#if abmelden}
+    <form method="POST" action={abmelden} class="mt-1 border-t border-border pt-1">
+      <button
+        type="submit"
+        role="menuitem"
+        class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-text transition-colors duration-fast ease-saganta hover:bg-surface"
+      >
+        <Icon name="log-out" size={16} /> Abmelden
+      </button>
+    </form>
+  {/if}
 {/snippet}
 
 <!--
@@ -142,20 +161,22 @@
       {@render actions?.()}
       {#if user}
         <div class="relative" bind:this={wrap}>
+          <!--
+            Das Personensymbol wie in den Android-Apps (Konto-Baustein seit
+            2026-11-07). Am Handy steht nur das Symbol, ab sm der Name dazu.
+          -->
           <button
             type="button"
             onclick={() => (open = !open)}
-            class="flex min-h-11 items-center gap-2 rounded-md px-2 text-sm transition-colors duration-fast ease-saganta hover:bg-surface-2 sm:border sm:border-border-stark"
+            class="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full text-sm text-muted transition-colors duration-fast ease-saganta hover:bg-surface-2 hover:text-text sm:rounded-md sm:border sm:border-border-stark sm:px-2.5"
             aria-haspopup="menu"
             aria-expanded={open}
             aria-label="Konto-Menü"
           >
-            <span class="size-2 rounded-full bg-erfolg" aria-hidden="true"></span>
-            <span class="hidden max-w-40 truncate text-muted sm:inline"
-              >{user.name ?? user.email}</span
-            >
+            <Icon name="user" size={20} />
+            <span class="hidden max-w-40 truncate sm:inline">{user.name ?? user.email}</span>
             <span
-              class="text-muted transition-transform duration-fast ease-saganta"
+              class="hidden text-muted transition-transform duration-fast ease-saganta sm:inline"
               class:rotate-180={open}
               aria-hidden="true">▾</span
             >

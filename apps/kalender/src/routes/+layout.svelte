@@ -19,7 +19,7 @@
 
 <UpdateBanner />
 
-<div class="min-h-dvh bg-surface text-text" data-theme="auto">
+<div class="min-h-dvh bg-surface text-text">
   <TopBar app="Kalender" user={data.user} currentAppId="calendar" host={data.host} />
   <!-- `kalender` ist die Manifest-Id unter /downloads, nicht die currentAppId `calendar`. -->
   <AppHinweis app="kalender" name="Kalender" zeigen={!!data.user} />
