@@ -258,3 +258,20 @@ class PapierkorbAus(BaseModel):
     #: Wie viele Anhaenge die Notiz hatte; sie kommen nicht mit zurueck.
     anhaenge: int = 0
 
+
+
+class StandKurzAus(BaseModel):
+    """Ein frueherer Stand in der Liste: ohne Text, mit dessen Laenge."""
+
+    id: int
+    titel: str
+    stand_vom: datetime
+    zeichen: int
+
+
+class StandAus(BaseModel):
+    id: int
+    titel: str
+    inhalt: str
+    tags: list[str]
+    stand_vom: datetime

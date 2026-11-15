@@ -254,6 +254,12 @@
     </div>
   {/if}
 
+  <div class="rounded-xl border border-border p-4 space-y-2">
+    <h2 class="font-medium">Meine Daten</h2>
+    <p class="text-sm text-muted">Alle Termine, Aufgaben, Gewohnheiten und Einstellungen als JSON-Datei, wie in der App.</p>
+    <a href="/konto/export" download class="inline-flex min-h-11 items-center rounded-lg border border-border-stark px-4 text-sm text-muted hover:text-text">Daten exportieren</a>
+  </div>
+
   {#if form && 'fehler' in form && form.fehler}
     <p class="text-sm text-kupfer" role="alert">{form.fehler}</p>
   {:else if form && 'gespeichert' in form}

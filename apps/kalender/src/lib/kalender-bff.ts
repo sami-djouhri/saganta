@@ -29,6 +29,37 @@ export interface KalenderEvent {
   activity_type?: string | null; // lernen | sport | lesen | hobby | sonstige | null
 }
 
+/** Eine Seite einer Überschneidung (aus /api/planung/konflikte, Felder des Dienstes). */
+export interface KonfliktSeite {
+  art: 'termin' | 'sitzung' | 'weg';
+  /** Serie: `basis::datum`, sonst die Kennung des Termins oder der Sitzung. */
+  id: string;
+  titel: string;
+  start: string; // Berliner Wanduhr, Minuten
+  ende: string;
+}
+
+export interface Konflikt {
+  datum: string;
+  a: KonfliktSeite;
+  b: KonfliktSeite;
+}
+
+/** Ein Handgriff aus `konflikt_loesen.wege`: Ziel ausdrücklich benannt, Text fertig für den Knopf. */
+export interface KonfliktWeg {
+  aktion: 'verschieben' | 'kuerzen' | 'aussetzen' | 'loeschen';
+  ziel: { art: string; id: string; titel: string };
+  start?: string;
+  ende?: string;
+  text: string;
+}
+
+export interface KonfliktVorschlag {
+  weicht: KonfliktSeite | null;
+  wege?: KonfliktWeg[];
+  hinweis?: string;
+}
+
 /** Feedback zu einer Aktivitäts-Instanz (die „Randnotiz nach der Aktivität"). */
 export interface ActivityFeedback {
   id: string;

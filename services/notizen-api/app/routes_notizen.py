@@ -12,7 +12,7 @@ from .auth import Me, verify_jwt
 from .config import settings
 from .db import get_db
 from .helfer import anhang_aus, notiz_aus, notiz_holen, notizen_kurz, verknuepfung_aus
-from .models import VERKNUEPFUNGS_TYPEN, Anhang, Notiz, Notizbuch, Papierkorb, Verknuepfung
+from .models import VERKNUEPFUNGS_TYPEN, Anhang, Notiz, Notizbuch, NotizStand, Papierkorb, Verknuepfung
 from .schemas import (
     AnhangAus,
     NotizAn,
@@ -20,6 +20,8 @@ from .schemas import (
     NotizKurzAus,
     NotizPatch,
     PapierkorbAus,
+    StandAus,
+    StandKurzAus,
     VerknuepfungAn,
     VerknuepfungAus,
 )
@@ -263,6 +265,12 @@ def aendern(
                 "einem anderen Geraet gespeichert. Diese Fassung wurde nicht "
                 "uebernommen: Text kopieren, Seite neu laden, zusammenfuehren.",
             )
+    if (
+        (daten.titel is not None and daten.titel.strip() != notiz.titel)
+        or (daten.inhalt is not None and daten.inhalt != notiz.inhalt)
+        or (daten.tags is not None and tags_normalisieren(daten.tags) != notiz.tags)
+    ):
+        stand_ablegen(db, notiz)
     if daten.titel is not None:
         notiz.titel = daten.titel.strip()
     if daten.inhalt is not None:
@@ -278,6 +286,82 @@ def aendern(
         notiz.angeheftet = daten.angeheftet
     if daten.archiviert is not None:
         notiz.archiviert = daten.archiviert
+    db.commit()
+    db.refresh(notiz)
+    return notiz_aus(notiz)
+
+
+# --- Fruehere Staende ----------------------------------------------------
+
+STAENDE_JE_NOTIZ = 5
+STAND_RUHE_MINUTEN = 10
+
+
+def stand_ablegen(db: Session, notiz: Notiz, erzwingen: bool = False) -> None:
+    """Den jetzigen Stand ablegen, bevor er ueberschrieben wird.
+
+    Ohne ``erzwingen`` nur, wenn er seit ``STAND_RUHE_MINUTEN`` ruht (Begruendung
+    am Modell ``NotizStand``). Das Wiederherstellen erzwingt: so laesst sich auch
+    ein Zurueckholen wieder zuruecknehmen.
+    """
+    if not erzwingen and notiz.geaendert_am > jetzt() - timedelta(minutes=STAND_RUHE_MINUTEN):
+        return
+    db.add(NotizStand(
+        owner_sub=notiz.owner_sub, notiz_id=notiz.id, titel=notiz.titel,
+        inhalt=notiz.inhalt, tags=notiz.tags, stand_vom=notiz.geaendert_am,
+    ))
+    db.flush()
+    alte = db.scalars(
+        select(NotizStand.id)
+        .where(NotizStand.notiz_id == notiz.id, NotizStand.owner_sub == notiz.owner_sub)
+        .order_by(NotizStand.id.desc())
+        .offset(STAENDE_JE_NOTIZ)
+    ).all()
+    if alte:
+        db.execute(delete(NotizStand).where(NotizStand.id.in_(alte)))
+
+
+def _stand_holen(db: Session, sub: str, notiz_id: int, stand_id: int) -> NotizStand:
+    stand = db.scalar(select(NotizStand).where(
+        NotizStand.id == stand_id, NotizStand.notiz_id == notiz_id, NotizStand.owner_sub == sub
+    ))
+    if stand is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Stand nicht gefunden")
+    return stand
+
+
+@router.get("/{notiz_id}/staende", response_model=list[StandKurzAus])
+def staende(notiz_id: int, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> list[StandKurzAus]:
+    """Fruehere Staende, juengster zuerst, ohne Text (der kommt einzeln)."""
+    notiz_holen(db, me.sub, notiz_id)
+    zeilen = db.scalars(
+        select(NotizStand)
+        .where(NotizStand.notiz_id == notiz_id, NotizStand.owner_sub == me.sub)
+        .order_by(NotizStand.id.desc())
+    ).all()
+    return [StandKurzAus(id=z.id, titel=z.titel, stand_vom=z.stand_vom, zeichen=len(z.inhalt)) for z in zeilen]
+
+
+@router.get("/{notiz_id}/staende/{stand_id}", response_model=StandAus)
+def stand(notiz_id: int, stand_id: int, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> StandAus:
+    z = _stand_holen(db, me.sub, notiz_id, stand_id)
+    return StandAus(id=z.id, titel=z.titel, inhalt=z.inhalt, tags=tags_lesen(z.tags), stand_vom=z.stand_vom)
+
+
+@router.post("/{notiz_id}/staende/{stand_id}/wiederherstellen", response_model=NotizAus)
+def stand_wiederherstellen(
+    notiz_id: int, stand_id: int, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)
+) -> NotizAus:
+    """Titel, Text und Tags aus dem Stand uebernehmen; der jetzige wird vorher abgelegt.
+
+    Notizbuch, Anheften und Archiv bleiben, wie sie sind: ein Stand ist der Text,
+    nicht der Ort der Notiz.
+    """
+    notiz = notiz_holen(db, me.sub, notiz_id)
+    z = _stand_holen(db, me.sub, notiz_id, stand_id)
+    titel, inhalt, tags = z.titel, z.inhalt, z.tags
+    stand_ablegen(db, notiz, erzwingen=True)
+    notiz.titel, notiz.inhalt, notiz.tags = titel, inhalt, tags
     db.commit()
     db.refresh(notiz)
     return notiz_aus(notiz)

@@ -5,6 +5,6 @@ export const APP_ID = 'aufgaben';
 export const NAV = [
   { href: '/', label: 'Heute', icon: 'sun' },
   { href: '/alle', label: 'Alle Aufgaben', kurz: 'Alle', icon: 'list-todo' },
-  { href: '/projekte', label: 'Nach Projekt', kurz: 'Projekte', icon: 'folder' },
+  { href: '/projekte', label: 'Bereiche und Projekte', kurz: 'Bereiche', icon: 'folder' },
   { href: '/archiv', label: 'Erledigt', icon: 'circle-check' },
 ] as const;

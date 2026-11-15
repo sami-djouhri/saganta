@@ -5,6 +5,7 @@ import pytest
 
 _tmp = tempfile.mkdtemp(prefix="kontakte-test-")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp}/test.db")
+os.environ.setdefault("ADRESSSUCHE_URL", "")
 os.environ.setdefault("JWT_SECRET", "test-geheimnis-nur-fuer-die-testsuite")
 
 from fastapi.testclient import TestClient  # noqa: E402

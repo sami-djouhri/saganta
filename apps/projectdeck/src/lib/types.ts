@@ -39,6 +39,10 @@ export interface Project {
   open_tasks?: number;
   /** Davon mit Prioritaet hoch. */
   open_high?: number;
+  /** Davon mit Frist vor heute. */
+  overdue_tasks?: number;
+  /** In den letzten sieben Tagen erledigt. */
+  done_7d?: number;
   created_at: string;
   updated_at: string;
 }

@@ -9,13 +9,16 @@
   import { enhance } from '$app/forms';
   import { Button, Icon, NotizenBlock, Spinner } from '@saganta/ui';
   import type { NotizKurz } from '@saganta/notizen-anschluss';
-  import type { Aufgabe, Projekt } from '$lib/aufgaben-bff';
+  import type { Aufgabe, Liste, Projekt } from '$lib/aufgaben-bff';
   import { ENERGIEN, ENERGIE_STIL, PRIORITAETEN, PRIO_STIL, tagePlus } from '$lib/ordnen';
+  import { zuordnungVon } from '$lib/zuordnung';
+  import ZuordnungAuswahl from './ZuordnungAuswahl.svelte';
 
   interface Props {
     offen: boolean;
     aufgabe: Aufgabe | null;
     projekte: Projekt[];
+    listen?: Liste[];
     notizen: NotizKurz[];
     /** Basis-Adresse der Notizen-App im aktuellen Raum. */
     notizenBasis: string;
@@ -29,6 +32,7 @@
     offen,
     aufgabe,
     projekte,
+    listen = [],
     notizen,
     notizenBasis,
     heute,
@@ -63,6 +67,15 @@
     clearTimeout(entprellung);
     entprellung = setTimeout(notizenSuchen, 250);
   }
+
+  const TAGESZEITEN = [
+    { wert: 'morgens', label: 'morgens (5 bis 11 Uhr)' },
+    { wert: 'mittags', label: 'mittags (11 bis 14 Uhr)' },
+    { wert: 'nachmittags', label: 'nachmittags (14 bis 18 Uhr)' },
+    { wert: 'abends', label: 'abends (18 bis 23 Uhr)' },
+  ];
+  const WOCHENTAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const fenster = $derived(aufgabe?.zeitfenster?.[0] ?? null);
 
   // Die drei Griffe, die im Alltag zaehlen. „Verschieben" laeuft ueber den
   // defer-Weg der Engine, der mitzaehlt, wie oft etwas geschoben wurde.
@@ -174,19 +187,108 @@
               {/each}
             </select>
           </label>
+          <label class="block space-y-1 sm:col-span-2">
+            <span class="text-xs uppercase tracking-wider text-muted">Wiederholen (Tage nach dem Abhaken)</span>
+            <input
+              type="number"
+              name="turnus"
+              min="1"
+              max="730"
+              step="1"
+              list="turnus-vorschlaege"
+              value={aufgabe.turnus_tage ?? ''}
+              placeholder="nie"
+              class="w-full rounded-md border border-border-stark bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent-500"
+            />
+            <datalist id="turnus-vorschlaege">
+              <option value="7">jede Woche</option>
+              <option value="14">alle zwei Wochen</option>
+              <option value="30">jeden Monat</option>
+              <option value="90">alle drei Monate</option>
+              <option value="365">jedes Jahr</option>
+            </datalist>
+            <span class="block text-xs text-muted"
+              >Beim Abhaken entsteht die nächste Runde, fällig so viele Tage später.</span
+            >
+          </label>
         </div>
 
+        <!-- Wann: Plantag, Tageszeit, Zeitfenster (seit 2026-11-11). Der
+             Planer legt die Aufgabe nur in diese Zeiten. -->
+        <fieldset class="space-y-3 rounded-md border border-border px-3 py-3">
+          <legend class="px-1 text-xs uppercase tracking-wider text-muted">Wann</legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="block space-y-1">
+              <span class="text-xs uppercase tracking-wider text-muted">Geplant für</span>
+              <input type="hidden" name="tag_alt" value={aufgabe.planned_date ?? ''} />
+              <input
+                type="date"
+                name="tag"
+                value={aufgabe.planned_date ?? ''}
+                class="w-full rounded-md border border-border-stark bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent-500"
+              />
+            </label>
+            <label class="block space-y-1">
+              <span class="text-xs uppercase tracking-wider text-muted">Tageszeit</span>
+              <select
+                name="tageszeit"
+                class="w-full rounded-md border border-border-stark bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent-500"
+              >
+                <option value="">egal</option>
+                {#each TAGESZEITEN as t (t.wert)}
+                  <option value={t.wert} selected={aufgabe.tageszeit === t.wert}>{t.label}</option>
+                {/each}
+              </select>
+            </label>
+          </div>
+          {#if (aufgabe.zeitfenster?.length ?? 0) > 1}
+            <input type="hidden" name="fenster_mehrere" value="1" />
+            <p class="text-xs text-muted">
+              Diese Aufgabe hat {aufgabe.zeitfenster?.length} Zeitfenster; sie bleiben, wie sie sind.
+            </p>
+          {:else}
+            <div class="space-y-2">
+              <span class="block text-xs uppercase tracking-wider text-muted">Nur an diesen Tagen und Zeiten</span>
+              <div class="flex flex-wrap gap-1">
+                {#each WOCHENTAGE as w, i (w)}
+                  <label class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-sm">
+                    <input type="checkbox" name="fenster_tag" value={i} checked={fenster?.tage.includes(i) ?? false} />
+                    {w}
+                  </label>
+                {/each}
+              </div>
+              <div class="flex flex-wrap items-center gap-2 text-sm">
+                <span>von</span>
+                <input
+                  type="time"
+                  name="fenster_von"
+                  value={fenster?.von ?? ''}
+                  class="rounded-md border border-border-stark bg-surface-2 px-2 py-1 text-sm outline-none focus:border-accent-500"
+                />
+                <span>bis</span>
+                <input
+                  type="time"
+                  name="fenster_bis"
+                  value={fenster?.bis ?? ''}
+                  class="rounded-md border border-border-stark bg-surface-2 px-2 py-1 text-sm outline-none focus:border-accent-500"
+                />
+              </div>
+              <span class="block text-xs text-muted"
+                >Leer heißt jederzeit. Tage ohne Uhrzeit: ganztags. Uhrzeit ohne Tage: jeden Tag.</span
+              >
+            </div>
+          {/if}
+        </fieldset>
+
         <label class="block space-y-1">
-          <span class="text-xs uppercase tracking-wider text-muted">Projekt</span>
-          <select
-            name="projekt"
-            class="w-full rounded-md border border-border-stark bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent-500"
-          >
-            <option value="">ohne Projekt</option>
-            {#each projekte as p (p.id)}
-              <option value={p.id} selected={aufgabe.project_id === p.id}>{p.name}</option>
-            {/each}
-          </select>
+          <span class="text-xs uppercase tracking-wider text-muted">Bereich oder Projekt</span>
+          <input type="hidden" name="zuordnung_alt" value={zuordnungVon(aufgabe)} />
+          <ZuordnungAuswahl
+            {listen}
+            {projekte}
+            wert={zuordnungVon(aufgabe)}
+            klasse="w-full rounded-md border border-border-stark bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent-500"
+          />
         </label>
 
         <div class="flex flex-wrap items-center gap-2 pt-1">
@@ -194,6 +296,59 @@
           <span class="flex-1"></span>
         </div>
       </form>
+
+      <!-- Unteraufgaben, eine Ebene (Owner 2026-11-06). Jeder Griff ist ein
+           eigenes kleines Formular auf `?/unteraufgabe`, damit ein Haken sofort
+           wirkt und ohne JavaScript traegt; der Dienst haelt die ganze Liste. -->
+      <section class="space-y-2 border-t border-border px-4 py-4">
+        <p class="text-xs uppercase tracking-wider text-muted">
+          Unteraufgaben{#if aufgabe.unteraufgaben?.length}
+            · {aufgabe.unteraufgaben.filter((u) => u.erledigt).length}/{aufgabe.unteraufgaben.length}{/if}
+        </p>
+        {#if aufgabe.unteraufgaben?.length}
+          <ul class="space-y-1">
+            {#each aufgabe.unteraufgaben as u, i (i)}
+              <li class="flex items-center gap-2 text-sm">
+                <form method="POST" action="?/unteraufgabe" use:enhance class="flex">
+                  <input type="hidden" name="id" value={aufgabe.id} />
+                  <input type="hidden" name="art" value="umschalten" />
+                  <input type="hidden" name="index" value={i} />
+                  <button
+                    type="submit"
+                    class="relative grid size-4 shrink-0 place-items-center rounded border border-border-stark text-transparent before:absolute before:-inset-2 before:content-[''] hover:border-accent-500 {u.erledigt
+                      ? 'border-accent-500 bg-accent-500 text-accent-ink'
+                      : ''}"
+                    aria-label={u.erledigt ? `${u.text} wieder öffnen` : `${u.text} abhaken`}
+                  >
+                    <Icon name="check" size={11} />
+                  </button>
+                </form>
+                <span class="min-w-0 flex-1 truncate {u.erledigt ? 'text-muted line-through' : ''}">{u.text}</span>
+                <form method="POST" action="?/unteraufgabe" use:enhance class="flex">
+                  <input type="hidden" name="id" value={aufgabe.id} />
+                  <input type="hidden" name="art" value="entfernen" />
+                  <input type="hidden" name="index" value={i} />
+                  <button type="submit" class="text-muted hover:text-text" aria-label="Unteraufgabe entfernen">
+                    <Icon name="x" size={14} />
+                  </button>
+                </form>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <form method="POST" action="?/unteraufgabe" use:enhance class="flex items-center gap-2">
+          <input type="hidden" name="id" value={aufgabe.id} />
+          <input type="hidden" name="art" value="anlegen" />
+          <input
+            name="text"
+            maxlength="300"
+            placeholder="Neue Unteraufgabe"
+            aria-label="Neue Unteraufgabe"
+            class="min-w-0 flex-1 rounded-md border border-border-stark bg-surface-2 px-3 py-1.5 text-sm outline-none focus:border-accent-500"
+          />
+          <Button type="submit" variant="ghost" size="sm"><Icon name="plus" size={14} /> Dazu</Button>
+        </form>
+      </section>
 
       <!-- Verschieben und Löschen stehen außerhalb des Bearbeiten-Formulars:
            sie sind eigene Absichten, kein Sonderfall von „Speichern". -->

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { abstand, anlass, datumLang, gruppenTon, kuerzel, telAdresse } from './anzeige';
+import { abstand, anlass, datumLang, gruppenTon, kuerzel, ortHinweis, telAdresse } from './anzeige';
 
 describe('anzeige', () => {
   it('schreibt Daten lang und deutsch', () => {
@@ -26,5 +26,15 @@ describe('anzeige', () => {
 
   it('gibt derselben Gruppe dieselbe Farbe, gleich wie geschrieben', () => {
     expect(gruppenTon('Familie')).toBe(gruppenTon('familie'));
+  });
+
+  it('nennt den Wohnort und den Weg auf die Karte', () => {
+    const leer = { adresse: null, lat: null, lon: null, ort_stand: null, ort_genauigkeit: null };
+    expect(ortHinweis(leer)).toBeNull();
+    const genau = ortHinweis({ ...leer, adresse: 'x', lat: 50.123456, lon: 7.5, ort_stand: 'gefunden', ort_genauigkeit: 'adresse' });
+    expect(genau?.karte).toBe('https://karten.home.arpa/#18/50.12346/7.50000');
+    expect(ortHinweis({ ...leer, adresse: 'x', lat: 1, lon: 2, ort_stand: 'gefunden', ort_genauigkeit: 'ort' })?.karte).toContain('#13/');
+    expect(ortHinweis({ ...leer, adresse: 'x', ort_stand: 'nicht_gefunden' })?.text).toContain('kennt diese Adresse nicht');
+    expect(ortHinweis({ ...leer, adresse: 'x' })?.karte).toBeNull();
   });
 });

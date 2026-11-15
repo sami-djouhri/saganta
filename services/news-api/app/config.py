@@ -128,6 +128,17 @@ class Settings(BaseSettings):
     # `audio_text_herkunft` am Briefing, und DAS ist die Stelle, an der man es
     # merkt, statt es zu vermuten.
     llm_timeout: float = 300.0
+    # Kurze Lebensprobe vor dem Aufruf (`llm_client.gateway_lebt`).
+    llm_lebenszeichen_timeout: float = 5.0
+    # Zweites Modell, wenn das erste nichts liefert. Das Gateway hat eigene
+    # Fallback-Ketten, aber die greifen nur bei einem Fehler, nicht bei einem
+    # langsamen Modell, das bis zum Timeout rechnet (16.10.). homelab-fast liegt
+    # auf einem anderen Wirt und braucht für die Narration unter einer Minute.
+    llm_model_ausweich: str = "homelab-fast"
+    llm_ausweich_timeout: float = 120.0
+    # Nach wie vielen Minuten ein Briefing ohne Modell einen zweiten Versuch
+    # bekommt (`briefing_sched`). Einmal, nicht in Schleife.
+    briefing_llm_nachholen_min: int = 20
 
     # TTS ueber den `tts-gateway` auf host (:8146), der die Anfrage an das
     # Backend weiterreicht. Leer => kein Audio (Soft-Fail).

@@ -16,6 +16,7 @@
    */
   import { enhance } from '$app/forms';
   import { fmtDate, fmtTime } from '$lib/cal';
+  import { minutengenau } from '$lib/handzeit';
   import type { HabitProgress, HabitSession } from '$lib/kalender-bff';
 
   interface Props {
@@ -49,6 +50,19 @@
     dismissed: 'verworfen',
     cancelled: 'abgesagt',
   };
+
+  // Nachtragen (seit 2026-11-13): gemacht, aber nicht zur geplanten Zeit. Die
+  // Vorbelegung entsteht erst beim Aufklappen, also im Browser: der SSR-Knoten
+  // laeuft auf UTC und laege zwei Stunden daneben (siehe handzeit.ts).
+  let nachBeginn = $state('');
+  let nachEnde = $state('');
+  function nachtragenVorbelegen(e: Event) {
+    if (!(e.currentTarget as HTMLDetailsElement).open || nachEnde) return;
+    const jetzt = new Date();
+    jetzt.setSeconds(0, 0);
+    nachEnde = minutengenau(jetzt);
+    nachBeginn = minutengenau(new Date(jetzt.getTime() - 60 * 60_000));
+  }
 
   let offen = $derived(sitzungen.filter((s) => s.status === 'pending'));
   let geplant = $derived(sitzungen.filter((s) => s.status !== 'pending'));
@@ -110,6 +124,41 @@
         </li>
       {/each}
     </ul>
+  {/if}
+
+  {#if fortschritt.length > 0}
+    <details class="rounded-lg border border-border bg-surface/40 px-3 py-2" ontoggle={nachtragenVorbelegen}>
+      <summary class="cursor-pointer text-xs text-muted hover:text-text">Zeit nachtragen</summary>
+      <form method="POST" action="?/zeitNachtragen" use:enhance={() => async ({ update }) => {
+        nachEnde = '';
+        await update();
+      }} class="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+        <label class="grid gap-1 text-xs text-muted">
+          Gewohnheit
+          <select name="habit_id" required class="rounded border border-border-stark bg-surface px-2 py-1 text-sm text-text">
+            {#each fortschritt as g (g.habit_id)}
+              <option value={g.habit_id}>{g.name}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="grid gap-1 text-xs text-muted">
+          Von
+          <input type="datetime-local" name="start" required bind:value={nachBeginn}
+            class="rounded border border-border-stark bg-surface px-2 py-1 text-sm text-text" />
+        </label>
+        <label class="grid gap-1 text-xs text-muted">
+          Bis
+          <input type="datetime-local" name="ende" required bind:value={nachEnde}
+            class="rounded border border-border-stark bg-surface px-2 py-1 text-sm text-text" />
+        </label>
+        <button type="submit"
+          class="rounded-lg border border-accent-500/60 bg-accent-500/10 px-3 py-1 text-xs font-semibold text-akzent hover:bg-accent-500/20"
+          >Eintragen</button>
+      </form>
+      <p class="mt-1 text-xs leading-snug text-muted">
+        Zählt aufs Wochenziel, der Rest der Woche wird danach neu geplant.
+      </p>
+    </details>
   {/if}
 
   {#if offen.length > 0}

@@ -2,8 +2,8 @@
   import { enhance } from '$app/forms';
   import { Icon, NotizenBlock } from '@saganta/ui';
   import type { NotizKurz } from '@saganta/notizen-anschluss';
-  import type { KalenderEvent } from '$lib/kalender-bff';
-  import { startOf, endOf } from '$lib/cal';
+  import type { KalenderEvent, Konflikt, KonfliktVorschlag, KonfliktWeg } from '$lib/kalender-bff';
+  import { startOf, endOf, fmtTime } from '$lib/cal';
 
   interface Props {
     open: boolean;
@@ -22,6 +22,12 @@
     notizenStumm?: boolean;
     /** Fehler des letzten Notiz-Versuchs. */
     notizFehler?: string | null;
+    /** Überschneidungen, an denen dieser Termin beteiligt ist (seit 2026-11-14). */
+    konflikte?: Konflikt[];
+    /** Wege für ein Paar beim Dienst erfragen. */
+    onVorschlag?: (paar: Konflikt) => Promise<KonfliktVorschlag | null>;
+    /** Einen Weg ausführen; schließt bei Erfolg den Dialog. */
+    onWeg?: (weg: KonfliktWeg) => Promise<void>;
     onClose: () => void;
   }
   let {
@@ -37,8 +43,45 @@
     notizenBasis = '',
     notizenStumm = false,
     notizFehler = null,
+    konflikte = [],
+    onVorschlag,
+    onWeg,
     onClose,
   }: Props = $props();
+
+  // Serien-Vorkommen (`basis::datum`): Titel und Reihe werden in der Agenda
+  // gepflegt, hier gilt die Zeit nur fuer diesen Tag (EXDATE + Einzeltermin),
+  // und das Verwerfen bietet die drei Stufen der Agenda an.
+  const istVorkommen = $derived(!!editing && String(editing.id).includes('::'));
+  const vorkommenTag = $derived(editing ? String(editing.id).split('::')[1]?.slice(0, 10) ?? '' : '');
+  const formAction = $derived(istVorkommen ? '?/eventVerschieben' : editing ? '?/eventUpdate' : '?/eventCreate');
+
+  // Überschneidungen: Wege je Paar erst auf Wunsch holen (ein Aufruf an den Dienst).
+  let wegeNach = $state<Record<number, KonfliktVorschlag | null | 'laedt'>>({});
+  let wegLaeuft = $state(false);
+  function partner(k: Konflikt) {
+    return editing && k.a.id === editing.id ? k.b : k.a;
+  }
+  async function wegeHolen(i: number, k: Konflikt) {
+    if (!onVorschlag) return;
+    wegeNach[i] = 'laedt';
+    wegeNach[i] = await onVorschlag(k);
+  }
+  async function wegWaehlen(weg: KonfliktWeg) {
+    if (!onWeg || wegLaeuft) return;
+    if (weg.aktion === 'loeschen' && !confirm(`${weg.text}?`)) return;
+    wegLaeuft = true;
+    try {
+      await onWeg(weg);
+    } finally {
+      wegLaeuft = false;
+    }
+  }
+  $effect(() => {
+    // Beim Wechsel des Termins die geholten Wege vergessen.
+    void editing;
+    wegeNach = {};
+  });
 
   // naive ISO "2026-07-18T15:00:00" → datetime-local "2026-07-18T15:00"
   const toLocalInput = (iso: string): string => (iso ?? '').slice(0, 16);
@@ -74,7 +117,7 @@
     <div class="w-full max-w-lg space-y-4">
       <form
         method="POST"
-        action={editing ? '?/eventUpdate' : '?/eventCreate'}
+        action={formAction}
         use:enhance={() =>
           async ({ result, update }) => {
             await update({ reset: false });
@@ -83,7 +126,7 @@
         class="space-y-4 rounded-2xl border border-border bg-surface-2 p-6 shadow-2xl"
       >
       <div class="flex items-center justify-between">
-        <h3 class="font-display text-2xl">{editing ? 'Termin bearbeiten' : 'Neuer Termin'}</h3>
+        <h3 class="font-display text-2xl">{istVorkommen ? 'Dieses Vorkommen' : editing ? 'Termin bearbeiten' : 'Neuer Termin'}</h3>
         <button
           type="button"
           onclick={onClose}
@@ -100,6 +143,7 @@
           name="title"
           placeholder="Worum geht's?"
           required
+          disabled={istVorkommen}
           value={editing?.title ?? ''}
           class="w-full rounded-lg border border-border-stark bg-surface px-3 py-2 text-sm outline-none focus:border-accent-400"
         />
@@ -110,6 +154,7 @@
           <span class="text-xs uppercase tracking-wider text-muted">Kalender</span>
           <select
             name="calendar_id"
+            disabled={istVorkommen}
             class="w-full rounded-lg border border-border-stark bg-surface px-2 py-2 text-sm text-text outline-none focus:border-accent-400"
           >
             {#each editableCalendars as c (c.id)}
@@ -123,6 +168,7 @@
           <span class="text-xs uppercase tracking-wider text-muted">Ort (optional)</span>
           <input
             name="location"
+            disabled={istVorkommen}
             value={editing?.location ?? ''}
             class="w-full rounded-lg border border-border-stark bg-surface px-2 py-2 text-sm text-text outline-none focus:border-accent-400"
           />
@@ -152,14 +198,22 @@
       </div>
 
       <label class="flex items-center gap-2 text-sm text-muted">
-        <input type="checkbox" name="all_day" checked={editing?.all_day ?? false} />
+        <input type="checkbox" name="all_day" disabled={istVorkommen} checked={editing?.all_day ?? false} />
         Ganztägig (Uhrzeit wird ignoriert)
       </label>
+
+      {#if istVorkommen}
+        <p class="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted">
+          Wiederkehrender Termin. Die Zeit oben gilt nur für dieses Vorkommen, die Reihe bleibt
+          unverändert. Titel und Wiederholung änderst du in der Agenda.
+        </p>
+      {/if}
 
       <label class="block space-y-1">
         <span class="text-xs uppercase tracking-wider text-muted">Aktivität (für Feedback & Planung)</span>
         <select
           name="activity_type"
+          disabled={istVorkommen}
           class="w-full rounded-lg border border-border-stark bg-surface px-2 py-2 text-sm text-text outline-none focus:border-accent-400"
         >
           <option value="" selected={!editing?.activity_type}>kein (normaler Termin)</option>
@@ -188,10 +242,117 @@
         <button
           type="submit"
           class="rounded-lg bg-accent-500 px-5 py-2 text-sm font-medium text-accent-ink hover:bg-accent-400"
-          >{editing ? 'Speichern' : 'Anlegen'}</button
+          >{istVorkommen ? 'Nur dieses Vorkommen verschieben' : editing ? 'Speichern' : 'Anlegen'}</button
         >
         </div>
       </form>
+
+      {#if editing && konflikte.length > 0}
+        <!-- Überschneidungen: der Dienst rechnet die Wege (später schieben,
+             vorziehen, kürzen, aussetzen, löschen), hier stehen sie als Knöpfe.
+             Nichts passiert ohne Klick. -->
+        <div class="space-y-3 rounded-2xl border border-warm-500/40 bg-surface-2 p-6 shadow-2xl">
+          <h4 class="flex items-center gap-2 text-sm font-medium text-kupfer">
+            <Icon name="alert-triangle" size={16} />
+            {konflikte.length === 1 ? 'Überschneidung' : `${konflikte.length} Überschneidungen`}
+          </h4>
+          {#each konflikte as k, i (k.a.id + k.b.id)}
+            {@const p = partner(k)}
+            {@const v = wegeNach[i]}
+            <div class="space-y-2">
+              <p class="text-sm text-text">
+                Mit <span class="font-medium">„{p.titel}“</span>
+                <span class="text-muted">{fmtTime(p.start)} bis {fmtTime(p.ende)}</span>
+              </p>
+              {#if v === undefined}
+                <button
+                  type="button"
+                  onclick={() => wegeHolen(i, k)}
+                  class="rounded-lg border border-border px-3 py-1.5 text-xs text-text hover:bg-white/5"
+                  >Wege zeigen</button
+                >
+              {:else if v === 'laedt'}
+                <p class="text-xs text-muted">Wege werden gerechnet …</p>
+              {:else if v === null}
+                <p class="text-xs text-kupfer">Der Kalender hat nicht geantwortet.</p>
+              {:else}
+                {#if v.hinweis}<p class="text-xs text-muted">{v.hinweis}</p>{/if}
+                <div class="flex flex-wrap gap-1.5">
+                  {#each v.wege ?? [] as weg (weg.aktion + weg.ziel.id + (weg.start ?? '') + (weg.ende ?? ''))}
+                    <button
+                      type="button"
+                      disabled={wegLaeuft}
+                      onclick={() => wegWaehlen(weg)}
+                      class="rounded-lg border px-3 py-1.5 text-xs hover:bg-white/5 disabled:opacity-50 {weg.aktion ===
+                        'loeschen' || weg.aktion === 'aussetzen'
+                        ? 'border-warm-500/40 text-kupfer'
+                        : 'border-border text-text'}"
+                      >{weg.text}</button
+                    >
+                  {/each}
+                  {#if (v.wege ?? []).length === 0}
+                    <p class="text-xs text-muted">Kein Weg berechnet.</p>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      {#if editing}
+        <!-- Verwerfen. Bis 2026-11-14 hatte dieser Dialog keinen Löschen-Knopf,
+             ein Termin liess sich nur in der Agenda entfernen. Bei einer Reihe
+             dieselben drei Stufen wie dort, nie stillschweigend die ganze Reihe. -->
+        <div class="rounded-2xl border border-border bg-surface-2 p-6 shadow-2xl">
+          <h4 class="mb-3 text-xs uppercase tracking-wider text-muted">Verwerfen</h4>
+          {#if istVorkommen}
+            <div class="flex flex-wrap gap-2">
+              <form method="POST" action="?/eventDelete" use:enhance={() => async ({ result, update }) => { await update(); if (result.type === 'success') onClose(); }}>
+                <input type="hidden" name="id" value={editing.id} />
+                <input type="hidden" name="modus" value="vorkommen" />
+                <input type="hidden" name="tag" value={vorkommenTag} />
+                <button type="submit" class="rounded-lg border border-warm-500/40 px-3 py-1.5 text-xs text-kupfer hover:bg-white/5"
+                  >Nur dieses Vorkommen</button
+                >
+              </form>
+              <form method="POST" action="?/eventDelete" use:enhance={() => async ({ result, update }) => { await update(); if (result.type === 'success') onClose(); }}>
+                <input type="hidden" name="id" value={editing.id} />
+                <input type="hidden" name="modus" value="ab_hier" />
+                <input type="hidden" name="tag" value={vorkommenTag} />
+                <button type="submit" class="rounded-lg border border-border px-3 py-1.5 text-xs text-text hover:bg-white/5"
+                  >Dieses und alle folgenden</button
+                >
+              </form>
+              <form
+                method="POST"
+                action="?/eventDelete"
+                onsubmit={(e) => { if (!confirm(`Ganze Reihe „${editing?.title}“ löschen?`)) e.preventDefault(); }}
+                use:enhance={() => async ({ result, update }) => { await update(); if (result.type === 'success') onClose(); }}
+              >
+                <input type="hidden" name="id" value={editing.id} />
+                <input type="hidden" name="modus" value="serie" />
+                <button type="submit" class="rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-kupfer"
+                  >Ganze Reihe löschen</button
+                >
+              </form>
+            </div>
+          {:else}
+            <form
+              method="POST"
+              action="?/eventDelete"
+              onsubmit={(e) => { if (!confirm(`Termin „${editing?.title}“ löschen?`)) e.preventDefault(); }}
+              use:enhance={() => async ({ result, update }) => { await update(); if (result.type === 'success') onClose(); }}
+            >
+              <input type="hidden" name="id" value={editing.id} />
+              <input type="hidden" name="modus" value="serie" />
+              <button type="submit" class="rounded-lg border border-warm-500/40 px-3 py-1.5 text-xs text-kupfer hover:bg-white/5"
+                >Termin löschen</button
+              >
+            </form>
+          {/if}
+        </div>
+      {/if}
 
       {#if editing}
         <!-- Nur beim Bearbeiten. Ein noch nicht angelegter Termin hat keine

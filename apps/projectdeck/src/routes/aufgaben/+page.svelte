@@ -10,6 +10,8 @@
 
   const host = $derived($page.url.host);
   let suche = $state('');
+  // Datum als Etikett, verglichen auf Zeichenketten (wie in Saganta Aufgaben).
+  const heute = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 
   let gefiltert = $derived(
     data.aufgaben.filter((t) => {
@@ -72,10 +74,11 @@
 {:else}
   <div class="mt-6 flex flex-col gap-6">
     {#each gruppen as [pid, g] (pid)}
+      {@const ueber = g.aufgaben.filter((x) => x.faellig && x.faellig < heute).length}
       <section>
         <h2 class="flex items-baseline gap-2 text-sm font-semibold">
           <a href={`/projekte/${g.slug}`} class="text-text hover:underline">{g.name}</a>
-          <span class="text-xs font-normal text-muted">{PROJECT_STATUS[g.status] ?? g.status} · {g.aufgaben.length} offen</span>
+          <span class="text-xs font-normal text-muted">{PROJECT_STATUS[g.status] ?? g.status} · {g.aufgaben.length} offen{#if ueber}<span class="text-fehler"> · {ueber} überfällig</span>{/if}</span>
         </h2>
         <ul class="mt-2 divide-y divide-border rounded-lg border border-border">
           {#each g.aufgaben as t (t.id)}
@@ -91,8 +94,8 @@
                   <p class="mt-0.5 line-clamp-3 whitespace-pre-line text-xs text-muted">{t.notiz}</p>
                 {/if}
               </div>
-              <span class="shrink-0 text-xs text-muted">
-                {t.prioritaet}{#if t.wartet} · wartet{/if}{#if t.faellig} · fällig {t.faellig}{/if}{#if t.dauer_min} · {fmtMinutes(t.dauer_min)}{/if}
+              <span class="shrink-0 text-xs {t.faellig && t.faellig < heute ? 'text-fehler' : 'text-muted'}">
+                {t.prioritaet}{#if t.wartet} · wartet{/if}{#if t.faellig} · {t.faellig < heute ? 'überfällig seit' : 'fällig'} {t.faellig}{/if}{#if t.dauer_min} · {fmtMinutes(t.dauer_min)}{/if}
               </span>
             </li>
           {/each}

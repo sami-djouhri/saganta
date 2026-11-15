@@ -12,12 +12,15 @@ import {
   bffFetch,
   bffToken,
   type Aufgabe,
+  type Liste,
   type Projekt,
   type Tagesbild,
   type Ziel,
 } from '$lib/aufgaben-bff';
 import { notizenZu } from '@saganta/notizen-anschluss';
-import { alsAufgabe, dienstCtx, dienstFetch, type DienstAufgabe } from '$lib/server/aufgaben-dienst';
+import { alsAufgabe, dienstCtx, dienstFetch, ladeDeckProjekte, type DienstAufgabe } from '$lib/server/aufgaben-dienst';
+import { projekteAus } from '$lib/ordnen';
+import { listenAus } from '$lib/zuordnung';
 import { notizAnschluss } from '$lib/server/notizen';
 
 /** Heute in Berliner Wanduhrzeit, nicht in UTC.
@@ -35,6 +38,8 @@ export interface Bestand {
   aufgaben: Aufgabe[];
   ziele: Ziel[];
   projekte: Projekt[];
+  /** Die Listen des Dienstes (Bereiche), in seiner Reihenfolge. */
+  listen: Liste[];
   tagesbild: Tagesbild | null;
   notizenNach: Record<string, { id: number; titel: string }[]>;
   fehler: { bff?: string; notizen?: boolean };
@@ -51,6 +56,7 @@ export async function ladeBestand(
     aufgaben: [],
     ziele: [],
     projekte: [],
+    listen: [],
     tagesbild: null,
     notizenNach: {},
     fehler: {},
@@ -62,8 +68,8 @@ export async function ladeBestand(
   const dienst = dienstCtx(locals);
 
   // Die Aufgaben kommen seit dem 2026-11-03 aus dem Aufgaben-Dienst, Ziele
-  // und Tagesbild weiter aus dem Kalender. Projekte gibt es dort keine mehr
-  // (der Kalender fuehrte 0); sie kommen mit dem Umzug der ProjectDeck-Aufgaben.
+  // und Tagesbild weiter aus dem Kalender. Den Projekt-Slug traegt jede Aufgabe
+  // selbst; aus dem ProjectDeck kommen nur Namen und Auswahl (fail-soft).
   const ladeAufgaben = async (): Promise<Aufgabe[]> => {
     if (!dienst) throw new Error('AUFGABEN_API_BASE_URL ist nicht gesetzt');
     const offen = await dienstFetch<DienstAufgabe[]>(dienst, '/api/aufgaben', fetcher);
@@ -73,13 +79,18 @@ export async function ladeBestand(
     return [...offen, ...erledigt].map(alsAufgabe);
   };
 
-  const [aufgabenRes, zieleRes, projekteRes, tagesbildRes] = await Promise.allSettled([
+  // Der erste Abruf legt beim Dienst die Startlisten an (einmal je Konto).
+  const ladeListen = async (): Promise<Liste[]> =>
+    dienst ? dienstFetch<Liste[]>(dienst, '/api/listen', fetcher) : [];
+
+  const [aufgabenRes, zieleRes, projekteRes, tagesbildRes, listenRes] = await Promise.allSettled([
     ladeAufgaben(),
     bffFetch<Ziel[]>(basis, `/api/goals?date=${heute}`, token, fetcher),
-    Promise.resolve([] as Projekt[]),
+    ladeDeckProjekte(locals.user, fetcher),
     opt.mitTagesbild
       ? bffFetch<Tagesbild>(basis, '/api/assistant/today', token, fetcher)
       : Promise.resolve(null),
+    ladeListen(),
   ]);
 
   const bestand: Bestand = { ...leer };
@@ -93,9 +104,13 @@ export async function ladeBestand(
   if (zieleRes.status === 'fulfilled' && Array.isArray(zieleRes.value)) {
     bestand.ziele = zieleRes.value;
   }
-  if (projekteRes.status === 'fulfilled' && Array.isArray(projekteRes.value)) {
-    bestand.projekte = projekteRes.value;
-  }
+  // Projekte nach den Aufgaben: ein Slug ohne Eintrag im ProjectDeck bekommt
+  // trotzdem seine Gruppe, sonst faellt er unter „Ohne Projekt".
+  const deck = projekteRes.status === 'fulfilled' ? projekteRes.value : [];
+  bestand.projekte = projekteAus(bestand.aufgaben, deck) as Projekt[];
+  if (listenRes.status === 'rejected') console.warn(`Listen nicht abrufbar: ${String(listenRes.reason)}`);
+  const listen = listenRes.status === 'fulfilled' && Array.isArray(listenRes.value) ? listenRes.value : [];
+  bestand.listen = listenAus(bestand.aufgaben, listen);
   if (tagesbildRes.status === 'fulfilled' && tagesbildRes.value) {
     const bild = tagesbildRes.value as Tagesbild;
     // „Bleibt liegen" rechnet der Kalender aus SEINEN Todos, und die sind seit

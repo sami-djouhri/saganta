@@ -4,6 +4,7 @@ Sechste Fragerunde (04.11.), `docs/RICHTUNG.md`.
 """
 import pytest
 from sqlalchemy import create_engine, inspect, text
+from app import routes
 
 from test_kalender import kal  # noqa: F401  (Fixture)
 
@@ -23,9 +24,10 @@ def _listen(client, kopf):
 
 def test_startlisten_beim_ersten_abruf_in_der_entschiedenen_reihenfolge(client, kopf):
     namen = [l["name"] for l in _listen(client, kopf)]
-    assert namen == ["Arbeit", "Homelab", "Finanzen & Verträge", "Wohnung & Haushalt", "Grow",
-                     "Gesundheit & Körper", "Erledigungen draußen"]
-    assert len(_listen(client, kopf)) == 7, "ein zweiter Abruf legt nichts doppelt an"
+    assert namen == ["Privat", "Haushalt", "Gesundheit"]
+    assert len(_listen(client, kopf)) == 3, "ein zweiter Abruf legt nichts doppelt an"
+    vertraulich = {l["name"]: l["vertraulich"] for l in _listen(client, kopf)}
+    assert vertraulich == {"Privat": False, "Haushalt": False, "Gesundheit": True}
 
 
 def test_alle_listen_aufgeloest_kommen_nicht_wieder(client, kopf):
@@ -49,9 +51,25 @@ def test_projekt_und_liste_zugleich_wird_abgelehnt(client, kopf):
     liste = _listen(client, kopf)[0]
     _neu(client, kopf, status=422, projekt="saganta-aufgaben", liste_id=liste["id"])
     a = _neu(client, kopf, projekt="saganta-aufgaben")
-    assert client.put(f"/api/aufgaben/{a['id']}", json={"liste_id": liste["id"]}, headers=kopf).status_code == 422
+    beide = client.put(f"/api/aufgaben/{a['id']}", json={"projekt": "x", "liste_id": liste["id"]}, headers=kopf)
+    assert beide.status_code == 422, "beide zugleich bleibt ein Fehler"
     umgezogen = client.put(f"/api/aufgaben/{a['id']}", json={"projekt": None, "liste_id": liste["id"]}, headers=kopf)
     assert umgezogen.status_code == 200, "in einem Aufruf von Projekt zu Liste ist erlaubt"
+
+
+def test_nur_das_eine_gesetzt_zieht_um_statt_abzulehnen(client, kopf):
+    """Bis 13.11. gab ein einzelnes Feld an einer zugeordneten Aufgabe 422.
+
+    Geaendert, weil die Android-App beim Sammel-Setzen nur `projekt` schickt und
+    ihr Offline-Puffer an einer 422 haengen bliebe. Die Regel „genau ein Ort"
+    bleibt: das andere Feld wird geleert, nicht beide gesetzt.
+    """
+    liste = _listen(client, kopf)[0]
+    a = _neu(client, kopf, liste_id=liste["id"])
+    b = client.put(f"/api/aufgaben/{a['id']}", json={"projekt": "saganta-aufgaben"}, headers=kopf).json()
+    assert (b["projekt"], b["liste_id"]) == ("saganta-aufgaben", None)
+    c = client.put(f"/api/aufgaben/{a['id']}", json={"liste_id": liste["id"]}, headers=kopf).json()
+    assert (c["projekt"], c["liste_id"]) == (None, liste["id"])
 
 
 def test_filter_nach_projekt_und_liste(client, kopf):
@@ -69,7 +87,7 @@ def test_zaehlung_je_projekt(client, kopf, kopf_zwei):
     client.post(f"/api/aufgaben/{erledigt['id']}/erledigt", headers=kopf)
     _neu(client, kopf_zwei, projekt="gartiko")
     assert client.get("/api/projekte/zaehlung", headers=kopf).json() == {
-        "gartiko": {"offen": 1, "erledigt": 1, "hoch": 0}}
+        "gartiko": {"offen": 1, "erledigt": 1, "hoch": 0, "ueberfaellig": 0, "erledigt_7": 1}}
 
 
 def test_zaehlung_hoch_nur_offene(client, kopf):
@@ -79,7 +97,20 @@ def test_zaehlung_hoch_nur_offene(client, kopf):
     erledigt = _neu(client, kopf, projekt="gartiko", prioritaet="hoch")
     client.post(f"/api/aufgaben/{erledigt['id']}/erledigt", headers=kopf)
     assert client.get("/api/projekte/zaehlung", headers=kopf).json() == {
-        "gartiko": {"offen": 3, "erledigt": 1, "hoch": 2}}
+        "gartiko": {"offen": 3, "erledigt": 1, "hoch": 2, "ueberfaellig": 0, "erledigt_7": 1}}
+
+
+def test_zaehlung_ueberfaellig_und_erledigt_7(client, kopf):
+    """Ueberfaellig zaehlt nur Offene mit Frist vor heute; erledigt_7 nur frische Erledigungen."""
+    _neu(client, kopf, projekt="gartiko", faellig="2020-01-01")
+    _neu(client, kopf, projekt="gartiko", faellig="2999-12-31")
+    _neu(client, kopf, projekt="gartiko")
+    alt_erledigt = _neu(client, kopf, projekt="gartiko", faellig="2020-01-01", erledigt_am="2020-01-02T10:00:00")
+    assert client.get(f"/api/aufgaben/{alt_erledigt['id']}", headers=kopf).json()["erledigt"] is True
+    frisch = _neu(client, kopf, projekt="gartiko")
+    client.post(f"/api/aufgaben/{frisch['id']}/erledigt", headers=kopf)
+    assert client.get("/api/projekte/zaehlung", headers=kopf).json() == {
+        "gartiko": {"offen": 3, "erledigt": 2, "hoch": 0, "ueberfaellig": 1, "erledigt_7": 1}}
 
 
 def test_projekt_loesen_laesst_aufgaben_stehen_und_trifft_kein_fremdkonto(client, kopf, kopf_zwei):
@@ -190,7 +221,7 @@ def test_fremde_liste_fremde_aufgabe_fremde_herkunft(client, kopf, kopf_zwei):
     assert client.get("/api/aufgaben?herkunft=projectdeck:1", headers=kopf).json() == []
     eigene = _neu(client, kopf, herkunft="projectdeck:1")
     assert eigene["herkunft"] == "projectdeck:1", "dieselbe Herkunft in zwei Konten ist kein Widerspruch"
-    assert len(_listen(client, kopf_zwei)) == 7
+    assert len(_listen(client, kopf_zwei)) == len(routes.STARTLISTEN)
 
 
 # --- Planer ---------------------------------------------------------------
@@ -257,11 +288,18 @@ def test_alte_tabelle_bekommt_die_neuen_spalten(tmp_path, monkeypatch):
             "titel VARCHAR(500) NOT NULL, erledigt BOOLEAN NOT NULL DEFAULT 0, "
             "wer VARCHAR(10) NOT NULL DEFAULT 'du')"))
         conn.execute(text("INSERT INTO aufgaben (id, owner_sub, titel) VALUES ('a', 'x', 'alt')"))
+        conn.execute(text(
+            "CREATE TABLE listen (id VARCHAR(36) PRIMARY KEY, owner_sub VARCHAR(128) NOT NULL, "
+            "name VARCHAR(100) NOT NULL, position INTEGER NOT NULL DEFAULT 0)"))
+        conn.execute(text("INSERT INTO listen (id, owner_sub, name) VALUES ('l', 'x', 'Garten')"))
     monkeypatch.setattr(db_modul, "engine", alt)
     db_modul._spalten_nachziehen()
     db_modul._spalten_nachziehen()  # zweimal: idempotent
     spalten = {c["name"] for c in inspect(alt).get_columns("aufgaben")}
-    assert {"projekt", "liste_id", "wartet_grund", "zeitfenster", "herkunft"} <= spalten
+    assert {"projekt", "liste_id", "wartet_grund", "zeitfenster", "herkunft", "turnus_tage"} <= spalten
+    with alt.connect() as conn:
+        assert conn.execute(text("SELECT vertraulich FROM listen")).scalar() == 0, \
+            "alte Listen bleiben nach aussen sichtbar, bis jemand sie vertraulich stellt"
     assert "wer" not in spalten
     with alt.connect() as conn:
         assert conn.execute(text("SELECT titel FROM aufgaben")).scalar() == "alt"
@@ -272,3 +310,15 @@ def test_alte_tabelle_bekommt_die_neuen_spalten(tmp_path, monkeypatch):
 @pytest.mark.parametrize("pfad", ["/api/listen", "/api/projekte/zaehlung"])
 def test_neue_wege_ohne_token_zu(client, pfad):
     assert client.get(pfad).status_code == 401
+
+
+def test_planer_nimmt_projektaufgaben_nur_geheftet_oder_faellig(kal, client, kopf):  # noqa: F811
+    # _plan plant den 2026-11-04.
+    eigene = _neu(client, kopf, titel="Eigene")
+    _neu(client, kopf, titel="Projekt im Vorrat", projekt="lager")
+    _neu(client, kopf, titel="Projekt spaeter faellig", projekt="lager", faellig="2026-11-20")
+    geheftet = _neu(client, kopf, titel="Projekt geheftet", projekt="lager", tag="2026-11-04")
+    faellig = _neu(client, kopf, titel="Projekt faellig", projekt="lager", faellig="2026-11-04")
+    _, anfrage = _plan(client, kopf, kal)
+    assert {a["id"] for a in anfrage["aufgaben"]} == {eigene["id"], geheftet["id"], faellig["id"]}, \
+        "Projektaufgaben ohne Tag und ohne Frist bleiben unter Projekte"

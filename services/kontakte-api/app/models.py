@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Date, DateTime, Index, String, Text
+from sqlalchemy import JSON, Date, DateTime, Float, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -39,6 +39,14 @@ class Kontakt(Base):
     telefon: Mapped[str | None] = mapped_column(String(50), nullable=True)
     email: Mapped[str | None] = mapped_column(String(300), nullable=True)
     adresse: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    #: Wohnort auf der Karte (``orte.py``). Aus der Adresse ueber die
+    #: Offline-Adresssuche aufgeloest oder von Hand gesetzt.
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: ``None`` = noch nicht gesucht, ``gefunden``, ``nicht_gefunden``, ``hand``.
+    ort_stand: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    #: ``adresse`` (Hausnummer), ``strasse``, ``ort`` oder ``hand``.
+    ort_genauigkeit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     geburtstag: Mapped[date | None] = mapped_column(Date, nullable=True)
     #: ``[{"bezeichnung": "Hochzeitstag", "datum": "2020-06-20"}]``
     jahrestage: Mapped[list | None] = mapped_column(JSON, nullable=True)

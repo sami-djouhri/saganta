@@ -171,3 +171,31 @@ def test_umzug_ohne_kalender_ist_502(kal, client, kopf):
 
 def test_ohne_token_401(client):
     assert client.get("/api/kontakte").status_code in (401, 403)
+
+
+def test_anlegen_mit_herkunft_ist_wiederholbar(kal, client, kopf, kopf_zwei):
+    rumpf = {"name": "Clara", "herkunft": "app:" + "a" * 32, "geburtstag": "1990-05-04"}
+    r1 = client.post("/api/kontakte", json=rumpf, headers=kopf)
+    assert r1.status_code == 201, r1.text
+    r2 = client.post("/api/kontakte", json=rumpf, headers=kopf)
+    assert r2.status_code == 200 and r2.json()["id"] == r1.json()["id"]
+    assert len(client.get("/api/kontakte", headers=kopf).json()["kontakte"]) == 1
+    # Der Kalender erfaehrt den Geburtstag einmal, nicht bei der Wiederholung.
+    assert len(_abgleiche(kal[0])) == 1
+    # Ein anderer Mandant mit derselben Herkunft bekommt seinen eigenen Kontakt.
+    r3 = client.post("/api/kontakte", json=rumpf, headers=kopf_zwei)
+    assert r3.status_code == 201 and r3.json()["id"] != r1.json()["id"]
+
+
+def test_geloeschter_telefonkontakt_kehrt_nicht_zurueck(kal, client, kopf):
+    rumpf = {"name": "Dora", "herkunft": "telefon:" + "b" * 32}
+    k = client.post("/api/kontakte", json=rumpf, headers=kopf).json()
+    assert client.delete(f"/api/kontakte/{k['id']}", headers=kopf).status_code == 204
+    r = client.post("/api/kontakte", json=rumpf, headers=kopf)
+    assert r.status_code == 200 and r.json()["geloescht_am"] is not None
+    assert client.get("/api/kontakte", headers=kopf).json()["kontakte"] == []
+
+
+def test_herkunft_kalender_und_unsinn_abgelehnt(kal, client, kopf):
+    for h in ("kalender:123", "app:XYZ", "telefon:", "app:" + "a" * 60):
+        assert client.post("/api/kontakte", json={"name": "E", "herkunft": h}, headers=kopf).status_code == 422, h

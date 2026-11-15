@@ -1,7 +1,7 @@
 """Der Text von saganta.de, aus dem `bauen.py` die Seiten erzeugt.
 
 Jede Funktion, die hier steht, ist am Quelltext der Oberflaeche belegt
-(Erhebung 2026-10-30, je Punkt mit Datei und Zeile, gegengeprueft an
+(Erhebung 2026-10-30, neue Apps 2026-11-15, je Punkt mit Datei und Zeile, gegengeprueft an
 Stichproben). Was halb gebaut ist oder zum abgeschafften Bezahlmodell gehoert
 (Pro-Abzeichen, Abo-Abschnitt, Stripe), steht bewusst NICHT hier.
 
@@ -15,34 +15,35 @@ das kuerzere Wort nehmen, und der Satz muss woertlich stimmen.
 """
 
 START = {
-    "titel": "Elf Apps für den Alltag einer Familie, auf eigener Hardware",
+    "titel": "Siebzehn Apps für den Alltag einer Familie, auf eigener Hardware",
     "beschreibung": (
-        "Saganta ist eine Suite aus elf Apps für Kalender, Aufgaben, Notizen, Post "
-        "und mehr. Sie läuft auf einem Rechner im eigenen Haus."
+        "Saganta ist eine Suite aus siebzehn Apps für Kalender, Aufgaben, Vorrat, Bücher "
+        "und mehr. Sie läuft auf eigenen Rechnern im Haus."
     ),
     "anriss": (
-        "Kalender, Aufgaben, Notizen, Post und die übrigen teilen eine Anmeldung, "
-        "ein Aussehen und ihre Daten untereinander. Saganta läuft auf einem Rechner "
-        "im eigenen Haus. Die Daten verlassen es nicht."
+        "Kalender, Aufgaben, Lager, Bibliothek und die übrigen teilen ein Aussehen, "
+        "einen App-Wechsler und ihre Daten untereinander. Saganta läuft auf eigenen "
+        "Rechnern im Haus. Die Daten verlassen es nicht."
     ),
     "bild_alt": "Die Übersicht von Saganta nach der Anmeldung, mit Beispieldaten.",
     "zusammen": (
-        "Dass sie zusammen liegen, ist der Zweck: MealPrep zieht den Vorrat aus dem "
-        "Lager von der Einkaufsliste ab, das Tagebuch zeigt die Termine des Tages, "
-        "und an jedem Termin, jeder Aufgabe und jedem Projekt lässt sich direkt eine "
-        "Notiz anlegen."
+        "Dass sie zusammen liegen, ist der Zweck: die Einkaufsliste füllt sich aus "
+        "Lager und Essensplan, Geburtstage aus Kontakte stehen im Kalender, das "
+        "Tagebuch zeigt die Termine des Tages, und an jedem Termin, jeder Aufgabe und "
+        "jedem Projekt lässt sich direkt eine Notiz anlegen."
     ),
     "telefon": (
-        "Kalender, Notizen, Fitness und ProjectDeck gibt es zusätzlich als eigene "
-        "Apps für Android und Linux. Kalender und Fitness nehmen Einträge auch ohne "
-        "Verbindung an und tragen sie nach, sobald das Telefon wieder im Heimnetz ist."
+        "Zwölf davon gibt es zusätzlich als eigene Apps für Android, acht auch für "
+        "Linux. Die meisten nehmen Einträge auch ohne Verbindung an und tragen sie "
+        "nach, sobald das Telefon wieder im Heimnetz ist."
     ),
     "technik": [
-        "<b>Oberflächen</b> in SvelteKit, je App eine eigene",
+        "<b>Oberflächen</b> in SvelteKit, bei den übrigen Diensten React oder einfaches JavaScript",
         "<b>Dienste</b> in Python mit FastAPI, dahinter SQLite",
-        "<b>Anmeldung</b> über better-auth, einmal für alle Apps",
+        "<b>Anmeldung</b> über better-auth, Finanzen und Medien zusätzlich hinter Authelia",
         "<b>Telefon-Apps</b> in Kotlin mit Compose Multiplatform",
-        "<b>Betrieb</b> in Docker, auf einem Raspberry Pi 5",
+        "<b>Karten</b> mit MapLibre und Valhalla, offline für ganz Deutschland",
+        "<b>Betrieb</b> in Docker, auf Raspberry Pis im eigenen Haus",
         "<b>Daten</b> je Nutzer getrennt, an jedem Dienst einzeln geprüft",
     ],
     "technik_mehr": (
@@ -138,14 +139,13 @@ APPS = [
         "id": "post",
         "seite": "post",
         "name": "Post",
-        "kurz": "E-Mails und eingescannte Briefe",
-        "beschreibung": "Die Post-App von Saganta: E-Mail-Konten und eingescannte Briefe in einem Eingang.",
-        "satz": "Ein Eingang für alle E-Mail-Konten und für die Briefe, die auf Papier kommen und eingescannt werden.",
+        "kurz": "Eingescannte Briefe, Verträge, Fristen",
+        "beschreibung": "Die Post-App von Saganta: eingescannte Briefe, durchsuchbar, mit Verträgen und Fristen.",
+        "satz": "Ein Eingang für die Briefe, die auf Papier kommen und eingescannt werden.",
         "bild_alt": "Der Posteingang mit der Übersicht über Verträge und Fristen.",
         "funktionen": [
-            "E-Mail-Konten über IMAP und SMTP verbinden, E-Mails lesen und schreiben",
             "Briefe scannen oder hochladen, die Texterkennung macht sie durchsuchbar",
-            "Suche über alles, bei Briefen auch im erkannten Text",
+            "Suche über Betreff und Absender und im erkannten Text",
             "Verträge und Fristen: Kündigungsfrist und Monatsbetrag auf einen Blick",
             "Briefe archivieren oder in 7, 14, 30 oder 90 Tagen wieder vorlegen lassen",
         ],
@@ -219,23 +219,6 @@ APPS = [
         ],
     },
     {
-        "id": "assets",
-        "seite": "besitz",
-        "name": "Besitz",
-        "kurz": "Was man besitzt, und was es wert ist",
-        "beschreibung": "Besitz in Saganta: Geräte und Wertsachen mit Kaufpreis und heutigem Marktwert.",
-        "satz": "Eine Liste dessen, was man besitzt, mit dem Preis von damals und dem Wert von heute.",
-        "bild_alt": "Die Besitzliste mit Marktwert, Kaufpreis und Verkaufsempfehlung.",
-        "funktionen": [
-            "Marktwert, Kaufpreis und die Differenz über alles",
-            "„Verkaufen lohnt sich“: Dinge, die ungenutzt herumstehen und noch etwas wert sind, mit Begründung",
-            "Geordnet nach Kategorie, mit Ort und ob es noch benutzt wird",
-        ],
-        "verbindungen": [
-            "Wertsachen aus dem Lager erscheinen hier automatisch",
-        ],
-    },
-    {
         "id": "fitness",
         "seite": "fitness",
         "name": "Fitness",
@@ -282,21 +265,179 @@ APPS = [
         "id": "lager",
         "seite": "lager",
         "name": "Lager",
-        "kurz": "Vorräte mit Barcode und Haltbarkeit",
-        "beschreibung": "Das Lager in Saganta: Vorräte per Barcode ein- und ausbuchen.",
-        "satz": "Was im Haus ist, wie viel davon, und was bald abläuft.",
+        "kurz": "Vorräte, Technik und Bücher, mit Strichcode",
+        "beschreibung": "Das Lager in Saganta: Vorräte, Technik und Bücher per Strichcode ein- und ausbuchen.",
+        "satz": "Was im Haus ist, wo es liegt, und was bald abläuft.",
         "bild_alt": "Die Startseite des Lagers mit den bald ablaufenden Vorräten.",
         "funktionen": [
-            "„Bald ablaufend“ auf der Startseite",
-            "Ein- und Ausbuchen per Barcode, mit der Kamera oder von Hand",
-            "Unbekannte Barcodes werden bei Open Food Facts nachgeschlagen",
-            "Bestand, Produkte und Einkaufsliste",
-            "Statistik über Verbrauch",
+            "Bereiche von Lebensmitteln über Hausapotheke bis Garten, jeder mit seiner eigenen Frist, etwa Mindesthaltbarkeit oder Verfall",
+            "Einbuchen als Lauf: ein Strichcode nach dem anderen, Menge, Frist und Preis stehen als Vorschlag da",
+            "„Bald ablaufend“ auf der Startseite, Abgelaufenes lässt sich auf einmal ausbuchen",
+            "Plätze als Raum, Regal, Fach und Kiste, mit gedrucktem Etikett je Platz",
+            "Technik und Sachen mit Foto und Preis, Marktwert gegen Kaufpreis und ein Hinweis, wo sich Verkaufen lohnt",
+            "Ein Bücherregal: erst das Fach scannen, dann die ISBN eines Buchs nach dem anderen",
+            "Statistik über Ausgaben, den Preis je Laden und Verlust, dazu die Inventur",
         ],
         "verbindungen": [
-            "MealPrep plant mit dem Bestand und bucht beim Einkaufen hinein",
-            "Wertsachen gehen an Besitz",
+            "Mindestbestand und Kaufpreise füllen die Einkaufsliste",
+            "Autor, Jahr und Verlag der Bücher kommen aus Medien",
+            "MealPrep plant mit dem Bestand",
         ],
+        "telefon": "Das Lager gibt es auch als App fürs Telefon.",
+    },
+    {
+        "id": "einkaufsliste",
+        "seite": "einkaufsliste",
+        "name": "Einkaufsliste",
+        "kurz": "Was fehlt, von selbst aus Vorrat und Essensplan",
+        "beschreibung": "Die Einkaufsliste von Saganta: füllt sich aus Lager und Essensplan, mit geschätztem Preis.",
+        "satz": "Eine Einkaufsliste, die zum großen Teil von selbst entsteht.",
+        "bild_alt": "Die Einkaufsliste nach Warengruppen, mit geschätztem Preis je Zeile.",
+        "funktionen": [
+            "Frei eintippen mit Menge, etwa „2 Milch, 500 g Hack“, die Warengruppe wählt die Liste selbst",
+            "Beim Tippen kommen passende Produkte aus dem Lager als Vorschlag",
+            "Was unter den Mindestbestand fällt oder einem geplanten Gericht fehlt, steht von selbst auf der Liste",
+            "Nach Warengruppen sortiert, je Zeile ein geschätzter Preis mit dem Laden des Tiefstpreises",
+            "Abgehaktes liegt „Im Korb“, Weggewischtes lässt sich sofort zurückholen",
+        ],
+        "verbindungen": [
+            "Mindestbestand, Verbrauch und Kaufpreise kommen aus dem Lager",
+            "Fehlende Zutaten kommen aus dem Wochenplan von MealPrep",
+            "Zeigt, wie viel vom Budget für Lebensmittel in Finanzen diesen Monat übrig ist",
+        ],
+        "telefon": "Die Einkaufsliste gibt es auch als App fürs Telefon, abhaken geht auch im Laden ohne Netz.",
+    },
+    {
+        "id": "kontakte",
+        "seite": "kontakte",
+        "name": "Kontakte",
+        "kurz": "Menschen, Geburtstage und Jahrestage",
+        "beschreibung": "Kontakte in Saganta: Telefon, Mail, Adresse, Geburtstage und Jahrestage.",
+        "satz": "Ein Adressbuch, das an Geburtstage und Jahrestage denkt.",
+        "bild_alt": "Die Kontaktliste mit den Geburtstagen der nächsten Tage.",
+        "funktionen": [
+            "Kontakte mit Telefon, Mail, Adresse, Gruppe, Geburtstag und Notiz",
+            "Eigene Jahrestage, etwa der Hochzeitstag",
+            "Die Startseite zeigt Geburtstage und Jahrestage der nächsten 30 Tage",
+            "Suche über Name, Nummer, Mail und Ort, Filter nach Gruppe",
+            "Ein Papierkorb, aus dem sich Gelöschtes zurückholen lässt",
+        ],
+        "verbindungen": [
+            "Geburtstage und Jahrestage stehen im Kalender, mit Erinnerung am Tag und drei Tage vorher",
+            "Termine aus dem Kalender lassen sich mit einem Kontakt verknüpfen",
+            "Unter jedem Kontakt stehen seine Notizen, und die Wohnorte sind eine Ebene in Karten",
+        ],
+        "telefon": "Kontakte gibt es auch als App fürs Telefon, Änderungen gehen auch ohne Netz.",
+    },
+    {
+        "id": "finanzen",
+        "seite": "finanzen",
+        "name": "Finanzen",
+        "kurz": "Konten, Budgets, Prognose und Depot",
+        "beschreibung": "Finanzen in Saganta: Buchungen, Budgets, Vermögensprognose und Depot.",
+        "satz": "Ein Haushaltsbuch, das nach vorn rechnet: was der Monat erlaubt und wohin das Vermögen läuft.",
+        "bild_alt": "Die Seite „Lage“ mit Budgets und anstehenden Fristen, mit erfundenen Zahlen.",
+        "funktionen": [
+            "Die Seite „Lage“ zeigt, was Aufmerksamkeit braucht, und warnt vor Kündigungsfristen",
+            "Buchungen von Hand oder ein Kontoauszug als CSV",
+            "Budgets je Kategorie mit Ober- und Untergrenze, Reste lassen sich ansparen",
+            "Eine Vermögensprognose als Korridor für 1 bis 10 Jahre, auf Wunsch mit einem Was-wäre-wenn",
+            "Eine Wunschliste, die sagt, ab wann der Überschuss einen Wunsch bezahlt",
+            "Depot, Schulden, Sachwerte und verliehenes Geld",
+            "Ein Jahresrückblick: wohin das Gehalt ging",
+        ],
+        "verbindungen": [
+            "Gibt der Einkaufsliste den Rest des Lebensmittel-Budgets",
+        ],
+    },
+    {
+        "id": "medien",
+        "seite": "medien",
+        "name": "Medien",
+        "kurz": "Filme, Serien, Bücher, Spiele und Musik",
+        "beschreibung": "Medien in Saganta: die eigene Sammlung pflegen, bewerten und nachschlagen.",
+        "satz": "Eine Sammlung von Filmen, Serien, Büchern, Spielen und Musik: was da ist, was fehlt, und was gefällt.",
+        "bild_alt": "Die Startseite von Medien mit erfundenen Titeln.",
+        "funktionen": [
+            "Die Startseite zeigt, was gerade zu tun ist",
+            "„Fehlt noch“: was in die Sammlung soll, getrennt nach physisch und digital, bei Serien je Staffel",
+            "Je Titel festlegen, ob er physisch, digital oder in beiden Formen da sein soll",
+            "Bücher auf Klick bei der Deutschen Nationalbibliothek nachschlagen",
+            "Eine Rangliste aus Duellen zwischen zwei Titeln",
+            "Ein Nachschlagewerk für Filme und Serien, offline, mit Seiten für Werke und Personen",
+            "„Aussortieren“ schlägt Stücke vor, die gehen könnten",
+        ],
+        "verbindungen": [
+            "Der physische Bestand kommt aus dem Lager",
+            "Welche Bücher es als eBook gibt, meldet die Bibliothek",
+            "Das Nachschlagewerk ist eine Quelle in Wissen",
+        ],
+    },
+    {
+        "id": "bibliothek",
+        "seite": "bibliothek",
+        "name": "Bibliothek",
+        "kurz": "Die Hausbibliothek zum Lesen",
+        "beschreibung": "Die Bibliothek von Saganta: eBooks im Browser und auf dem Telefon lesen.",
+        "satz": "Die eBooks des Hauses, zum Lesen im Browser und auf dem Telefon.",
+        "bild_alt": "Das Regal der Bibliothek mit erfundenen Bänden.",
+        "funktionen": [
+            "Das Regal nach Verfasser oder Titel durchsuchen, auch nach Sätzen im Text aller Bücher",
+            "„Wo fange ich an?“ schlägt einen Band vor und begründet ihn",
+            "Weiterlesen und Lesestand je Person",
+            "Ein Leser mit Schriftgrad, Zeilenabstand, Satzbreite, zwei Spalten und schwarzem Papier",
+            "Marken mit Notiz, Suche im Band, Vorlesen",
+            "Ein Wort antippen und die Bedeutung aus dem Wiktionary lesen",
+        ],
+        "verbindungen": [
+            "Die Bücher sind eine Quelle in Wissen",
+            "Meldet Medien, welche Bücher es als eBook gibt",
+        ],
+        "telefon": "Die Bibliothek gibt es auch als App fürs Telefon, geladene Bücher lassen sich ohne Netz lesen.",
+    },
+    {
+        "id": "wissen",
+        "seite": "wissen",
+        "name": "Wissen",
+        "kurz": "Eine Suche über das Wissen im Haus",
+        "beschreibung": "Wissen in Saganta: eine Suche über Wikipedia, Bücher und Anleitungen, offline.",
+        "satz": "Ein Feld zum Fragen. Gesucht wird im Haus, nicht im Internet.",
+        "bild_alt": "Eine Antwort mit Belegen und den Treffern darunter.",
+        "funktionen": [
+            "Die Antwort kommt mit Belegziffern, die Treffer stehen darunter",
+            "Gesucht wird zugleich in einer Offline-Wikipedia, in Büchern, Anleitungen, Dokumenten und Filmen",
+            "Treffer nach Quelle filtern, Rückfragen beziehen sich auf die vorige Frage",
+            "Ein Knopf vergleicht die Quellen und zeigt, wo sie sich widersprechen",
+            "Der Schalter „Survival“ sucht nur in Medizin, Wasser, Nahrung, Notfall, Reparatur und Knoten",
+            "Eine Merkliste für Treffer",
+        ],
+        "verbindungen": [
+            "Die Bücher der Bibliothek sind eine Quelle",
+            "Das Nachschlagewerk aus Medien ist die Quelle „Filme & Serien“",
+            "Ein Link führt zur Karte",
+        ],
+    },
+    {
+        "id": "karten",
+        "seite": "karten",
+        "name": "Karten",
+        "kurz": "Offline-Karte mit Routen",
+        "beschreibung": "Karten in Saganta: eine Karte von Deutschland mit Suche und Routen, aus dem eigenen Haus.",
+        "satz": "Eine Karte mit Suche und Routen, die ohne fremden Kartendienst auskommt.",
+        "bild_alt": "Eine Route auf der Karte mit Höhenprofil.",
+        "funktionen": [
+            "Suche nach Orten und Adressen, offline",
+            "Routen mit Auto, Rad, zu Fuß, E-Scooter und Bus und Bahn, mit Zwischenhalten und „Reihenfolge optimieren“",
+            "Navigation mit Ansagen, Höhenprofil und Routenfarbe nach Steigung",
+            "„Wie weit komme ich?“ zeigt, was in 10, 20 oder 30 Minuten erreichbar ist",
+            "Luftbild, Gelände und Häuser in 3D",
+            "Ebenen für Haltestellen mit Abfahrten und für Klinik, Apotheke und Feuerwehr",
+        ],
+        "verbindungen": [
+            "Die Wohnorte aus Kontakte sind eine eigene Ebene, jeder Punkt führt zum Kontakt",
+            "Wissen verlinkt auf die Karte",
+        ],
+        "telefon": "Karten gibt es auch als App fürs Telefon, mit der Grundkarte von ganz Deutschland an Bord.",
     },
 ]
 

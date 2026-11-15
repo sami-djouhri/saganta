@@ -47,6 +47,12 @@
           {#if p.open_tasks}
             <span class="rounded bg-surface px-1.5 py-0.5">{p.open_tasks} offen</span>
           {/if}
+          {#if p.overdue_tasks}
+            <span class="rounded bg-surface px-1.5 py-0.5 text-fehler">{p.overdue_tasks} überfällig</span>
+          {/if}
+          {#if p.done_7d}
+            <span class="rounded bg-surface px-1.5 py-0.5" title="In den letzten sieben Tagen erledigt">{p.done_7d} erledigt/7 T</span>
+          {/if}
         </div>
         {#if p.next_action}
           <p class="line-clamp-2 text-xs text-muted">→ {p.next_action}</p>

@@ -12,15 +12,14 @@
  * Kopie), nur die Gegenrichtung ist leer. Der Slug ist ausserdem der stabilere
  * der beiden Werte, er ueberlebt eine Umbenennung des Projekts.
  *
- * ⚠️ **Projektaufgaben haengen hier bewusst NICHT dran** (Stand 2026-10-24).
- * Gemessen: die Aufgaben der Kalender-Engine tragen UUIDs (`VARCHAR(36)`), die
- * `project_tasks` des ProjectDecks fortlaufende Zahlen (1, 2, 3). Beide wuerden
- * unter demselben Verknuepfungstyp `aufgabe` liegen, also in einem Namensraum,
- * in dem sie heute nur deshalb nicht kollidieren, weil eine UUID nie „7" ist.
- * Das ist Zufall und kein Entwurf: stellte eine der beiden Seiten je ihre
- * Kennungen um, vermischten sich zwei Bestaende still. Ein Knopf an der
- * Projektaufgabe braucht daher zuerst einen eigenen Typ (`projektaufgabe`),
- * und das ist eine Datenmodell-Entscheidung und keine Zeile Oberflaeche.
+ * **Projektaufgaben brauchen hier keinen Anschluss** (Stand 2026-11-14). Seit
+ * dem Umzug am 2026-11-05 liegen sie im Aufgaben-Dienst (UUID, Feld `projekt`)
+ * und oeffnen sich in Saganta Aufgaben; deren Dialog traegt „Notiz dazu" mit
+ * dem Typ `aufgabe`. Die Sorge vom 24.10. (Zahlen-IDs der `project_tasks` und
+ * UUIDs der Kalender-Todos im selben Typ) ist damit gegenstandslos: beide
+ * Bestaende gibt es nicht mehr, und ein eigener Typ `projektaufgabe` waere
+ * schaedlich, weil eine Aufgabe, die ihr Projekt verliert, sonst ihren Typ
+ * wechseln muesste.
  */
 import { env } from '$env/dynamic/private';
 import { anschlussAus, type Anschluss } from '@saganta/notizen-anschluss';

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Aufgabe } from './aufgaben-bff';
 import {
+  turnusEtikett,
   dauer,
   datumsEtikett,
   demnaechst,
@@ -13,8 +14,12 @@ import {
   nachProjekt,
   nachTagesablauf,
   pool,
+  projekteAus,
+  nameAusSlug,
   tagePlus,
   tagesGruppen,
+  unterFortschritt,
+  unteraufgabenNach,
 } from './ordnen';
 
 const HEUTE = '2026-09-13';
@@ -256,5 +261,82 @@ describe('angeheftete Tage (seit dem Aufgaben-Dienst)', () => {
   });
   it('an einen spaeteren Tag geheftet ist kein Vorrat', () => {
     expect(pool([a({ id: 'm', planned_date: '2026-11-10' })], heute)).toEqual([]);
+  });
+});
+
+describe('Projektaufgaben auf der Startseite (ZIELBILD 108)', () => {
+  const heute = '2026-11-12';
+  it('stehen nicht im Vorrat und nicht im Ausblick', () => {
+    const alle = [
+      a({ id: 'eigen' }),
+      a({ id: 'proj', project_id: 'lager' }),
+      a({ id: 'proj-bald', project_id: 'lager', due_date: '2026-11-14' }),
+      a({ id: 'eigen-bald', due_date: '2026-11-14' }),
+    ];
+    expect(pool(alle, heute).map((x) => x.id)).toEqual(['eigen']);
+    expect(demnaechst(alle, heute).map((x) => x.id)).toEqual(['eigen-bald']);
+  });
+
+  it('kommen auf Heute, wenn faellig oder eingeplant', () => {
+    const alle = [
+      a({ id: 'proj', project_id: 'lager' }),
+      a({ id: 'proj-faellig', project_id: 'lager', due_date: heute }),
+      a({ id: 'proj-geplant', project_id: 'lager', planned_date: heute }),
+    ];
+    const ids = tagesGruppen(alle, heute).flatMap((g) => g.aufgaben.map((x) => x.id));
+    expect(ids.sort()).toEqual(['proj-faellig', 'proj-geplant']);
+  });
+});
+
+describe('projekteAus', () => {
+  it('nimmt Namen aus dem ProjectDeck und ergaenzt fehlende Slugs', () => {
+    const p = projekteAus(
+      [a({ id: '1', project_id: 'saganta-lager' }), a({ id: '2', project_id: 'karten' })],
+      [
+        { slug: 'karten', name: 'Karten', status: 'active' },
+        { slug: 'alt', name: 'Alt', status: 'archived' },
+        { slug: 'medien', name: 'Medien', status: 'active' },
+      ],
+    );
+    expect(p.map((x) => [x.id, x.name])).toEqual([
+      ['karten', 'Karten'],
+      ['medien', 'Medien'],
+      ['saganta-lager', 'Saganta Lager'],
+    ]);
+  });
+
+  it('macht aus einem Slug einen lesbaren Namen', () => {
+    expect(nameAusSlug('djouhri-de')).toBe('Djouhri De');
+  });
+});
+
+describe('Unteraufgaben', () => {
+  it('zaehlt den Fortschritt, ohne Liste null', () => {
+    expect(unterFortschritt(a({ id: 'x' }))).toBeNull();
+    expect(unterFortschritt(a({ id: 'y', unteraufgaben: [] }))).toBeNull();
+    expect(
+      unterFortschritt(
+        a({ id: 'z', unteraufgaben: [{ text: 'a', erledigt: true }, { text: 'b', erledigt: false }] }),
+      ),
+    ).toEqual({ erledigt: 1, gesamt: 2 });
+  });
+
+  it('legt an, schaltet um, entfernt; leer wird null', () => {
+    const eins = unteraufgabenNach(null, { art: 'anlegen', text: '  Reifen  ' });
+    expect(eins).toEqual([{ text: 'Reifen', erledigt: false }]);
+    expect(unteraufgabenNach(null, { art: 'anlegen', text: '   ' })).toBeNull();
+    const um = unteraufgabenNach(eins, { art: 'umschalten', index: 0 });
+    expect(um?.[0]?.erledigt).toBe(true);
+    expect(unteraufgabenNach(um, { art: 'umschalten', index: 7 })).toEqual(um);
+    expect(unteraufgabenNach(um, { art: 'entfernen', index: 0 })).toBeNull();
+  });
+});
+
+describe('turnusEtikett', () => {
+  it('nennt die gaengigen Abstaende als Wort, sonst die Tage', () => {
+    expect(turnusEtikett(7)).toBe('wöchentlich');
+    expect(turnusEtikett(30)).toBe('monatlich');
+    expect(turnusEtikett(14)).toBe('alle 14 T');
+    expect(turnusEtikett(null)).toBe('');
   });
 });

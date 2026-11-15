@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     # Upstream nativer kalender-Container (cc-core). LAN-Fallback: host:8085.
     kalender_base_url: str = "http://kalender:8085"
     kalender_timeout_seconds: float = 5.0
+    # Aufgaben-Dienst, nur lesend: was dort geplant ist, zeigt der Kalender
+    # (seit 2026-11-11). 60-s-Token mit `aud=aufgaben-api`, gestempelt mit
+    # `jwt_secret`, wie `projectdeck-api/app/aufgaben_dienst.py`.
+    aufgaben_api_url: str = "http://saganta-aufgaben-api:8000"
+    aufgaben_timeout_seconds: float = 5.0
 
     # `kalender_feed_token` ist am 2026-10-16 entfallen und wird bewusst nicht
     # als unbenutztes Feld weitergeführt. Der Upstream-Client meldete sich damit

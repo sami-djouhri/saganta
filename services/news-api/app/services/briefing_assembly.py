@@ -30,7 +30,7 @@ import structlog
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from ..briefing_models import BriefingFeedback, BriefingProfile
+from ..briefing_models import BriefingFeedback, BriefingProfile, UserBriefing
 from ..config import settings
 from ..models import FeedItem, FeedSource, UserItemState
 from . import interest_taxonomy as tax
@@ -125,6 +125,21 @@ def _zu_aehnlich(a: set[str], b: set[str], schwelle: float = _DOPPELUNG_AB) -> b
     return len(a & b) / min(len(a), len(b)) >= schwelle
 
 
+# Wie viele Meldungen eines Tages denselben Themen-Kern tragen dürfen.
+#
+# Die Doppelungsprüfung oben fasst nur zwei Fassungen DERSELBEN Nachricht
+# zusammen. Am 15.11. standen drei verschiedene Anthropic-Meldungen im Briefing
+# (Börsenwette, IPO, Modellvergleich), am 13.11. drei zu Nvidia: jede für sich
+# eine eigene Nachricht, zusammen ein Drittel der Sendezeit für eine Firma.
+# Zwei lassen ein großes Thema stehen, die dritte macht Platz für etwas anderes.
+_THEMA_MAX = 2
+
+
+def _thema_voll(kerne: set[str], zaehler: dict[str, int]) -> bool:
+    """Trägt der Titel einen Kern, der heute schon `_THEMA_MAX`-mal gewählt wurde?"""
+    return any(zaehler.get(k, 0) >= _THEMA_MAX for k in kerne)
+
+
 # Herkunfts-Markierung am Titelanfang (`heise+ | …`). Sie sagt etwas über die
 # Quelle, nichts über den Inhalt, und vorgelesen ist sie Geräusch. Gemessen
 # trugen 737 der 39881 Feed-Titel diese Marke.
@@ -143,6 +158,42 @@ def _titel_saeubern(roh: str) -> str:
     text = html.unescape(roh or "")
     text = _QUELLMARKE.sub("", text)
     return re.sub(r"\s{2,}", " ", text).strip()
+
+
+_HTML_TAG = re.compile(r"<[^>]*>")
+# Feed-Abspann der Fachpresse: „Der Artikel X erschien zuerst auf the-decoder.de."
+_ABSPANN = re.compile(r"\s*Der Artikel\b.*$", re.S)
+# Autorenzeile am Ende der tagesschau-Kurztexte: „Von Susanne Henn." oder
+# „Von A. B und C. D.". Am 14.11. wurde sie mitvorgelesen.
+_AUTORENZEILE = re.compile(
+    r"\s*\bVon\s+[A-ZÄÖÜ][\w.\-]*(?:\s+(?:und\s+)?[A-ZÄÖÜ][\w.\-]*){1,5}\.?\s*$"
+)
+
+
+def _zusammenfassung_saeubern(roh: str) -> str:
+    """Kurztext ohne HTML, Feed-Abspann und Autorenzeile.
+
+    `_titel_saeubern` löst nur Entities auf, Tags lässt es stehen. DLF und
+    the-decoder liefern den Kurztext mit `<img alt="…">` davor; das stand bis
+    14.11. wörtlich im Briefing, ging so ans Modell und lieferte der
+    Themensuche Wörter aus Bild-Alt-Texten und Adressen („Teresa" traf „esa",
+    die Türkei-Demo lief deshalb unter Wissenschaft).
+    """
+    text = html.unescape(_HTML_TAG.sub(" ", roh or ""))
+    text = _ABSPANN.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = _AUTORENZEILE.sub("", text).strip()
+    return _titel_saeubern(text)
+
+
+def _hinter_bezahlschranke(item: FeedItem) -> bool:
+    """heise+ ist das einzige im Bestand gemessene Bezahlangebot (14.11.: 879
+    Titel mit `heise+`, 880 Links mit `beitrag_plus`, deckungsgleich bis auf
+    einen). Vorgelesen ist so eine Meldung eine Überschrift ohne Inhalt, und
+    wer sie nachlesen will, steht vor der Schranke."""
+    return (item.title or "").lstrip().lower().startswith("heise+") or (
+        "beitrag_plus" in (item.link or "")
+    )
 
 
 # Programmhinweis („tagesschau 20:00 Uhr") und Tages-Sammelzeile
@@ -225,7 +276,7 @@ def _score_item(
     now: datetime,
     already_read: bool = False,
 ) -> tuple[float, list[str]]:
-    text = f"{item.title} {item.summary or ''}"
+    text = f"{item.title} {_zusammenfassung_saeubern(item.summary or '')}"
     matched = tax.match_tags(text)
     ft_hits = tax.free_topic_hits(text, free_topics)
 
@@ -251,6 +302,69 @@ def _score_item(
 
     tags = sorted(matched, key=lambda t: weights.get(t, 0.0), reverse=True)
     return score, tags
+
+
+# Wie viele Vortage ein Thema sperren. Gemessen 08.-14.11.: die Nvidia-Affaere
+# stand sechs Tage hintereinander im Briefing, jede Folgemeldung mit 0,40 bis
+# 0,50 Ueberlappung zum Vortag. Mit zwei Tagen kommt ein Dauerthema hoechstens
+# jeden dritten Tag, eine echte neue Lage verdraengt es nicht auf Dauer.
+_VORTAGE = 2
+
+
+def _vortags_meldungen(db: Session, sub: str, for_date: date) -> tuple[set[str], list[set[str]]]:
+    """Links und Titel-Kerne der Briefings derselben Person aus den Vortagen.
+
+    Dieselbe Schwelle wie innerhalb eines Tages (`_DOPPELUNG_AB`): an den
+    Briefings vom 08. bis 14.11. lagen alle echten Wiederholungen bei 0,30
+    oder darueber, alle verschiedenen Themen darunter (hoechstes 0,29).
+    """
+    rows = (
+        db.query(UserBriefing.content)
+        .filter(
+            UserBriefing.sub == sub,
+            UserBriefing.briefing_date >= for_date - timedelta(days=_VORTAGE),
+            UserBriefing.briefing_date < for_date,
+        )
+        .all()
+    )
+    links: set[str] = set()
+    kerne: list[set[str]] = []
+    for (content,) in rows:
+        for d in _alle_meldungen(content or {}):
+            if d.get("link"):
+                links.add(d["link"])
+            k = _kerne(d.get("title") or "")
+            if k:
+                kerne.append(k)
+    return links, kerne
+
+
+def _alle_meldungen(content: dict) -> list[dict]:
+    out = list(content.get("top_items") or [])
+    for sec in content.get("sections") or []:
+        out.extend(sec.get("items") or [])
+    return out
+
+
+def _rubrik(titel: str, tags: list[str], weights: dict[str, float]) -> str | None:
+    """Die eine Rubrik einer Meldung: was der TITEL sagt, vor dem Kurztext.
+
+    Vorher landete eine Meldung in der ersten Rubrik, deren Wort irgendwo in
+    Titel oder Kurztext stand. „Nvidia-Chef tritt ab, KI-Aktien fahren
+    Achterbahn" lief unter Politik, weil im Kurztext „Midterm-Wahlen" stand.
+    Bei gleichem Gewicht entscheidet die Reihenfolge im Profil (sorted ist
+    stabil, die Gewichte stehen in Profilreihenfolge).
+    """
+    im_titel = tax.match_tags(_titel_saeubern(titel))
+    kandidaten = [t for t in tags if t in im_titel and t in weights] or [
+        t for t in tags if t in weights
+    ]
+    if not kandidaten:
+        return None
+    reihenfolge = list(weights)
+    return sorted(
+        kandidaten, key=lambda t: (-weights[t], reihenfolge.index(t))
+    )[0]
 
 
 def assemble(db: Session, profile: BriefingProfile, for_date: date | None = None) -> dict:
@@ -295,14 +409,18 @@ def assemble(db: Session, profile: BriefingProfile, for_date: date | None = None
         if s > 0:
             scored.append((s, tags, item, src, state))
     scored.sort(key=lambda x: x[0], reverse=True)
+    vortag_links, vortag_kerne = _vortags_meldungen(db, profile.sub, for_date)
 
     max_items = max(4, round(settings.briefing_max_items * _LENGTH_FACTOR.get(eff_length, 1.0)))
     per_source: dict[str, int] = {}
     picked_tokens: list[set[str]] = []
+    thema_zaehler: dict[str, int] = {}
     selected: list[tuple[float, list[str], FeedItem, FeedSource, UserItemState | None]] = []
     for entry in scored:
         _s, _tags, item, src, _state = entry
         if per_source.get(src.slug, 0) >= settings.briefing_max_same_source:
+            continue
+        if _hinter_bezahlschranke(item) or item.link in vortag_links:
             continue
         titel = _titel_saeubern(item.title)
         if _ohne_eigene_nachricht(titel):
@@ -310,9 +428,15 @@ def assemble(db: Session, profile: BriefingProfile, for_date: date | None = None
         toks = _kerne(titel)
         if any(_zu_aehnlich(toks, pt) for pt in picked_tokens):
             continue
+        if any(_zu_aehnlich(toks, vk) for vk in vortag_kerne):
+            continue
+        if _thema_voll(toks, thema_zaehler):
+            continue
         selected.append(entry)
         per_source[src.slug] = per_source.get(src.slug, 0) + 1
         picked_tokens.append(toks)
+        for k in toks:
+            thema_zaehler[k] = thema_zaehler.get(k, 0) + 1
         if len(selected) >= max_items:
             break
 
@@ -333,7 +457,7 @@ def assemble(db: Session, profile: BriefingProfile, for_date: date | None = None
             "link": item.link,
             "source": src.name,
             "source_slug": src.slug,
-            "summary": _titel_saeubern(item.summary or "")[:600],
+            "summary": _zusammenfassung_saeubern(item.summary or "")[:600],
             "published_at": item.published_at.isoformat() if item.published_at else None,
             "tags": tags,
             "read": bool(state and state.read),
@@ -346,13 +470,14 @@ def assemble(db: Session, profile: BriefingProfile, for_date: date | None = None
 
     sections: list[dict] = []
     ordered_tags = sorted(weights, key=lambda t: weights[t], reverse=True)
+    rubrik = {i.link: _rubrik(i.title, t, weights) for (_sc, t, i, _s, _st) in selected}
     for tag in ordered_tags:
         if tag == "top":
             continue
         bucket = [
             _item_dict(i, s, t, st)
             for (_sc, t, i, s, st) in selected
-            if tag in t and i.link not in used_links
+            if rubrik.get(i.link) == tag and i.link not in used_links
         ]
         if bucket:
             sections.append({"tag": tag, "label": tax.label_for(tag), "items": bucket})
@@ -459,6 +584,13 @@ def _session_groups(sessions: list[dict]) -> list[dict]:
     return sorted(groups.values(), key=lambda g: g["start"] or "")
 
 
+def _ohne_klammer(titel: str | None) -> str:
+    """Klammerzusatz aus einem Termintitel: „Probepruefung: Lagerlogistik
+    (Lernstufe, IHK-Modus)" oder „Weg nach Hause (Zuhause)". Vorgelesen ist
+    das ein Nachsatz ohne Auskunft; auf dem Bildschirm bleibt der volle Titel."""
+    return re.sub(r"\s*\([^)]*\)", "", titel or "").strip()
+
+
 def _day_passage(day: dict | None) -> list[str]:
     """Sprech-Zeilen für „Dein Tag": Tagestyp + Termine + Lern-Routine + Ziele + Ausblick."""
     if not day:
@@ -472,7 +604,7 @@ def _day_passage(day: dict | None) -> list[str]:
         parts = []
         for e in events[:3]:
             t = _event_time(e.get("start"), e.get("all_day", False))
-            title = e.get("title") or "Termin"
+            title = _ohne_klammer(e.get("title")) or "Termin"
             parts.append(f"{t}: {title}" if t and t != "ganztägig" else title)
         lines.append("Deine Termine: " + "; ".join(parts) + ".")
     groups = _session_groups(day.get("sessions") or [])
@@ -504,7 +636,7 @@ def _tomorrow_passage(tomorrow: dict | None) -> list[str]:
     if events:
         first = events[0]
         t = _event_time(first.get("start"), first.get("all_day", False))
-        title = first.get("title") or "ein Termin"
+        title = _ohne_klammer(first.get("title")) or "ein Termin"
         rest = len(events) - 1
         weitere = f" und {rest} weitere{'r' if rest == 1 else ''} Termin{'e' if rest > 1 else ''}" if rest > 0 else ""
         if t and t != "ganztägig":
@@ -516,6 +648,23 @@ def _tomorrow_passage(tomorrow: dict | None) -> list[str]:
 
 # Satzzeichen, die einen Titel schon abschliessen.
 _SATZENDE = (".", "?", "!", ":", ";")
+
+
+# Sendungs- und Kolumnennamen vor dem eigentlichen Titel. Auf dem Bildschirm
+# sagen sie, woher ein Beitrag kommt; vorgelesen klingt „Europamagazin: Ein
+# Aufschwung …" (15.11.) wie der Anfang einer Nachricht über ein Magazin.
+_SENDUNGSMARKE = re.compile(
+    r"^\s*(?:Europamagazin|Weltspiegel|Bericht aus Berlin|Tagesthemen|"
+    r"Bit-Rauschen|Liveblog|Podcast)\s*:\s*",
+    re.I,
+)
+# Dachzeile der Agenturtitel: „Raffineriekrise - SPD forderte …". Der Bindestrich
+# mit Leerzeichen ist kein Gedankenstrich im Sinne von `_GEDANKENSTRICH`, das TTS
+# liest ihn je nach Stimme als Pause oder gar nicht. Ein Doppelpunkt trägt die
+# Pause an der richtigen Stelle. Nur bis vier Worte vorne („Nach Einigung für
+# 2027 - …"), sonst trifft es einen Strich mitten im Satz.
+_DACHWORT = r"(?!-(?:\s|$))[^\s:]+"
+_DACHZEILE = re.compile(rf"^((?:{_DACHWORT}\s){{0,3}}{_DACHWORT})\s+-\s+")
 
 
 def _als_satz(titel: str) -> str:
@@ -535,6 +684,8 @@ def _als_satz(titel: str) -> str:
     text = (titel or "").strip()
     if not text:
         return ""
+    text = _SENDUNGSMARKE.sub("", text)
+    text = _DACHZEILE.sub(r"\1: ", text, count=1)
     text = re.sub(r"\s*&\s*", " und ", text)
     text = re.sub(r"\s{2,}", " ", text).strip()
     return text if text.endswith(_SATZENDE) else f"{text}."
@@ -633,12 +784,51 @@ def erfundener_anteil(text: str, content: dict) -> float:
     return len(worte - _quellen_kerne(content)) / len(worte)
 
 
+# „X will belegt haben", „soll gesagt haben": die Quelle gibt eine Behauptung
+# wieder. Erfasst wird das Partizip davor.
+_BEHAUPTUNG = re.compile(
+    r"\b(?:will|wollen|soll|sollen)\b(?:\s+\S+){0,8}?\s+(\w{4,})\s+haben\b"
+)
+# Woran man in der Sprachfassung erkennt, dass die Behauptung als solche
+# stehen blieb. Kleingeschrieben und ohne IGNORECASE: „Will DePue" ist ein
+# Name, „will" das Modalverb.
+_VORBEHALT = re.compile(
+    r"\b(?:will|wollen|soll|sollen|(?i:angeblich|laut|behauptet|behaupten|"
+    r"nach eigenen Angaben|eigenen Angaben zufolge|nach Angaben))\b"
+)
+
+
+def behauptung_verloren(text: str, content: dict) -> list[str]:
+    """Partizipien, die in der Quelle als Behauptung stehen und in der
+    Sprachfassung als Tatsache.
+
+    Gemessen am 14.11.: die Quelle schrieb „Will DePue will erstmals
+    technisch belegt haben", vorgelesen wurde „hat erstmals technisch
+    belegt". Die Wortpruefung (`erfundener_anteil`) sieht das nicht, weil
+    jedes Wort der Sprachfassung in der Quelle steht; verloren ging nur das
+    eine Modalverb, und mit ihm die ganze Aussage.
+    """
+    partizipien: set[str] = set()
+    for d in _alle_meldungen(content):
+        for feld in (d.get("title") or "", d.get("summary") or ""):
+            partizipien.update(m.lower() for m in _BEHAUPTUNG.findall(feld))
+    if not partizipien:
+        return []
+    verloren: list[str] = []
+    for satz in re.split(r"(?<=[.!?])\s+", text):
+        worte = {w.lower() for w in re.findall(r"\w+", satz)}
+        for p in partizipien & worte:
+            if not _VORBEHALT.search(satz):
+                verloren.append(p)
+    return sorted(set(verloren))
+
+
 def spoken_narration(content: dict) -> tuple[str, str]:
     """Liefert den Text, der vertont wird, UND woher er kommt.
 
-    Rückgabe `(text, herkunft)` mit herkunft aus `llm`, `deterministisch`,
-    `deterministisch_llm_stumm`, `deterministisch_llm_unbrauchbar` oder
-    `deterministisch_llm_erfand`.
+    Rückgabe `(text, herkunft)` mit herkunft aus `llm`, `llm_ausweich`, `deterministisch`,
+    `deterministisch_llm_stumm`, `deterministisch_llm_unbrauchbar`,
+    `deterministisch_llm_behauptung` oder `deterministisch_llm_erfand`.
 
     Die Herkunft ist Teil des Ergebnisses und nicht nur ein Logeintrag.
     Vorher gab diese Funktion allein den Text zurück, und der Rückfall auf die
@@ -672,54 +862,74 @@ def spoken_narration(content: dict) -> tuple[str, str]:
     wetter_satz = weather_svc.spoken(content.get("weather"))
     weather_block = ("\n\nWetter (Zahlen WÖRTLICH übernehmen, nichts dazuerfinden):\n"
                      + wetter_satz) if wetter_satz else ""
-    llm = llm_client.chat(
-        system=(
-            "Du bist ein Nachrichten-Sprecher für ein persönliches Briefing zum Anhören. "
-            "Formuliere einen flüssigen gesprochenen Text auf Deutsch. "
-            "WICHTIGE REGELN: Antworte AUSSCHLIESSLICH mit dem Sprech-Text selbst. KEINE "
-            "Einleitung wie 'Hier ist...', KEINE Nummerierung, KEINE Aufzählungszeichen, KEINE "
-            "Klammer-Quellen, KEINE Sprecher-Vorstellung ('mein Name ist …') und NIEMALS "
-            "Platzhalter in eckigen Klammern. Sprich den Hörer mit DU an, nicht mit Sie. "
-            "Beginne mit einer kurzen Begrüßung samt Datum (nenne KEINEN "
-            "Wochentag, nur das Datum). Nenne danach, falls gegeben, kurz das Wetter "
-            "(Temperaturen exakt übernehmen). Falls ein persönlicher Tagesplan gegeben ist, nenne "
-            "danach kurz die Termine und die geplante Routine (Uhrzeiten exakt übernehmen) und, "
-            "falls ein Ausblick auf morgen dabei steht, auch diesen: er ist Teil des Tagesplans "
-            "und darf nicht wegfallen. Dann die wichtigsten Nachrichten in ganzen Sätzen, "
-            "thematisch gruppiert. Ca. 200 Wörter. Benutze keine langen Gedankenstriche, "
-            "sondern Komma, Doppelpunkt oder Punkt. "
-            # Der harte Teil. Er steht hier UND wird nachgemessen, weil eine
-            # Bitte im Prompt keine Zusicherung ist: beide lokalen Modelle
-            # erfanden am Messtag Gründe, Ergebnisse und Zeitformen dazu.
-            "ENTSCHEIDEND: Du darfst NUR das wiedergeben, was in den Meldungen steht. "
-            "Erfinde keine Gründe, keine Folgen, keine Zahlen und keine Ergebnisse. "
-            "Wandle KEINE geplante Sache in eine beschlossene um: steht 'stimmt ab', "
-            "dann ist nichts entschieden. Weißt du zu einer Meldung nichts weiter, "
-            "nenne sie knapp in einem Satz."
-        ),
-        # Mit der Zusammenfassung, nicht nur mit dem Titel. Gemessen sinkt der
-        # Anteil erfundener Inhalte dadurch von 63,9 auf 52,8 Prozent: ein
-        # Modell, das aus sieben Wörtern Überschrift einen Absatz machen soll,
-        # MUSS den Rest ergänzen. Es behebt das Erfinden nicht, deshalb bleibt
-        # die Nachmessung darunter.
-        user=f"Datum: {datum}{weather_block}{day_block}\n\nMeldungen:\n"
-             + "\n".join(headlines[:14]),
-        max_tokens=600,
-    )
-    if not llm:
+    if not llm_client.gateway_lebt():
         return baseline, "deterministisch_llm_stumm"
+    system = (
+        "Du bist ein Nachrichten-Sprecher für ein persönliches Briefing zum Anhören. "
+        "Formuliere einen flüssigen gesprochenen Text auf Deutsch. "
+        "WICHTIGE REGELN: Antworte AUSSCHLIESSLICH mit dem Sprech-Text selbst. KEINE "
+        "Einleitung wie 'Hier ist...', KEINE Nummerierung, KEINE Aufzählungszeichen, KEINE "
+        "Klammer-Quellen, KEINE Sprecher-Vorstellung ('mein Name ist …') und NIEMALS "
+        "Platzhalter in eckigen Klammern. Sprich den Hörer mit DU an, nicht mit Sie. "
+        "Beginne mit einer kurzen Begrüßung samt Datum (nenne KEINEN "
+        "Wochentag, nur das Datum). Nenne danach, falls gegeben, kurz das Wetter "
+        "(Temperaturen exakt übernehmen). Falls ein persönlicher Tagesplan gegeben ist, nenne "
+        "danach kurz die Termine und die geplante Routine (Uhrzeiten exakt übernehmen) und, "
+        "falls ein Ausblick auf morgen dabei steht, auch diesen: er ist Teil des Tagesplans "
+        "und darf nicht wegfallen. Dann die wichtigsten Nachrichten in ganzen Sätzen, "
+        "thematisch gruppiert. Ca. 200 Wörter. Benutze keine langen Gedankenstriche, "
+        "sondern Komma, Doppelpunkt oder Punkt. "
+        # Der harte Teil. Er steht hier UND wird nachgemessen, weil eine
+        # Bitte im Prompt keine Zusicherung ist: beide lokalen Modelle
+        # erfanden am Messtag Gründe, Ergebnisse und Zeitformen dazu.
+        "ENTSCHEIDEND: Du darfst NUR das wiedergeben, was in den Meldungen steht. "
+        "Erfinde keine Gründe, keine Folgen, keine Zahlen und keine Ergebnisse. "
+        "Wandle KEINE geplante Sache in eine beschlossene um: steht 'stimmt ab', "
+        "dann ist nichts entschieden. Eine Behauptung bleibt eine Behauptung: "
+        "steht 'will belegt haben' oder 'soll', dann schreibe 'will' oder 'soll' "
+        "bzw. 'laut', nie 'hat belegt'. Weißt du zu einer Meldung nichts weiter, "
+        "nenne sie knapp in einem Satz."
+    )
+    # Mit der Zusammenfassung, nicht nur mit dem Titel. Gemessen sinkt der
+    # Anteil erfundener Inhalte dadurch von 63,9 auf 52,8 Prozent: ein
+    # Modell, das aus sieben Wörtern Überschrift einen Absatz machen soll,
+    # MUSS den Rest ergänzen. Es behebt das Erfinden nicht, deshalb bleibt
+    # die Nachmessung darunter.
+    user = (f"Datum: {datum}{weather_block}{day_block}\n\nMeldungen:\n"
+            + "\n".join(headlines[:14]))
+    llm = llm_client.chat(system=system, user=user, max_tokens=600)
+    if llm:
+        return _narration_pruefen(llm, content, baseline, "llm")
+    # Zweites Modell auf einem anderen Wirt. Es durchläuft dieselben Prüfungen
+    # und trägt eine eigene Herkunft, damit sichtbar bleibt, an wie vielen Tagen
+    # das Hauptmodell ausfiel.
+    log.warning("briefing.narration.ausweich", modell=settings.llm_model_ausweich)
+    llm = llm_client.chat(system=system, user=user, max_tokens=600,
+                          model=settings.llm_model_ausweich,
+                          timeout=settings.llm_ausweich_timeout)
+    if llm:
+        return _narration_pruefen(llm, content, baseline, "llm_ausweich")
+    return baseline, "deterministisch_llm_stumm"
+
+
+def _narration_pruefen(llm: str, content: dict, baseline: str, herkunft: str) -> tuple[str, str]:
+    """Die Prüfungen jeder Modellfassung; bei Befund die Baseline."""
     cleaned = _ensure_greeting(_clean_narration(llm), content)
     # Fail-safe: lieber der schlichte, korrekte Baseline-Text als eine Sprachfassung
     # mit Platzhaltern. Das kleine lokale Modell produziert gelegentlich Vorspann wie
     # „mein Name ist [Dein Name]": vorgelesen ist das schlimmer als nüchtern.
     if _narration_is_broken(cleaned):
         return baseline, "deterministisch_llm_unbrauchbar"
+    verloren = behauptung_verloren(cleaned, content)
+    if verloren:
+        log.warning("briefing.narration.behauptung_als_tatsache", worte=verloren)
+        return baseline, "deterministisch_llm_behauptung"
     anteil = erfundener_anteil(cleaned, content)
     if anteil > _ERFUNDEN_MAX:
         log.warning("briefing.narration.erfunden", anteil=round(anteil, 3),
                     grenze=_ERFUNDEN_MAX)
         return baseline, "deterministisch_llm_erfand"
-    return cleaned, "llm"
+    return cleaned, herkunft
 
 
 def _quellzeile(d: dict) -> str:
@@ -751,6 +961,9 @@ _LABEL_ECHO = re.compile(
     r"^\s*(datum|wetter|schlagzeilen|persönlicher tagesplan|tagesplan)\s*:\s*", re.I
 )
 _GREETINGS = ("guten morgen", "guten tag", "guten abend", "hallo", "moin")
+_FREMDE_BEGRUESSUNG = re.compile(
+    r"^(?:guten\s+(?:morgen|tag|abend)|hallo|moin)\b[\s,.!]*", re.I
+)
 
 
 def _ensure_greeting(text: str, content: dict) -> str:
@@ -765,8 +978,12 @@ def _ensure_greeting(text: str, content: dict) -> str:
         # Ein nach dem Label übriggebliebenes nacktes Datum ebenfalls weg.
         text = re.sub(r"^\s*\d{1,2}\.\d{1,2}\.\d{4}\s*[.,]?\s*", "", text, count=1)
     text = text.strip()
-    if text[:20].lower().startswith(_GREETINGS):
-        return text
+    # Die Begruessung des Modells wird ersetzt, nicht nur ergaenzt: am 13.11.
+    # sagte es um 06:13 „Hallo", am 14.11. um 07:13 „Guten Tag". Die Uhrzeit
+    # kennt der Dienst, das Modell nicht.
+    text = _FREMDE_BEGRUESSUNG.sub("", text, count=1).strip()
+    if text[:1].islower():
+        text = text[:1].upper() + text[1:]
     try:
         now = datetime.fromisoformat(content.get("generated_at", ""))
     except (TypeError, ValueError):

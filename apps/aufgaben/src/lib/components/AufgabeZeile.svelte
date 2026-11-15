@@ -15,20 +15,21 @@
    */
   import { enhance } from '$app/forms';
   import { Icon } from '@saganta/ui';
-  import type { Aufgabe, Projekt } from '$lib/aufgaben-bff';
+  import type { Aufgabe, Liste, Projekt } from '$lib/aufgaben-bff';
   import type { NotizKurz } from '$lib/server/notizen';
-  import { ENERGIE_STIL, PRIO_STIL, dauer, datumsEtikett, istUeberfaellig } from '$lib/ordnen';
+  import { ENERGIE_STIL, PRIO_STIL, dauer, datumsEtikett, istUeberfaellig, turnusEtikett, unterFortschritt } from '$lib/ordnen';
 
   interface Props {
     aufgabe: Aufgabe;
     heute: string;
     projekt?: Projekt | null;
+    liste?: Liste | null;
     notizen?: NotizKurz[];
     /** Zeigt das Faelligkeitsdatum. In der Tagesansicht ueberfluessig. */
     zeigeDatum?: boolean;
     oeffnen?: (a: Aufgabe) => void;
   }
-  let { aufgabe, heute, projekt = null, notizen = [], zeigeDatum = true, oeffnen }: Props =
+  let { aufgabe, heute, projekt = null, liste = null, notizen = [], zeigeDatum = true, oeffnen }: Props =
     $props();
 
   const prio = $derived(PRIO_STIL[aufgabe.priority] ?? PRIO_STIL.mittel!);
@@ -36,6 +37,7 @@
   const energie = $derived(
     aufgabe.energy_required ? (ENERGIE_STIL[aufgabe.energy_required] ?? null) : null,
   );
+  const unter = $derived(unterFortschritt(aufgabe));
   const zeit = $derived(
     aufgabe.scheduled_start && aufgabe.scheduled_start.slice(0, 10) === heute
       ? aufgabe.scheduled_start.slice(11, 16)
@@ -76,7 +78,7 @@
     >
 
     <!-- Die Beiwerk-Zeile. Jedes Stueck erscheint nur, wenn es einen Wert hat. -->
-    {#if zeit || aufgabe.estimated_minutes || projekt || notizen.length || (zeigeDatum && aufgabe.due_date) || aufgabe.energy_required || (aufgabe.defer_count ?? 0) >= 3}
+    {#if zeit || aufgabe.estimated_minutes || aufgabe.turnus_tage || projekt || liste || notizen.length || unter || (zeigeDatum && aufgabe.due_date) || aufgabe.energy_required || (aufgabe.defer_count ?? 0) >= 3}
       <span class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         {#if zeit}
           <span class="inline-flex items-center gap-1 text-akzent">
@@ -96,6 +98,11 @@
             <Icon name="timer" size={12} />{dauer(aufgabe.estimated_minutes)}
           </span>
         {/if}
+        {#if aufgabe.turnus_tage}
+          <span class="inline-flex items-center gap-1" title="wiederholt sich {aufgabe.turnus_tage} Tage nach dem Abhaken">
+            <Icon name="refresh-cw" size={12} />{turnusEtikett(aufgabe.turnus_tage)}
+          </span>
+        {/if}
         {#if energie}
           <span class="inline-flex items-center gap-1" title="Energiebedarf: {energie.label}">
             <Icon name={energie.symbol} size={12} />{energie.label}
@@ -107,6 +114,16 @@
               class="size-2 shrink-0 rounded-full"
               style="background-color:{projekt.color ?? '#8a8aa0'}"
             ></span>{projekt.name}
+          </span>
+        {/if}
+        {#if liste}
+          <span class="inline-flex items-center gap-1" title="Bereich">
+            <Icon name="list-todo" size={12} />{liste.name}
+          </span>
+        {/if}
+        {#if unter}
+          <span class="inline-flex items-center gap-1 {unter.erledigt === unter.gesamt ? 'text-akzent' : ''}" title="Unteraufgaben erledigt">
+            <Icon name="square-check" size={12} />{unter.erledigt}/{unter.gesamt}
           </span>
         {/if}
         {#if notizen.length}

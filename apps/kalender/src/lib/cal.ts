@@ -307,6 +307,53 @@ export function weekLabel(anchor: string): string {
   return `${fa} – ${fb}`;
 }
 
+/**
+ * Kopfzeile wie in der App (`kopfTitel` in feature-kalender, Owner-Wahl 13.11.):
+ * Titel ist der angesehene Zeitraum, die Unterzeile sagt, wo er zu heute liegt.
+ * Das Jahr steht nur dabei, wenn es nicht das laufende ist.
+ */
+export function kopfTitel(
+  view: string,
+  opt: { month: string; week: string; days: number },
+  today: string,
+): { titel: string; untertitel: string | null } {
+  const jahr = (k: string) => (k.slice(0, 4) !== today.slice(0, 4) ? ` ${k.slice(0, 4)}` : '');
+  if (view === 'month') {
+    const titel = monthLabel(opt.month);
+    const dieser = opt.month === today.slice(0, 7);
+    return { titel, untertitel: dieser ? 'dieser Monat' : null };
+  }
+  if (view === 'week') {
+    const tage = weekGridDays(opt.week);
+    const von = tage[0]!;
+    const bis = tage[6]!;
+    // „Nov." aber „Mai": der Punkt nur, wo wirklich gekuerzt ist. Feste Liste
+    // statt toLocaleDateString: ohne volle ICU kommt dort „Nov" ohne Punkt.
+    const kurz = (k: string) => MONATE_KURZ[Number(k.slice(5, 7)) - 1]!;
+    const tag = (k: string) => Number(k.slice(8, 10));
+    const titel =
+      von.slice(0, 7) === bis.slice(0, 7)
+        ? `${tag(von)}. bis ${tag(bis)}. ${kurz(bis)}${jahr(bis)}`
+        : `${tag(von)}. ${kurz(von)} bis ${tag(bis)}. ${kurz(bis)}${jahr(bis)}`;
+    const dieseWoche = weekStart(today) === von;
+    return { titel, untertitel: `KW ${isoWoche(von)}${dieseWoche ? ' · diese Woche' : ''}` };
+  }
+  return { titel: `Nächste ${opt.days} Tage`, untertitel: 'ab heute' };
+}
+
+const MONATE_KURZ = ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sept.', 'Okt.', 'Nov.', 'Dez.'];
+
+/** ISO-Kalenderwoche eines Tages (`YYYY-MM-DD`). */
+export function isoWoche(k: string): number {
+  const d = new Date(k + 'T12:00:00Z');
+  const wt = (d.getUTCDay() + 6) % 7; // Mo = 0
+  d.setUTCDate(d.getUTCDate() - wt + 3); // Donnerstag derselben Woche
+  const ersterDo = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const wtDo = (ersterDo.getUTCDay() + 6) % 7;
+  ersterDo.setUTCDate(ersterDo.getUTCDate() - wtDo + 3);
+  return 1 + Math.round((d.getTime() - ersterDo.getTime()) / (7 * 86_400_000));
+}
+
 // Minuten seit Mitternacht (lokal/Berlin) für einen ISO-Zeitpunkt.
 export function minutesOfDay(iso: string): number {
   if (!iso) return 0;
@@ -339,4 +386,42 @@ export function eventColor(ev: KalenderEvent, calMeta: Map<string, CalMeta>): st
   const cid = ev.calendar_id;
   if (cid && calMeta.get(cid)) return calMeta.get(cid)!.color;
   return '#8a8aa0';
+}
+
+// ── Geplante Aufgaben (seit 2026-11-11) ─────────────────────────────────
+// Die Aufgaben gehoeren dem Aufgaben-Dienst. Was dort eine Uhrzeit oder einen
+// Plantag hat, zeigt der Kalender als Eintrag eines eigenen, nur lesenden
+// Pseudo-Kalenders. Bearbeitet wird in der Aufgaben-App; Ziehen, Bearbeiten
+// und Loeschen sind hier aus.
+
+export const AUFGABEN_KALENDER = 'saganta-aufgaben';
+export const AUFGABEN_FARBE = '#5b8def';
+
+/** So liefert `/api/aufgaben/zeitraum` des BFF eine Aufgabe (Felder des Dienstes). */
+export interface GeplanteAufgabe {
+  id: string;
+  titel: string;
+  tag: string | null;
+  start: string | null;
+  ende: string | null;
+}
+
+export function istAufgabe(ev: KalenderEvent): boolean {
+  return ev.calendar_id === AUFGABEN_KALENDER;
+}
+
+/**
+ * Eine Aufgabe als Kalendereintrag. Mit Uhrzeit ein Termin, mit Plantag ohne
+ * Uhrzeit ein ganztaegiger Eintrag. Zeiten sind Berliner Wanduhr ohne Zone,
+ * dieselbe Konvention wie bei den Terminen.
+ */
+export function aufgabeAlsTermin(a: GeplanteAufgabe): KalenderEvent | null {
+  const basis = { id: `aufgabe:${a.id}`, title: `Aufgabe: ${a.titel}`, calendar_id: AUFGABEN_KALENDER };
+  if (a.start) {
+    const start = a.start.slice(0, 19);
+    const ende = (a.ende ?? '').slice(0, 19);
+    return { ...basis, start_at: start, end_at: ende > start ? ende : start, all_day: false };
+  }
+  if (a.tag) return { ...basis, start_at: a.tag, end_at: a.tag, all_day: true };
+  return null;
 }

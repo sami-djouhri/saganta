@@ -108,6 +108,11 @@ async def plan_day(data: PlanDayIn, me: Me = CurrentUser) -> dict:
     return r.json() if r.content else {}
 
 
+class FensterIn(BaseModel):
+    von: str = Field(..., pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    bis: str = Field(..., pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+
+
 class FremdeAufgabeIn(BaseModel):
     id: str = Field(..., min_length=1, max_length=64)
     title: str = Field(..., min_length=1, max_length=500)
@@ -115,6 +120,8 @@ class FremdeAufgabeIn(BaseModel):
     estimated_minutes: int | None = Field(default=None, ge=1, le=1440)
     energy_required: Literal["low", "medium", "high"] | None = None
     due_date: str | None = Field(default=None, pattern=_DATE)
+    #: Zeitfenster/Tageszeit des Tages, vom Aufgaben-Dienst ausgerechnet (2026-11-11).
+    fenster: list[FensterIn] | None = Field(default=None, max_length=14)
 
 
 class ZeitraumIn(BaseModel):

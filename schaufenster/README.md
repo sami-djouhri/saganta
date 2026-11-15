@@ -98,8 +98,8 @@ python3 abgleich.py --netcup   # dazu Caddy-Logging und die Mailadressen
 
 | Prüfung | Warum |
 |---|---|
-| App-Deckung in beide Richtungen | Die Seite nennt elf Apps namentlich. Dieselbe Information steht in `packages/ui/src/apps.ts`. Eine abgeschriebene Liste veraltet in beide Richtungen. |
-| Die Anzahl als Wort | „Elf Apps" ist ein Zählstand auf einer öffentlichen Seite. Geprüft wird jede Stelle, an der eine Zahl vor „Apps" steht, auch mit einem Wort dazwischen. |
+| App-Deckung in beide Richtungen | Die Seite nennt jede App namentlich. Dieselbe Information steht in `packages/ui/src/apps.ts`. Eine abgeschriebene Liste veraltet in beide Richtungen. |
+| Die Anzahl als Wort | „Siebzehn Apps" ist ein Zählstand auf einer öffentlichen Seite. Geprüft wird jede Stelle, an der eine Zahl vor „Apps" steht, auch mit einem Wort dazwischen. |
 | Platzhalter | Eine Seite ohne Anschrift darf nicht öffentlich stehen (§ 5 DDG). `deploy.sh` bricht daran ab. |
 | Fremde Inhalte, Skripte, Cookies, Formulare | `datenschutz.html` sagt zu, dass es nichts davon gibt. Jede einzelne Zusage hat ihre Prüfung, auch `<form>`: sonst macht ein später eingefügtes Kontaktformular die Erklärung falsch, ohne dass irgendwo etwas rot wird. |
 | Farbdeckung gegen die Tokens | Sechzehn kopierte Werte. Meldet als Hinweis, nicht als Fund. |

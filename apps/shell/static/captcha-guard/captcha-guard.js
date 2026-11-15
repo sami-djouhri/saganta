@@ -87,8 +87,17 @@
     }
 
     async _onSubmit(e) {
-      // Nur eingreifen, wenn noch kein Token vorliegt (sonst laesst der Handler durch).
-      if (this.token) return;
+      // Der Server nimmt jeden Token nur einmal und nur bis `expires` an. Ein
+      // gueltiger Token geht also mit genau diesem Absenden raus und wird danach
+      // ersetzt: bei use:enhance bleibt die Seite stehen, und der zweite Versuch
+      // nach einem Tippfehler im Passwort schickte sonst den verbrauchten Token.
+      // Das Ersetzen wartet einen Takt, damit der Formular-Handler den Token noch liest.
+      if (this.token && !this._abgelaufen()) {
+        setTimeout(() => this.reset(), 0);
+        return;
+      }
+      this.token = null;
+      if (this._input) this._input.value = "";
       e.preventDefault();
       e.stopImmediatePropagation();
       try {
@@ -101,9 +110,16 @@
       else this._form.submit();
     }
 
+    /** Laeuft der Token in den naechsten 15 s ab (Seite lange offen)? */
+    _abgelaufen() {
+      const exp = Number(new URLSearchParams((this._salt || "").split("?")[1] || "").get("expires"));
+      return exp > 0 && Date.now() / 1000 > exp - 15;
+    }
+
     /** Garantiert einen frischen, geloesten Token. Cached laufende Loesungen. */
     ensureToken() {
-      if (this.token) return Promise.resolve(this.token);
+      if (this.token && !this._abgelaufen()) return Promise.resolve(this.token);
+      if (!this._solving) this.token = null;
       if (this._solving) return this._solving;
       this._solving = this._solve().finally(() => {
         this._solving = null;
@@ -144,6 +160,7 @@
         };
         const token = btoa(JSON.stringify(payload));
         this.token = token;
+        this._salt = salt;
         if (this._input) this._input.value = token;
         this._setState("solved", "Verifiziert ✓");
         this.dispatchEvent(

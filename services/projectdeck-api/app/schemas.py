@@ -130,6 +130,10 @@ class ProjectOut(BaseModel):
     open_tasks: int = 0
     #: Davon mit Prioritaet hoch (Aufgaben-Dienst, `/api/projekte/zaehlung`).
     open_high: int = 0
+    #: Davon mit Frist vor heute.
+    overdue_tasks: int = 0
+    #: In den letzten sieben Tagen erledigt: lebt das Projekt oder liegt es?
+    done_7d: int = 0
 
 
 # ---------- Asset ----------

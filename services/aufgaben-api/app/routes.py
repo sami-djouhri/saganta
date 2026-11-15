@@ -6,14 +6,14 @@ Vorhandensein nicht erraten laesst.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from . import kalender
+from . import belegung, kalender
 from .auth import Me, verify_jwt
 from .db import get_db
 from .models import Aufgabe, Liste, ListenAngelegt, neue_id
@@ -52,15 +52,13 @@ def _berlin_jetzt() -> datetime:
     return datetime.now(BERLIN).replace(tzinfo=None)
 
 
-#: Entscheid 04.11. (sechste Fragerunde), in dieser Reihenfolge.
+#: Die Bereiche neben den Projekten (Entscheid K3/K36, 13.11.; loest die
+#: sieben Startlisten vom 04.11. ab, die fuer kein Konto je angelegt waren).
+#: Name und ob sie nach aussen neutral bleibt (K20).
 STARTLISTEN = (
-    "Arbeit",
-    "Homelab",
-    "Finanzen & Verträge",
-    "Wohnung & Haushalt",
-    "Grow",
-    "Gesundheit & Körper",
-    "Erledigungen draußen",
+    ("Privat", False),
+    ("Haushalt", False),
+    ("Gesundheit", True),
 )
 
 
@@ -167,23 +165,68 @@ def liste(
     return _mit_wartet(db, me, list(db.execute(abfrage).scalars()))
 
 
+#: So viele Tage umfasst eine Zeitraum-Abfrage hoechstens: das Bootstrap-Fenster der
+#: Kalender-App (bis 120 Tage, `kalender-bff` routes_mobile) passt hinein.
+MAX_ZEITRAUM_TAGE = 121
+
+
+@router.get("/aufgaben/zeitraum", response_model=list[AufgabeAus])
+def zeitraum(
+    von: date = Query(..., description="erster Tag"),
+    bis: date = Query(..., description="letzter Tag, eingeschlossen"),
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> list[Aufgabe]:
+    """Offene Aufgaben, die in diesem Zeitraum liegen, fuer den Kalender.
+
+    Zwei Arten: mit geplanter Zeit (``start`` im Zeitraum) und mit Plantag
+    ohne Zeit (``tag`` im Zeitraum). Eine Frist allein ist kein Plan und
+    kommt nicht mit, sonst stuende jede Mahnung als Termin im Kalender.
+    """
+    if bis < von:
+        raise _unzulaessig("bis liegt vor von")
+    if (bis - von).days >= MAX_ZEITRAUM_TAGE:
+        raise _unzulaessig(f"hoechstens {MAX_ZEITRAUM_TAGE} Tage")
+    anfang = datetime.combine(von, datetime.min.time())
+    schluss = datetime.combine(bis + timedelta(days=1), datetime.min.time())
+    abfrage = select(Aufgabe).where(
+        Aufgabe.owner_sub == me.sub,
+        Aufgabe.erledigt.is_(False),
+        ((Aufgabe.start >= anfang) & (Aufgabe.start < schluss))
+        | (Aufgabe.start.is_(None) & (Aufgabe.tag >= von) & (Aufgabe.tag <= bis)),
+    ).order_by(Aufgabe.start, Aufgabe.tag, Aufgabe.erstellt_am)
+    return _mit_wartet(db, me, list(db.execute(abfrage).scalars()))
+
+
 @router.get("/projekte/zaehlung")
 def projekte_zaehlung(me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> dict[str, dict[str, int]]:
-    """Offene und erledigte Aufgaben je Projekt-Slug, fuer die Uebersicht im ProjectDeck.
+    """Stand je Projekt-Slug, fuer die Uebersicht im ProjectDeck.
 
-    ``hoch`` zaehlt die offenen mit Prioritaet hoch; die Projektliste sortiert danach.
+    ``offen`` und ``erledigt`` zaehlen alle, ``hoch`` die offenen mit Prioritaet
+    hoch (die Projektliste sortiert danach), ``ueberfaellig`` die offenen mit
+    Frist vor heute, ``erledigt_7`` die in den letzten sieben Tagen erledigten.
+    Die beiden letzten sagen, ob ein Projekt lebt oder liegt (ZIELBILD 108).
     """
+    heute = _berlin_jetzt().date()
+    seit = _berlin_jetzt() - timedelta(days=7)
     zeilen = db.execute(
-        select(Aufgabe.projekt, Aufgabe.erledigt, Aufgabe.prioritaet, func.count())
+        select(Aufgabe.projekt, Aufgabe.erledigt, Aufgabe.prioritaet, Aufgabe.faellig, Aufgabe.erledigt_am)
         .where(Aufgabe.owner_sub == me.sub, Aufgabe.projekt.is_not(None))
-        .group_by(Aufgabe.projekt, Aufgabe.erledigt, Aufgabe.prioritaet)
     ).all()
     ergebnis: dict[str, dict[str, int]] = {}
-    for slug, erledigt, prioritaet, anzahl in zeilen:
-        eintrag = ergebnis.setdefault(slug, {"offen": 0, "erledigt": 0, "hoch": 0})
-        eintrag["erledigt" if erledigt else "offen"] += anzahl
-        if not erledigt and prioritaet == "hoch":
-            eintrag["hoch"] += anzahl
+    for slug, erledigt, prioritaet, faellig, erledigt_am in zeilen:
+        eintrag = ergebnis.setdefault(
+            slug, {"offen": 0, "erledigt": 0, "hoch": 0, "ueberfaellig": 0, "erledigt_7": 0})
+        if erledigt:
+            eintrag["erledigt"] += 1
+            if erledigt_am is not None and erledigt_am >= seit:
+                eintrag["erledigt_7"] += 1
+            continue
+        eintrag["offen"] += 1
+        if prioritaet == "hoch":
+            eintrag["hoch"] += 1
+        if faellig is not None and faellig < heute:
+            eintrag["ueberfaellig"] += 1
     return ergebnis
 
 
@@ -205,7 +248,12 @@ def projekt_loesen(slug: str, me: Me = Depends(verify_jwt), db: Session = Depend
 
 
 @router.post("/aufgaben", response_model=AufgabeAus, status_code=status.HTTP_201_CREATED)
-def anlegen(daten: AufgabeNeu, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> Aufgabe:
+def anlegen(
+    daten: AufgabeNeu,
+    hintergrund: BackgroundTasks,
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> Aufgabe:
     felder = daten.model_dump(exclude={"zeitfenster", "unteraufgaben"})
     if daten.zeitfenster is not None:
         felder["zeitfenster"] = [f.model_dump() for f in daten.zeitfenster]
@@ -224,6 +272,8 @@ def anlegen(daten: AufgabeNeu, me: Me = Depends(verify_jwt), db: Session = Depen
     db.add(aufgabe)
     db.commit()
     db.refresh(aufgabe)
+    if aufgabe.start is not None:
+        belegung.vormerken(hintergrund, db, me)
     return _mit_wartet(db, me, [aufgabe])[0]
 
 
@@ -236,11 +286,13 @@ def eine(aufgabe_id: str, me: Me = Depends(verify_jwt), db: Session = Depends(ge
 def aendern(
     aufgabe_id: str,
     daten: AufgabeAenderung,
+    hintergrund: BackgroundTasks,
     me: Me = Depends(verify_jwt),
     db: Session = Depends(get_db),
 ) -> Aufgabe:
     """Nur, was geschickt wurde. ``null`` leert ein Feld, Weglassen laesst es stehen."""
     aufgabe = _hole(db, me, aufgabe_id)
+    hatte_zeit = aufgabe.start is not None
     for feld in daten.model_fields_set:
         wert = getattr(daten, feld)
         if feld == "titel" and wert is None:
@@ -254,31 +306,121 @@ def aendern(
         if feld == "unteraufgaben" and wert is not None:
             wert = [u.model_dump() for u in daten.unteraufgaben]
         setattr(aufgabe, feld, wert)
+    # Wer nur das eine setzt, meint „dorthin verschieben": die Android-App
+    # schickt beim Sammel-Setzen allein `projekt`. Ohne das antwortete eine
+    # Aufgabe aus einer Liste mit 422, und der Offline-Puffer der App bliebe
+    # daran haengen. Beide zugleich geschickt bleibt ein Fehler.
+    gesetzt = daten.model_fields_set
+    if aufgabe.projekt and "projekt" in gesetzt and "liste_id" not in gesetzt:
+        aufgabe.liste_id = None
+    if aufgabe.liste_id and "liste_id" in gesetzt and "projekt" not in gesetzt:
+        aufgabe.projekt = None
     _bezug_pruefen(db, me, aufgabe)
     db.commit()
     db.refresh(aufgabe)
+    if hatte_zeit or aufgabe.start is not None:
+        belegung.vormerken(hintergrund, db, me)
     return _mit_wartet(db, me, [aufgabe])[0]
 
 
+def _folge_herkunft(aufgabe: Aufgabe) -> str:
+    return f"turnus:{aufgabe.id}"
+
+
+def _folgeaufgabe(db: Session, me: Me, aufgabe: Aufgabe) -> None:
+    """Turnus ab Erledigung: die naechste Runde, faellig ``turnus_tage`` nach heute.
+
+    Mitgenommen wird, was die Sache beschreibt (Titel, Ort, Zuordnung, Dauer);
+    nicht, was zur alten Runde gehoerte (Tag, Termin, geplante Zeit, Warten,
+    Verschiebezaehler). Die Checkliste beginnt wieder unabgehakt. Die
+    Herkunft ``turnus:<id>`` traegt den eindeutigen Index: ein zweites Abhaken
+    nach „wieder offen" legt keine zweite Folgeaufgabe an, wenn die erste
+    schon bearbeitet wurde und deshalb stehen blieb.
+    """
+    if not aufgabe.turnus_tage:
+        return
+    herkunft = _folge_herkunft(aufgabe)
+    if db.execute(
+        select(Aufgabe.id).where(Aufgabe.owner_sub == me.sub, Aufgabe.herkunft == herkunft)
+    ).first() is not None:
+        return
+    unter = aufgabe.unteraufgaben
+    db.add(Aufgabe(
+        owner_sub=me.sub,
+        titel=aufgabe.titel,
+        notiz=aufgabe.notiz,
+        prioritaet=aufgabe.prioritaet,
+        faellig=aufgabe.erledigt_am.date() + timedelta(days=aufgabe.turnus_tage),
+        dauer_min=aufgabe.dauer_min,
+        energie=aufgabe.energie,
+        projekt=aufgabe.projekt,
+        liste_id=aufgabe.liste_id,
+        wo=aufgabe.wo,
+        ort_name=aufgabe.ort_name,
+        zeitfenster=aufgabe.zeitfenster,
+        unteraufgaben=[{**u, "erledigt": False} for u in unter] if unter else unter,
+        tageszeit=aufgabe.tageszeit,
+        turnus_tage=aufgabe.turnus_tage,
+        herkunft=herkunft,
+    ))
+
+
+def _folgeaufgabe_zuruecknehmen(db: Session, me: Me, aufgabe: Aufgabe) -> None:
+    """„Wieder offen" nimmt die Folgeaufgabe zurueck, solange niemand sie anfasste.
+
+    Unberuehrt heisst: offen und seit dem Anlegen nicht geaendert. Eine
+    bearbeitete Folgeaufgabe bleibt stehen, sonst ginge eine Eingabe verloren.
+    """
+    folge = db.execute(
+        select(Aufgabe).where(Aufgabe.owner_sub == me.sub, Aufgabe.herkunft == _folge_herkunft(aufgabe))
+    ).scalar_one_or_none()
+    if folge is None or folge.erledigt:
+        return
+    angelegt, geaendert = folge.erstellt_am, folge.geaendert_am
+    if angelegt is not None and geaendert is not None:
+        if angelegt.tzinfo is None or geaendert.tzinfo is None:
+            angelegt, geaendert = angelegt.replace(tzinfo=None), geaendert.replace(tzinfo=None)
+        if abs((geaendert - angelegt).total_seconds()) > 2:
+            return
+    db.delete(folge)
+
+
 @router.post("/aufgaben/{aufgabe_id}/erledigt", response_model=AufgabeAus)
-def abhaken(aufgabe_id: str, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> Aufgabe:
+def abhaken(
+    aufgabe_id: str,
+    hintergrund: BackgroundTasks,
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> Aufgabe:
     aufgabe = _hole(db, me, aufgabe_id)
     # Ein zweites Abhaken (Warteschlange nach Netzabriss) laesst den Zeitpunkt stehen.
     if not aufgabe.erledigt:
         aufgabe.erledigt = True
         aufgabe.erledigt_am = _berlin_jetzt()
+        _folgeaufgabe(db, me, aufgabe)
         db.commit()
         db.refresh(aufgabe)
+        if aufgabe.start is not None:
+            belegung.vormerken(hintergrund, db, me)
     return _mit_wartet(db, me, [aufgabe])[0]
 
 
 @router.post("/aufgaben/{aufgabe_id}/offen", response_model=AufgabeAus)
-def aufmachen(aufgabe_id: str, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> Aufgabe:
+def aufmachen(
+    aufgabe_id: str,
+    hintergrund: BackgroundTasks,
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> Aufgabe:
     aufgabe = _hole(db, me, aufgabe_id)
+    if aufgabe.erledigt:
+        _folgeaufgabe_zuruecknehmen(db, me, aufgabe)
     aufgabe.erledigt = False
     aufgabe.erledigt_am = None
     db.commit()
     db.refresh(aufgabe)
+    if aufgabe.start is not None:
+        belegung.vormerken(hintergrund, db, me)
     return _mit_wartet(db, me, [aufgabe])[0]
 
 
@@ -286,6 +428,7 @@ def aufmachen(aufgabe_id: str, me: Me = Depends(verify_jwt), db: Session = Depen
 def verschieben(
     aufgabe_id: str,
     daten: Verschieben,
+    hintergrund: BackgroundTasks,
     me: Me = Depends(verify_jwt),
     db: Session = Depends(get_db),
 ) -> Aufgabe:
@@ -295,18 +438,28 @@ def verschieben(
     bleibt, sie ist ein Versprechen nach aussen und kein Arbeitsplan.
     """
     aufgabe = _hole(db, me, aufgabe_id)
+    hatte_zeit = aufgabe.start is not None
     aufgabe.tag = daten.tag
     aufgabe.start = None
     aufgabe.ende = None
     aufgabe.verschoben = (aufgabe.verschoben or 0) + 1
     db.commit()
     db.refresh(aufgabe)
+    if hatte_zeit:
+        belegung.vormerken(hintergrund, db, me)
     return _mit_wartet(db, me, [aufgabe])[0]
 
 
 @router.delete("/aufgaben/{aufgabe_id}", status_code=status.HTTP_204_NO_CONTENT)
-def loeschen(aufgabe_id: str, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> Response:
-    db.delete(_hole(db, me, aufgabe_id))
+def loeschen(
+    aufgabe_id: str,
+    hintergrund: BackgroundTasks,
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> Response:
+    aufgabe = _hole(db, me, aufgabe_id)
+    hatte_zeit = aufgabe.start is not None
+    db.delete(aufgabe)
     # Wer auf sie wartete, wartet auf nichts mehr; ohne das stuende eine
     # Kennung im Feld, die keine Oberflaeche aufloesen kann.
     db.execute(
@@ -315,6 +468,8 @@ def loeschen(aufgabe_id: str, me: Me = Depends(verify_jwt), db: Session = Depend
         .values(wartet_auf_id=None)
     )
     db.commit()
+    if hatte_zeit:
+        belegung.vormerken(hintergrund, db, me)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -325,8 +480,8 @@ def _startlisten(db: Session, me: Me) -> None:
     """Beim ersten Abruf je Konto die Startlisten, danach nie wieder."""
     if db.get(ListenAngelegt, me.sub) is not None:
         return
-    for i, name in enumerate(STARTLISTEN):
-        db.add(Liste(owner_sub=me.sub, name=name, position=i))
+    for i, (name, vertraulich) in enumerate(STARTLISTEN):
+        db.add(Liste(owner_sub=me.sub, name=name, position=i, vertraulich=vertraulich))
     db.add(ListenAngelegt(owner_sub=me.sub))
     db.commit()
 
@@ -346,7 +501,11 @@ def _listen_aus(db: Session, me: Me, listen: list[Liste]) -> list[ListeAus]:
         .where(Aufgabe.owner_sub == me.sub, Aufgabe.erledigt.is_(False), Aufgabe.liste_id.is_not(None))
         .group_by(Aufgabe.liste_id)
     ).all())
-    return [ListeAus(id=l.id, name=l.name, position=l.position, offen=offen.get(l.id, 0)) for l in listen]
+    return [
+        ListeAus(id=l.id, name=l.name, position=l.position, vertraulich=bool(l.vertraulich),
+                 offen=offen.get(l.id, 0))
+        for l in listen
+    ]
 
 
 @router.get("/listen", response_model=list[ListeAus])
@@ -364,7 +523,8 @@ def liste_anlegen(daten: ListeNeu, me: Me = Depends(verify_jwt), db: Session = D
     hoechste = db.execute(
         select(func.max(Liste.position)).where(Liste.owner_sub == me.sub)
     ).scalar()
-    neu = Liste(owner_sub=me.sub, name=daten.name, position=(hoechste or 0) + 1)
+    neu = Liste(owner_sub=me.sub, name=daten.name, position=(hoechste or 0) + 1,
+                vertraulich=daten.vertraulich)
     db.add(neu)
     db.commit()
     db.refresh(neu)
@@ -382,6 +542,8 @@ def liste_aendern(
         liste_.name = daten.name.strip()
     if daten.position is not None:
         liste_.position = daten.position
+    if daten.vertraulich is not None:
+        liste_.vertraulich = daten.vertraulich
     db.commit()
     db.refresh(liste_)
     return _listen_aus(db, me, [liste_])[0]
@@ -412,6 +574,38 @@ def _minuten(uhrzeit: str) -> int:
     return int(stunde) * 60 + int(minute)
 
 
+def _uhrzeit(minuten: int) -> str:
+    return f"{minuten // 60:02d}:{minuten % 60:02d}"
+
+
+def _fenster_am_tag(aufgabe: Aufgabe, tag: date) -> list[dict] | None:
+    """Wann die Aufgabe an diesem Tag liegen darf; ``None`` heisst jederzeit.
+
+    Zeitfenster des Wochentags, geschnitten mit der Tageszeit, wenn beides
+    gesetzt ist. Eine leere Liste heisst: an diesem Tag gar nicht. Geht als
+    ``fenster`` an den Planer des Kalenders, damit er im Fenster sucht, statt
+    dass ``_passt_nicht`` seinen Vorschlag hinterher verwirft.
+    """
+    raeume: list[tuple[int, int]] | None = None
+    if aufgabe.zeitfenster:
+        raeume = [
+            (_minuten(f["von"]), _minuten(f["bis"]))
+            for f in aufgabe.zeitfenster
+            if tag.weekday() in f["tage"]
+        ]
+    if aufgabe.tageszeit:
+        tz_von, tz_bis = TAGESZEITEN[aufgabe.tageszeit]
+        if raeume is None:
+            raeume = [(tz_von, tz_bis)]
+        else:
+            raeume = [
+                (max(v, tz_von), min(b, tz_bis)) for v, b in raeume if max(v, tz_von) < min(b, tz_bis)
+            ]
+    if raeume is None:
+        return None
+    return [{"von": _uhrzeit(v), "bis": _uhrzeit(b)} for v, b in raeume]
+
+
 def _passt_nicht(aufgabe: Aufgabe, start: datetime, ende: datetime) -> str | None:
     """``zeitfenster`` oder ``tageszeit``, wenn der Vorschlag ausserhalb liegt."""
     von = start.hour * 60 + start.minute
@@ -431,19 +625,25 @@ def _passt_nicht(aufgabe: Aufgabe, start: datetime, ende: datetime) -> str | Non
 
 
 @router.post("/planen", response_model=Plan)
-def planen(daten: PlanAnfrage, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> Plan:
+def planen(
+    daten: PlanAnfrage,
+    hintergrund: BackgroundTasks,
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> Plan:
     """Erst rechnen, dann fragen: ``festlegen=false`` aendert nichts.
 
     Kandidaten sind offene Aufgaben ohne Zeit, die entweder im Vorrat liegen
-    oder an genau diesen Tag geheftet sind. Was an diesem Tag schon eine Zeit
+    oder an genau diesen Tag geheftet sind; Projektaufgaben nur geheftet oder
+    faellig. Was an diesem Tag schon eine Zeit
     hat, geht als belegt mit, denn der Kalender kennt es nicht als Termin.
     """
     offen = list(db.execute(
         select(Aufgabe).where(Aufgabe.owner_sub == me.sub, Aufgabe.erledigt.is_(False))
     ).scalars())
     wartend = _wartende(db, me, offen, daten.datum)
-    wochentag = daten.datum.weekday()
     kandidaten = []
+    fenster: dict[str, list[dict] | None] = {}
     nicht_an_dem_tag: list[PlanZurueck] = []
     for a in offen:
         if a.start is not None or a.termin_id is not None:
@@ -455,8 +655,15 @@ def planen(daten: PlanAnfrage, me: Me = Depends(verify_jwt), db: Session = Depen
         # Unterwegs und an einem bestimmten Ort legt man selbst fest (05.11.).
         if a.wo in ("unterwegs", "ort"):
             continue
-        if a.zeitfenster and not any(wochentag in f["tage"] for f in a.zeitfenster):
-            nicht_an_dem_tag.append(PlanZurueck(aufgabe_id=a.id, titel=a.titel, grund="zeitfenster"))
+        # Projektaufgaben nur, wenn sie an diesen Tag geheftet oder faellig sind
+        # (ZIELBILD 108). Sonst fuellt der Planer den Tag mit dem ganzen
+        # Entwicklungsvorrat, und die eigenen Aufgaben gehen darin unter.
+        if a.projekt and a.tag is None and (a.faellig is None or a.faellig > daten.datum):
+            continue
+        fenster[a.id] = _fenster_am_tag(a, daten.datum)
+        if fenster[a.id] == []:
+            grund = "zeitfenster" if a.zeitfenster else "tageszeit"
+            nicht_an_dem_tag.append(PlanZurueck(aufgabe_id=a.id, titel=a.titel, grund=grund))
             continue
         kandidaten.append(a)
     belegt = [
@@ -474,6 +681,7 @@ def planen(daten: PlanAnfrage, me: Me = Depends(verify_jwt), db: Session = Depen
                 **({"estimated_minutes": a.dauer_min} if a.dauer_min else {}),
                 **({"energy_required": _ENERGIE_ENGLISCH[a.energie]} if a.energie else {}),
                 **({"due_date": a.faellig.isoformat()} if a.faellig else {}),
+                **({"fenster": fenster[a.id]} if fenster[a.id] else {}),
             }
             for a in kandidaten
         ],
@@ -501,9 +709,9 @@ def planen(daten: PlanAnfrage, me: Me = Depends(verify_jwt), db: Session = Depen
             minuten=int(v.get("minutes") or 0),
             grund=v.get("reason"),
         )
-        # Der Planer des Kalenders kennt weder Zeitfenster noch Tageszeit
-        # einer fremden Aufgabe. Was ausserhalb liegt, geht mit Grund zurueck,
-        # statt zu einer Zeit vorgeschlagen zu werden, zu der es nicht geht.
+        # Der Planer sucht seit 2026-11-11 im mitgeschickten ``fenster``.
+        # Die Pruefung bleibt als Riegel: ein Kalender ohne diese Faehigkeit
+        # (aelteres Image) schlaegt sonst eine Zeit vor, zu der es nicht geht.
         abweichung = _passt_nicht(aufgabe, vorschlag.start, vorschlag.ende)
         if abweichung:
             zurueck.append(PlanZurueck(aufgabe_id=aufgabe.id, titel=aufgabe.titel, grund=abweichung))
@@ -524,6 +732,8 @@ def planen(daten: PlanAnfrage, me: Me = Depends(verify_jwt), db: Session = Depen
             aufgabe.start = v.start
             aufgabe.ende = v.ende
         db.commit()
+        if vorschlaege:
+            belegung.vormerken(hintergrund, db, me)
 
     return Plan(
         datum=daten.datum,

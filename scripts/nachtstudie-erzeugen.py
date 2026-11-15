@@ -35,6 +35,13 @@ Aufruf:
 
 Ein neuer Dienst wird unten in ZIELE eingetragen, dann `--schreiben`, dann
 in seiner Einstiegsdatei importieren.
+
+ZWEITE DATEI seit 2026-11-14: `saganta-bausteine.css` (Schriftskala, Raster,
+Knopfarten, Zustaende) aus `packages/design-tokens/src/bausteine.css`, fuer die
+Dienste in BAUSTEIN_ZIELE. Dieselben drei Pruefungen, derselbe Aufruf. Die
+Quelle ist schon CSS, die Kopie ist sie mit Kopf und Pruefsumme. Eine eigene
+Quelle statt theme.css, damit eine Aenderung daran nicht alle zehn
+Nachtstudie-Kopien veralten laesst.
 """
 from __future__ import annotations
 
@@ -73,6 +80,11 @@ ZIELE: dict[str, tuple[Path, Path, str]] = {
         DOCKER / "mealprep/app/static/styles.css",
         r"@import\s+url\(['\"]?(\./)?nachtstudie\.css['\"]?\)",
     ),
+    "tresor-verwaltung": (
+        DOCKER / "tresor-verwaltung/app/static/nachtstudie.css",
+        DOCKER / "tresor-verwaltung/app/static/styles.css",
+        r"@import\s+url\(['\"]?(\./)?nachtstudie\.css['\"]?\)",
+    ),
     "wissen": (
         DOCKER / "wissen/static/nachtstudie.css",
         DOCKER / "wissen/static/style.css",
@@ -96,6 +108,12 @@ ZIELE: dict[str, tuple[Path, Path, str]] = {
         DOCKER / "karten/static/familie.css",
         r"@import\s+url\(['\"]?(\./)?nachtstudie\.css['\"]?\)",
     ),
+    # postfach (Briefkasten): seit 2026-11-13, vorher Kopierpapier hell mit Stempelviolett.
+    "postfach": (
+        DOCKER / "postfach/frontend/src/styles/nachtstudie.css",
+        DOCKER / "postfach/frontend/src/styles/global.css",
+        r"@import\s+['\"](\./)?nachtstudie\.css['\"]",
+    ),
     # launchpad: Grundtoene und Schrift aus der Nachtstudie, die Wirtsfarben
     # der Kacheln bleiben (sie sind Information, kein Schmuck).
     "launchpad": (
@@ -104,6 +122,41 @@ ZIELE: dict[str, tuple[Path, Path, str]] = {
         r"@import\s+url\(['\"]?(\./)?nachtstudie\.css['\"]?\)",
     ),
 }
+
+BAUSTEIN_QUELLE = WURZEL / "packages/design-tokens/src/bausteine.css"
+
+#: Dienste mit den gemeinsamen Bausteinen (Entscheid 2026-11-14,
+#: "Fundament + Apps"). Import direkt nach der Nachtstudie.
+BAUSTEIN_ZIELE: dict[str, tuple[Path, Path, str]] = {
+    "lager": (
+        DOCKER / "lager/frontend/src/styles/saganta-bausteine.css",
+        DOCKER / "lager/frontend/src/styles/global.css",
+        r"@import\s+['\"](\./)?saganta-bausteine\.css['\"]",
+    ),
+    "einkaufsliste": (
+        DOCKER / "einkaufsliste/frontend/src/saganta-bausteine.css",
+        DOCKER / "einkaufsliste/frontend/src/styles.css",
+        r"@import\s+['\"](\./)?saganta-bausteine\.css['\"]",
+    ),
+    "mealprep": (
+        DOCKER / "mealprep/app/static/saganta-bausteine.css",
+        DOCKER / "mealprep/app/static/styles.css",
+        r"@import\s+url\(['\"]?(\./)?saganta-bausteine\.css['\"]?\)",
+    ),
+    "tresor-verwaltung": (
+        DOCKER / "tresor-verwaltung/app/static/saganta-bausteine.css",
+        DOCKER / "tresor-verwaltung/app/static/styles.css",
+        r"@import\s+url\(['\"]?(\./)?saganta-bausteine\.css['\"]?\)",
+    ),
+}
+
+BAUSTEIN_KOPF = """/* ERZEUGT, NICHT VON HAND AENDERN.
+ *
+ * Quelle: saganta/packages/design-tokens/src/bausteine.css (Pruefsumme {summe})
+ * Werkzeug: saganta/scripts/nachtstudie-erzeugen.py --schreiben
+ * Begruendungen stehen in der Quelle. Eine Aenderung hier meldet der Waechter.
+ */
+"""
 
 KOPF = """/* ERZEUGT, NICHT VON HAND AENDERN.
  *
@@ -168,10 +221,18 @@ def erzeuge(text: str) -> str:
     return "\n".join(z)
 
 
-def pruefe(soll: str) -> list[tuple[str, str, str]]:
+def erzeuge_bausteine(text: str) -> str:
+    if ".btn" not in text or "--saganta-text-basis" not in text:
+        # Wie oben: eine leere oder fremde Quelle darf keine Kopie ergeben.
+        raise ValueError("Bausteine-Quelle unvollstaendig (keine .btn oder keine Schriftskala)")
+    summe = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return BAUSTEIN_KOPF.format(summe=summe) + text
+
+
+def pruefe(soll: str, ziele: dict | None = None) -> list[tuple[str, str, str]]:
     """(Ziel, Stufe, Satz) je Befund; leer heisst alles in Ordnung."""
     funde = []
-    for ziel, (kopie, einstieg, muster) in sorted(ZIELE.items()):
+    for ziel, (kopie, einstieg, muster) in sorted((ZIELE if ziele is None else ziele).items()):
         if not kopie.exists():
             funde.append((ziel, "vorhanden", f"{kopie} fehlt"))
             continue
@@ -219,6 +280,23 @@ def selbsttest() -> int:
     faelle.append(("leere Quelle scheitert laut statt leere Kopie zu schreiben", laut))
     faelle.append(("Akzent dunkel ist accent-400 (#dd9c3f)", "--saganta-akzent: #dd9c3f;" in soll))
     faelle.append(("kein Hell in der Kopie", "hell" not in soll.split("*/", 1)[1]))
+    bausteine = erzeuge_bausteine(BAUSTEIN_QUELLE.read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        ein = d / "styles.css"
+        ein.write_text("@import url('saganta-bausteine.css');\n")
+        (d / "saganta-bausteine.css").write_text(bausteine)
+        probe = {"probe": (d / "saganta-bausteine.css", ein, BAUSTEIN_ZIELE["mealprep"][2])}
+        faelle.append(("Bausteine: saubere Kopie ergibt keinen Fund", pruefe(bausteine, probe) == []))
+        (d / "saganta-bausteine.css").write_text(bausteine.replace("44px", "40px"))
+        faelle.append(("Bausteine: geaenderte Kopie wird erkannt",
+                       [f[1] for f in pruefe(bausteine, probe)] == ["aktuell"]))
+    try:
+        erzeuge_bausteine("/* leer */")
+        laut = False
+    except ValueError:
+        laut = True
+    faelle.append(("Bausteine: leere Quelle scheitert laut", laut))
     schlecht = 0
     for name, ok in faelle:
         print(f"{'ok   ' if ok else 'FEHLT'} {name}")
@@ -236,16 +314,21 @@ def main() -> int:
     if a.selbsttest:
         return selbsttest()
     soll = erzeuge(QUELLE.read_text(encoding="utf-8"))
+    bausteine = erzeuge_bausteine(BAUSTEIN_QUELLE.read_text(encoding="utf-8"))
     if a.schreiben:
         for ziel, (kopie, _, _) in sorted(ZIELE.items()):
             kopie.write_text(soll, encoding="utf-8")
             print(f"geschrieben: {ziel} -> {kopie}")
+        for ziel, (kopie, _, _) in sorted(BAUSTEIN_ZIELE.items()):
+            kopie.write_text(bausteine, encoding="utf-8")
+            print(f"geschrieben: {ziel} -> {kopie}")
         return 0
     if a.pruefen:
-        funde = pruefe(soll)
+        funde = pruefe(soll) + [(z, st, sa) for z, st, sa in pruefe(bausteine, BAUSTEIN_ZIELE)]
         for ziel, stufe, satz in funde:
             print(f"{ziel:14} {stufe:12} {satz}")
-        print(f"{len(ZIELE)} Ziel(e) geprueft, {len(funde)} Befund(e)")
+        print(f"{len(ZIELE)} Nachtstudie- und {len(BAUSTEIN_ZIELE)} Bausteine-Ziel(e) geprueft, "
+              f"{len(funde)} Befund(e)")
         return 1 if funde else 0
     sys.stdout.write(soll)
     return 0

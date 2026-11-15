@@ -98,6 +98,12 @@ ZIELE: dict[str, tuple[Path, Path, str, bool]] = {
         r"<script[^>]+src=['\"][^'\"]*saganta-kopf\.js['\"]",
         False,
     ),
+    "postfach": (
+        DOCKER / "postfach/frontend/src",
+        DOCKER / "postfach/frontend/src/main.tsx",
+        r"import\s+['\"]\./saganta-kopf(\.js)?['\"]",
+        True,
+    ),
     "wissen": (
         DOCKER / "wissen/static",
         DOCKER / "wissen/static/index.html",

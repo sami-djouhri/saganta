@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from . import abgleich, kalender
+from . import abgleich, kalender, orte
 from .auth import Me, verify_jwt
 from .config import settings
 from .db import get_db
@@ -21,6 +21,8 @@ from .schemas import (
     KontaktAus,
     KontaktListe,
     KontaktNeu,
+    Ort,
+    Orte,
     UmzugErgebnis,
 )
 from .tage import naechster, tage_von
@@ -41,6 +43,32 @@ def _json_felder(daten: dict) -> dict:
                 for eintrag in daten[feld]
             ]
     return daten
+
+
+def _ort_setzen(k: Kontakt, gesetzt: dict, adresse_neu: bool) -> None:
+    """Wohnort nach einer Aenderung: von Hand gesetzt oder aus der Adresse.
+
+    Nur eine GEAENDERTE Adresse loest eine neue Suche aus. Die Android-App
+    schickt beim Speichern alle Felder mit; wuerde schon das Mitschicken neu
+    suchen, ginge jeder von Hand gesetzte Punkt beim naechsten Speichern verloren.
+    """
+    if "lat" in gesetzt or "lon" in gesetzt:
+        lat, lon = gesetzt.get("lat"), gesetzt.get("lon")
+        if (lat is None) != (lon is None):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "lat und lon nur zusammen setzen")
+        if lat is not None:
+            k.lat, k.lon = lat, lon
+            k.ort_stand = k.ort_genauigkeit = "hand"
+            return
+        orte.zuruecksetzen(k)
+    elif adresse_neu:
+        orte.zuruecksetzen(k)
+    else:
+        return
+    # Faellt die Adresssuche aus, bleibt ``ort_stand`` leer, und der
+    # Hintergrundlauf holt die Suche nach.
+    orte.suchen(k)
 
 
 def _eigener(db: Session, me: Me, kontakt_id: str, *, geloescht: bool = False) -> Kontakt:
@@ -86,14 +114,46 @@ def liste(
 
 
 @router.post("/kontakte", response_model=KontaktAus, status_code=status.HTTP_201_CREATED)
-def anlegen(daten: KontaktNeu, me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> Kontakt:
-    k = Kontakt(owner_sub=me.sub, **_json_felder(daten.model_dump()))
+def anlegen(
+    daten: KontaktNeu,
+    response: Response,
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> Kontakt:
+    """Legt an. Mit ``herkunft`` ist der Aufruf wiederholbar: gibt es den Kontakt
+    dieser Herkunft schon, kommt er mit 200 zurueck, auch aus dem Papierkorb.
+    So legt ein nach Verbindungsabriss wiederholter Postausgang nichts doppelt an,
+    und ein geloeschter Telefonbuch-Kontakt kehrt nicht von selbst zurueck."""
+    if daten.herkunft:
+        vorhanden = _nach_herkunft(db, me, daten.herkunft)
+        if vorhanden is not None:
+            response.status_code = status.HTTP_200_OK
+            return vorhanden
+    felder = _json_felder(daten.model_dump())
+    k = Kontakt(owner_sub=me.sub, **{f: w for f, w in felder.items() if f not in ("lat", "lon")})
+    _ort_setzen(k, {f: felder[f] for f in ("lat", "lon") if felder[f] is not None},
+                adresse_neu=bool(k.adresse))
     db.add(k)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Zwei gleichzeitige Wiederholungen: die zweite bekommt die erste.
+        db.rollback()
+        vorhanden = _nach_herkunft(db, me, daten.herkunft) if daten.herkunft else None
+        if vorhanden is None:
+            raise
+        response.status_code = status.HTTP_200_OK
+        return vorhanden
     db.refresh(k)
     if k.geburtstag or k.jahrestage:
         abgleich.abgleichen(db, me)
     return k
+
+
+def _nach_herkunft(db: Session, me: Me, herkunft: str) -> Kontakt | None:
+    return db.scalars(select(Kontakt).where(
+        Kontakt.owner_sub == me.sub, Kontakt.herkunft == herkunft,
+    )).first()
 
 
 @router.get("/kontakte/{kontakt_id}", response_model=KontaktAus)
@@ -112,8 +172,11 @@ def aendern(
     gesetzt = _json_felder(daten.model_dump(exclude_unset=True))
     if "name" in gesetzt and not gesetzt["name"]:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Name darf nicht leer sein")
+    adresse_neu = "adresse" in gesetzt and gesetzt["adresse"] != k.adresse
     for feld, wert in gesetzt.items():
-        setattr(k, feld, wert)
+        if feld not in ("lat", "lon"):
+            setattr(k, feld, wert)
+    _ort_setzen(k, gesetzt, adresse_neu)
     db.commit()
     db.refresh(k)
     if _KALENDER_FELDER & gesetzt.keys():
@@ -161,6 +224,20 @@ def endgueltig(kontakt_id: str, me: Me = Depends(verify_jwt), db: Session = Depe
     db.delete(k)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/orte", response_model=Orte)
+def orte_liste(me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> Orte:
+    """Alle Kontakte mit Wohnort, fuer die Karte. Nur Name, Adresse und Gruppe."""
+    kontakte = db.scalars(
+        select(Kontakt).where(Kontakt.owner_sub == me.sub, Kontakt.geloescht_am.is_(None))
+        .order_by(func.lower(Kontakt.name))
+    ).all()
+    return Orte(
+        orte=[Ort.model_validate(k) for k in kontakte if k.lat is not None and k.lon is not None],
+        nicht_gefunden=sum(1 for k in kontakte if k.ort_stand == "nicht_gefunden"),
+        offen=sum(1 for k in kontakte if k.adresse and k.ort_stand is None),
+    )
 
 
 @router.get("/gruppen", response_model=list[str])

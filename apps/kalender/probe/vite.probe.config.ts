@@ -20,6 +20,10 @@ export default defineConfig({
       // Siehe ui-schlank.ts: der Sammel-Export braucht SvelteKit-Aliasse, die
       // es hier nicht gibt. Das Icon bleibt dabei das echte.
       '@saganta/ui': fileURLToPath(new URL('./ui-schlank.ts', import.meta.url)),
+      // Monat und Gewohnheiten (seit 2026-11-13): `$lib` wie in SvelteKit,
+      // `$app/forms` als Attrappe, die Formulare werden hier nicht abgeschickt.
+      $lib: fileURLToPath(new URL('../src/lib', import.meta.url)),
+      '$app/forms': fileURLToPath(new URL('./app-forms-attrappe.ts', import.meta.url)),
     },
   },
   server: {

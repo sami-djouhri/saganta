@@ -12,7 +12,7 @@
  */
 import { env } from '$env/dynamic/private';
 import { issueBackendToken, type SagantaUser } from '@saganta/auth';
-import { backendSecret, type Aufgabe, type Planung } from '$lib/aufgaben-bff';
+import { backendSecret, type Aufgabe, type Planung, type Unteraufgabe, type Zeitfenster } from '$lib/aufgaben-bff';
 
 export const AUFGABEN_API_AUDIENCE = 'aufgaben-api';
 
@@ -32,6 +32,12 @@ export interface DienstAufgabe {
   erledigt: boolean;
   erledigt_am: string | null;
   verschoben: number;
+  tageszeit?: string | null;
+  zeitfenster?: Zeitfenster[] | null;
+  unteraufgaben?: Unteraufgabe[] | null;
+  projekt?: string | null;
+  liste_id?: string | null;
+  turnus_tage?: number | null;
 }
 
 export interface DienstPlan {
@@ -70,8 +76,14 @@ export function alsAufgabe(d: DienstAufgabe): Aufgabe {
     scheduled_start: d.start,
     scheduled_end: d.ende,
     energy_required: d.energie ? ENERGIE_ZU_OBERFLAECHE[d.energie] : null,
-    project_id: null,
+    // Der Projekt-Slug ist die Kennung: `Projekt.id` ist hier der Slug.
+    project_id: d.projekt ?? null,
+    liste_id: d.liste_id ?? null,
     defer_count: d.verschoben,
+    tageszeit: d.tageszeit ?? null,
+    zeitfenster: d.zeitfenster ?? null,
+    unteraufgaben: d.unteraufgaben ?? null,
+    turnus_tage: d.turnus_tage ?? null,
   };
 }
 
@@ -105,6 +117,41 @@ export function alsPlanung(p: DienstPlan): Planung {
 
 export function aufgabenToken(user: SagantaUser): string {
   return issueBackendToken({ user, secret: backendSecret(), audience: AUFGABEN_API_AUDIENCE, ttlSeconds: 60 });
+}
+
+export const PROJECTDECK_API_AUDIENCE = 'projectdeck-api';
+
+/** So liefert das ProjectDeck ein Projekt, soweit die Aufgaben es brauchen. */
+export interface DeckProjekt {
+  slug: string;
+  name: string;
+  status: string;
+}
+
+/**
+ * Die Projekte des ProjectDecks, nur fuer Namen und Auswahl.
+ *
+ * Fail-soft: ohne Adresse oder bei einem Fehler eine leere Liste. Die Aufgaben
+ * tragen den Slug selbst, die Seite zeigt dann einen Namen aus dem Slug.
+ */
+export async function ladeDeckProjekte(user: SagantaUser | null | undefined, fetcher: typeof fetch): Promise<DeckProjekt[]> {
+  const basis = env.PROJECTDECK_API_BASE_URL;
+  if (!user || !basis) return [];
+  const token = issueBackendToken({ user, secret: backendSecret(), audience: PROJECTDECK_API_AUDIENCE, ttlSeconds: 60 });
+  try {
+    const res = await fetcher(`${basis.replace(/\/$/, '')}/api/projects`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      console.warn(`Projektnamen nicht abrufbar: ProjectDeck antwortet ${res.status}`);
+      return [];
+    }
+    const roh = (await res.json()) as unknown;
+    return Array.isArray(roh) ? (roh as DeckProjekt[]) : [];
+  } catch (err) {
+    console.warn(`Projektnamen nicht abrufbar: ${String(err)}`);
+    return [];
+  }
 }
 
 /** Zugriffs-Kontext. `null`, solange kein Nutzer oder keine Adresse. */

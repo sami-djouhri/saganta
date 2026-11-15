@@ -122,3 +122,96 @@ def test_geloeschtes_ziel_bleibt_404(kal, client, kopf):
     antworten[("DELETE", "/api/goals/g9")] = httpx.HTTPStatusError(
         "404", request=httpx.Request("DELETE", "http://x"), response=httpx.Response(404))
     assert client.delete("/api/ziele/g9", headers=kopf).status_code == 404
+
+
+def test_planen_schickt_das_fenster_des_tages(kal, client, kopf):
+    """Der Planer bekommt das Fenster mit, statt dass sein Vorschlag verworfen wird."""
+    gesehen, antworten = kal
+    antworten[("POST", "/api/assistant/vorschlag")] = {"suggestions": [], "deferred": []}
+    # 2026-11-12 ist ein Donnerstag (3).
+    tagsueber = _neu(client, kopf, titel="Video-Ident", dauer_min=30,
+                     zeitfenster=[{"tage": [0, 1, 2, 3, 4], "von": "09:00", "bis": "18:00"}])
+    mittags = _neu(client, kopf, titel="Mittags", tageszeit="mittags")
+    beides = _neu(client, kopf, titel="Beides", tageszeit="nachmittags",
+                  zeitfenster=[{"tage": [3], "von": "09:00", "bis": "16:00"}])
+    frei = _neu(client, kopf, titel="Frei")
+    nur_wochenende = _neu(client, kopf, titel="Wochenende",
+                          zeitfenster=[{"tage": [5, 6], "von": "10:00", "bis": "12:00"}])
+    getrennt = _neu(client, kopf, titel="Getrennt", tageszeit="abends",
+                    zeitfenster=[{"tage": [3], "von": "08:00", "bis": "10:00"}])
+    plan = client.post("/api/planen", json={"datum": "2026-11-12"}, headers=kopf).json()
+    nach_id = {a["id"]: a for a in gesehen[-1][2]["json"]["aufgaben"]}
+    assert nach_id[tagsueber["id"]]["fenster"] == [{"von": "09:00", "bis": "18:00"}]
+    assert nach_id[mittags["id"]]["fenster"] == [{"von": "11:00", "bis": "14:00"}]
+    assert nach_id[beides["id"]]["fenster"] == [{"von": "14:00", "bis": "16:00"}], "geschnitten"
+    assert "fenster" not in nach_id[frei["id"]]
+    assert nur_wochenende["id"] not in nach_id and getrennt["id"] not in nach_id
+    zurueck = {z["aufgabe_id"]: z["grund"] for z in plan["zurueck"]}
+    assert zurueck[nur_wochenende["id"]] == "zeitfenster"
+    assert zurueck[getrennt["id"]] == "zeitfenster"
+
+
+def test_vorschlag_ausserhalb_des_fensters_bleibt_verworfen(kal, client, kopf):
+    """Der Riegel bleibt, falls ein Kalender das Fenster nicht kennt."""
+    _, antworten = kal
+    a = _neu(client, kopf, titel="Tagsueber",
+             zeitfenster=[{"tage": [3], "von": "09:00", "bis": "18:00"}])
+    antworten[("POST", "/api/assistant/vorschlag")] = {"suggestions": [
+        {"todo_id": a["id"], "title": "Tagsueber", "start": "2026-11-12T20:00:00",
+         "end": "2026-11-12T20:30:00", "minutes": 30}], "deferred": []}
+    plan = client.post("/api/planen", json={"datum": "2026-11-12", "festlegen": True}, headers=kopf).json()
+    assert plan["vorschlaege"] == []
+    assert plan["zurueck"][0]["grund"] == "zeitfenster"
+    assert client.get(f"/api/aufgaben/{a['id']}", headers=kopf).json()["start"] is None
+
+
+# --- Belegung an den Kalender melden (2026-11-13) --------------------------
+def _belegungen(gesehen):
+    return [kw["json"]["eintraege"] for m, p, kw, _ in gesehen
+            if (m, p) == ("PUT", "/api/planung/belegungen/aufgaben")]
+
+
+def test_zeit_setzen_meldet_die_ganze_liste(kal, client, kopf):
+    gesehen, _ = kal
+    a = _neu(client, kopf, titel="Video-Ident")
+    assert _belegungen(gesehen) == [], "ohne Uhrzeit gibt es nichts zu melden"
+    client.put(f"/api/aufgaben/{a['id']}", headers=kopf,
+               json={"start": "2099-11-14T13:00:00", "ende": "2099-11-14T14:00:00"})
+    assert _belegungen(gesehen)[-1] == [{"id": a["id"], "titel": "Video-Ident",
+                                         "start": "2099-11-14T13:00:00",
+                                         "ende": "2099-11-14T14:00:00"}]
+
+
+def test_abhaken_verschieben_loeschen_nehmen_die_zeit_wieder_raus(kal, client, kopf):
+    gesehen, _ = kal
+    zeit = {"start": "2099-11-14T13:00:00", "ende": "2099-11-14T14:00:00"}
+    for schritt in ("erledigt", "verschieben", "loeschen"):
+        a = _neu(client, kopf, titel=schritt)
+        client.put(f"/api/aufgaben/{a['id']}", headers=kopf, json=zeit)
+        if schritt == "erledigt":
+            client.post(f"/api/aufgaben/{a['id']}/erledigt", headers=kopf)
+        elif schritt == "verschieben":
+            client.post(f"/api/aufgaben/{a['id']}/verschieben", headers=kopf, json={"tag": None})
+        else:
+            client.delete(f"/api/aufgaben/{a['id']}", headers=kopf)
+        assert all(e["id"] != a["id"] for e in _belegungen(gesehen)[-1]), schritt
+
+
+def test_dauer_ohne_ende_und_vergangenes(kal, client, kopf):
+    gesehen, _ = kal
+    a = _neu(client, kopf, titel="Mit Dauer", dauer_min=45)
+    client.put(f"/api/aufgaben/{a['id']}", headers=kopf, json={"start": "2099-11-14T13:00:00"})
+    assert _belegungen(gesehen)[-1][0]["ende"] == "2099-11-14T13:45:00"
+    b = _neu(client, kopf, titel="Vorbei")
+    client.put(f"/api/aufgaben/{b['id']}", headers=kopf,
+               json={"start": "2020-01-01T10:00:00", "ende": "2020-01-01T11:00:00"})
+    assert all(e["id"] != b["id"] for e in _belegungen(gesehen)[-1])
+
+
+def test_kalender_weg_speichern_klappt_trotzdem(kal, client, kopf):
+    _, antworten = kal
+    antworten[("PUT", "/api/planung/belegungen/aufgaben")] = kalender.KalenderNichtErreichbar("weg")
+    a = _neu(client, kopf, titel="Trotzdem")
+    r = client.put(f"/api/aufgaben/{a['id']}", headers=kopf,
+                   json={"start": "2099-11-14T13:00:00", "ende": "2099-11-14T14:00:00"})
+    assert r.status_code == 200

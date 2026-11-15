@@ -11,7 +11,7 @@
  * beiden Zeitumstellungen im Jahr rutscht eine Tagesrechnung darueber um einen
  * Tag. Dieselbe Entscheidung wie in `apps/tagebuch/src/lib/datum.ts`.
  */
-import type { Aufgabe } from './aufgaben-bff';
+import type { Aufgabe, Unteraufgabe } from './aufgaben-bff';
 
 // Drei Worte seit dem Aufgaben-Dienst (2026-11-03). `dringend` bleibt unten in Rang
 // und Stil, damit ein Altbestand nicht ohne Farbe dasteht.
@@ -143,6 +143,8 @@ export interface Gruppe {
   /** Icon-Name aus der Registry in `@saganta/ui`. */
   symbol: string;
   aufgaben: Aufgabe[];
+  /** Nur bei Bereichen: nach aussen neutral. */
+  vertraulich?: boolean;
 }
 
 /**
@@ -186,6 +188,52 @@ export function tagesGruppen(alle: Aufgabe[], heute: string): Gruppe[] {
 }
 
 /**
+ * Gehoert die Aufgabe zu einem Projekt?
+ *
+ * Projektaufgaben stehen unter „Projekte", nicht im Vorrat und nicht im
+ * Ausblick der Startseite. Auf „Heute" kommen sie nur, wenn sie faellig oder
+ * eingeplant sind (`tagesGruppen` fragt genau das). Sonst gehen die eigenen
+ * Aufgaben zwischen den Entwicklungsaufgaben unter (ZIELBILD 108).
+ */
+export function istProjektaufgabe(a: Aufgabe): boolean {
+  return !!a.project_id;
+}
+
+/** Ein lesbarer Name aus dem Slug, solange das ProjectDeck keinen liefert. */
+export function nameAusSlug(slug: string): string {
+  return slug
+    .split('-')
+    .filter(Boolean)
+    .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
+    .join(' ');
+}
+
+/**
+ * Die Projektliste fuer Gruppen und Auswahl.
+ *
+ * Alle laufenden Projekte des ProjectDecks, dazu jeder Slug, an dem eine
+ * Aufgabe haengt, auch wenn das ProjectDeck ihn nicht (mehr) kennt oder nicht
+ * erreichbar war. Kennung ist der Slug, so wie der Aufgaben-Dienst ihn traegt.
+ */
+export function projekteAus(
+  aufgaben: Aufgabe[],
+  deck: { slug: string; name: string; status?: string }[],
+): { id: string; slug: string; name: string; status?: string }[] {
+  const nach = new Map<string, { id: string; slug: string; name: string; status?: string }>();
+  for (const p of deck) {
+    if (p.status === 'archived' || p.status === 'shutdown') continue;
+    nach.set(p.slug, { id: p.slug, slug: p.slug, name: p.name, status: p.status });
+  }
+  for (const a of aufgaben) {
+    const slug = a.project_id;
+    if (!slug || nach.has(slug)) continue;
+    const bekannt = deck.find((p) => p.slug === slug);
+    nach.set(slug, { id: slug, slug, name: bekannt?.name ?? nameAusSlug(slug), status: bekannt?.status });
+  }
+  return [...nach.values()].sort((x, y) => x.name.localeCompare(y.name, 'de'));
+}
+
+/**
  * Der Pool: offen, ohne Termin und ohne Planung.
  *
  * Das ist die Menge, aus der „Tag planen" schoepft. Sie getrennt zu zeigen ist
@@ -195,7 +243,7 @@ export function pool(alle: Aufgabe[], heute: string): Aufgabe[] {
   return alle
     // Ohne Frist UND ohne Tag: eine auf naechste Woche geschobene Aufgabe
     // ist kein Vorrat, sonst schoepfte „Tag planen" sie heute wieder ab.
-    .filter((a) => istOffen(a) && !gehoertZuHeute(a, heute) && !a.due_date && !a.planned_date)
+    .filter((a) => istOffen(a) && !istProjektaufgabe(a) && !gehoertZuHeute(a, heute) && !a.due_date && !a.planned_date)
     .sort(nachDringlichkeit);
 }
 
@@ -203,7 +251,7 @@ export function pool(alle: Aufgabe[], heute: string): Aufgabe[] {
 export function demnaechst(alle: Aufgabe[], heute: string, tage = 7): Aufgabe[] {
   const grenze = tagePlus(heute, tage);
   return alle
-    .filter((a) => istOffen(a) && !!a.due_date && a.due_date > heute && a.due_date <= grenze)
+    .filter((a) => istOffen(a) && !istProjektaufgabe(a) && !!a.due_date && a.due_date > heute && a.due_date <= grenze)
     .sort(nachDringlichkeit);
 }
 
@@ -261,6 +309,13 @@ export function dauer(minuten: number | null | undefined): string {
   return `${String(stunden).replace('.', ',')} h`;
 }
 
+/** Ein Turnus in Tagen als kurzes Wort: „wöchentlich“, „alle 14 T“, „monatlich“. */
+export function turnusEtikett(tage: number | null | undefined): string {
+  if (!tage) return '';
+  const worte: Record<number, string> = { 1: 'täglich', 7: 'wöchentlich', 30: 'monatlich', 365: 'jährlich' };
+  return worte[tage] ?? `alle ${tage} T`;
+}
+
 /** Ein Datum als „Heute", „Morgen", „Gestern" oder `Mo, 15.09.`. */
 export function datumsEtikett(datum: string, heute: string): string {
   if (datum === heute) return 'Heute';
@@ -270,4 +325,37 @@ export function datumsEtikett(datum: string, heute: string): string {
   const d = new Date(Date.UTC(j || 1970, (m || 1) - 1, t || 1));
   const tage = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   return `${tage[d.getUTCDay()]}, ${String(t).padStart(2, '0')}.${String(m).padStart(2, '0')}.`;
+}
+
+/**
+ * Stand der Unteraufgaben als `erledigt/gesamt`, `null` ohne Liste. Die Zeile
+ * zeigt die Zahl, der Dialog die Liste; beide lesen dieselbe Rechnung.
+ */
+export function unterFortschritt(a: Aufgabe): { erledigt: number; gesamt: number } | null {
+  const liste = a.unteraufgaben ?? [];
+  if (liste.length === 0) return null;
+  return { erledigt: liste.filter((u) => u.erledigt).length, gesamt: liste.length };
+}
+
+/**
+ * Die Unteraufgaben nach einem Griff aus dem Dialog, als neue Liste. `null`
+ * statt leerer Liste, so wie die App es schickt: der Dienst unterscheidet
+ * „keine Checkliste" von „leere Checkliste" nicht, und `null` haelt die Spalte
+ * sauber.
+ */
+export function unteraufgabenNach(
+  liste: Unteraufgabe[] | null | undefined,
+  griff: { art: 'umschalten' | 'entfernen'; index: number } | { art: 'anlegen'; text: string },
+): Unteraufgabe[] | null {
+  const alt = liste ?? [];
+  let neu: Unteraufgabe[];
+  if (griff.art === 'anlegen') {
+    const text = griff.text.trim();
+    neu = text ? [...alt, { text, erledigt: false }] : alt;
+  } else if (griff.art === 'umschalten') {
+    neu = alt.map((u, i) => (i === griff.index ? { ...u, erledigt: !u.erledigt } : u));
+  } else {
+    neu = alt.filter((_, i) => i !== griff.index);
+  }
+  return neu.length ? neu : null;
 }

@@ -37,6 +37,10 @@ class _Felder(BaseModel):
     gruppe: str | None = Field(default=None, max_length=60)
     termine: list[TerminVerweis] | None = Field(default=None, max_length=50)
     notiz: str | None = Field(default=None, max_length=10000)
+    #: Wohnort von Hand (beide oder keiner). ``null`` fuer beide = wieder aus
+    #: der Adresse suchen.
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("telefon", "email", "adresse", "gruppe", "notiz", mode="before")
     @classmethod
@@ -46,6 +50,10 @@ class _Felder(BaseModel):
 
 class KontaktNeu(_Felder):
     name: str = Field(min_length=1, max_length=200)
+    #: Kennung der Quelle, macht das Anlegen wiederholbar: ``app:<hex>`` fuer einen
+    #: Eintrag aus dem Postausgang der App, ``telefon:<hex>`` fuer einen Kontakt aus
+    #: dem Telefonbuch. ``kalender:`` bleibt dem Umzug vorbehalten.
+    herkunft: str | None = Field(default=None, pattern=r"^(app|telefon):[0-9a-f]{8,56}$")
 
     @field_validator("name", mode="before")
     @classmethod
@@ -77,6 +85,10 @@ class KontaktAus(BaseModel):
     termine: list[TerminVerweis] = []
     notiz: str | None = None
     herkunft: str | None = None
+    lat: float | None = None
+    lon: float | None = None
+    ort_stand: str | None = None
+    ort_genauigkeit: str | None = None
     geloescht_am: datetime | None = None
     erstellt_am: datetime
     geaendert_am: datetime
@@ -108,3 +120,24 @@ class UmzugErgebnis(BaseModel):
     gefunden: int
     uebernommen: int
     schon_da: int
+
+
+class Ort(BaseModel):
+    """Ein Kontakt als Punkt auf der Karte, nur was die Karte zeigt."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    adresse: str | None = None
+    gruppe: str | None = None
+    lat: float
+    lon: float
+    ort_genauigkeit: str | None = None
+
+
+class Orte(BaseModel):
+    orte: list[Ort]
+    #: Kontakte mit Adresse, deren Ort die Adresssuche nicht kennt.
+    nicht_gefunden: int = 0
+    #: Kontakte mit Adresse, die noch nicht gesucht wurden (Adresssuche weg).
+    offen: int = 0

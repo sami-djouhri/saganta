@@ -46,7 +46,7 @@ class Nachbau:
             je: dict[str, dict[str, int]] = {}
             for a in self.aufgaben.values():
                 if a["projekt"]:
-                    z = je.setdefault(a["projekt"], {"offen": 0, "erledigt": 0, "hoch": 0})
+                    z = je.setdefault(a["projekt"], {"offen": 0, "erledigt": 0, "hoch": 0, "ueberfaellig": 0, "erledigt_7": 0})
                     z["erledigt" if a["erledigt"] else "offen"] += 1
                     if not a["erledigt"] and a.get("prioritaet") == "hoch":
                         z["hoch"] += 1

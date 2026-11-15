@@ -53,6 +53,23 @@ export interface Freigabe {
   schluessel_quelle: 'fragment' | 'passwort' | null;
 }
 
+/** Ein frueherer Stand einer Notiz, hoechstens fuenf je Notiz (seit 2026-11-14). */
+export interface StandKurz {
+  id: number;
+  titel: string;
+  /** Wann dieser Stand gespeichert worden war (naives UTC vom Dienst). */
+  stand_vom: string;
+  zeichen: number;
+}
+
+export interface Stand {
+  id: number;
+  titel: string;
+  inhalt: string;
+  tags: string[];
+  stand_vom: string;
+}
+
 /** Eine geloeschte Notiz, 30 Tage zurueckholbar (Papierkorb seit 2026-11-07). */
 export interface PapierkorbEintrag {
   id: number;

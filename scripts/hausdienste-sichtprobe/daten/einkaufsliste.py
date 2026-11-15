@@ -84,7 +84,7 @@ SEITEN = [
     {"name": "liste", "pfad": "/"},
     {"name": "vorschlaege", "pfad": "/", "schritte": [tippen]},
     {"name": "gruppe-waehlen", "pfad": "/", "schritte": [lambda s: s.click("button[aria-label^='Warengruppe von']")]},
-    {"name": "weggewischt", "pfad": "/", "schritte": [lambda s: s.click(".weg .knopf-still")]},
+    {"name": "weggewischt", "pfad": "/", "schritte": [lambda s: s.click(".weg > .btn")]},
     {"name": "leer", "pfad": "/leer"},
     {"name": "ausfall", "pfad": "/ausfall"},
     {"name": "fehler", "pfad": "/fehler", "fehler_erwartet": True},

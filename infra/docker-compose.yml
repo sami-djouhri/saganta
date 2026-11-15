@@ -514,9 +514,10 @@ services:
     environment:
       # Unbekannte Feldnamen im Rumpf: ignorieren | melden | ablehnen
       # (services/_geteilt/saganta_dienst/eingang.py, docs/FELDNAMEN_BEFUND.md).
-      # Auf ablehnen erst, wenn `docker logs saganta-projectdeck-api | grep Fremdfelder`
-      # eine Woche leer bleibt.
-      SAGANTA_FREMDFELDER: melden
+      # Seit 2026-11-13 auf ablehnen: `melden` blieb vom 08.11. bis 13.11. ohne
+      # eine Zeile `Fremdfelder in` (gemessen am Containerlog). Ein Client mit
+      # Tippfehler im Feldnamen bekommt jetzt 422 statt einer stillen 200.
+      SAGANTA_FREMDFELDER: ablehnen
     volumes:
       - projectdeck-data:/data
     networks: [kern-net, app-net]
@@ -561,6 +562,8 @@ services:
     env_file: ../apps/notizen/.env
     environment:
       <<: *app-umgebung
+      # „Aufgabe dazu" an der Notiz (seit 2026-11-14); fehlt sie, fehlt der Knopf.
+      AUFGABEN_API_BASE_URL: http://saganta-aufgaben-api:8000
     networks: [eingang-net, kern-net, app-net]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
@@ -626,6 +629,9 @@ services:
       # Die Aufgaben selbst liegen seit dem 2026-11-03 im eigenen Dienst; der
       # Kalender liefert weiter Tagesziele und Tagesbild.
       AUFGABEN_API_BASE_URL: http://saganta-aufgaben-api:8000
+      # Nur Projektnamen fuer „Nach Projekt" und die Auswahl; den Slug traegt
+      # jede Aufgabe selbst. Faellt der Abruf, steht ein Name aus dem Slug da.
+      PROJECTDECK_API_BASE_URL: http://saganta-projectdeck-api:8000
     networks: [eingang-net, kern-net]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]

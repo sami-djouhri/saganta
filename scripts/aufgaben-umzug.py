@@ -31,7 +31,7 @@ Ein unbekannter Feldname ergibt bis zur Scharfschaltung von
 
 ⚠️ Der Umzug kopiert nur. ``project_tasks`` bleibt stehen, bis das ProjectDeck
 ueber den Aufgaben-Dienst liest (Schritt 4 in
-interne Notiz); bis dahin gibt es zwei
+interne Notiz (gelöscht 2026-11-09, steht im `git log` von homelab-work)`); bis dahin gibt es zwei
 Orte. Deshalb erst ``--anwenden``, wenn Schritt 4 ausgerollt wird.
 
 Aufruf::

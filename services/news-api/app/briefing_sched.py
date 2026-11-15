@@ -109,6 +109,28 @@ def _faellig_ab(prof: BriefingProfile, tag: date, now_min: int) -> tuple[int, bo
     return hm[0] * 60 + hm[1], False
 
 
+def llm_nachholen_faellig(content: dict | None, jetzt: datetime) -> bool:
+    """Bekommt dieses Briefing jetzt seinen zweiten Versuch mit dem Modell?
+
+    Nur, wenn das Modell beim ersten Mal stumm war (nicht bei einer verworfenen
+    Fassung: die wäre beim zweiten Mal wieder dieselbe Klasse von Text), noch
+    kein Versuch vermerkt ist und `briefing_llm_nachholen_min` vergangen sind.
+    Der Lautsprecher hat die Textvorlage bis dahin meist schon gespielt. Die
+    Modellfassung ist für alle, die das Briefing später in der App oder im
+    Podcast-Feed hören; ein zweiter Push geht bewusst nicht raus.
+    """
+    content = content or {}
+    if content.get("audio_text_herkunft") != "deterministisch_llm_stumm":
+        return False
+    if "llm_nachgeholt" in content:
+        return False
+    try:
+        fertig = datetime.fromisoformat(content["audio_fertig_um"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (jetzt - fertig).total_seconds() >= settings.briefing_llm_nachholen_min * 60
+
+
 def status() -> dict[str, object]:
     return {**_state, "mode": "per-user-delivery-time", "retention_days": settings.briefing_retention_days}
 
@@ -158,6 +180,22 @@ def _tick() -> None:
                     except Exception as exc:
                         db.rollback()
                         log.error("briefing.audio.retry.error", sub=prof.sub, error=describe(exc))
+                elif audio_uebrig and llm_nachholen_faellig(already.content, now):
+                    # Erst vermerken, dann versuchen: scheitert auch der zweite
+                    # Versuch, darf der naechste Tick ihn nicht wiederholen.
+                    inhalt = dict(already.content or {})
+                    inhalt["llm_nachgeholt"] = False
+                    already.content = inhalt
+                    db.commit()
+                    audio_uebrig -= 1
+                    try:
+                        ok = briefing_service.render_audio(db, prof.sub, today,
+                                                           nur_mit_modell=True)
+                        log.info("briefing.sched.llm_nachgeholt", sub=prof.sub, ersetzt=ok)
+                    except Exception as exc:
+                        db.rollback()
+                        log.error("briefing.llm_nachholen.error", sub=prof.sub,
+                                  error=describe(exc))
                 continue  # Text steht schon, kein zweiter Aufbau
             try:
                 # Reicht der Deckel nicht mehr, bekommt dieser Nutzer erst einmal

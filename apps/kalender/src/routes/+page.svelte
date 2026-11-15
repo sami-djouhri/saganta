@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { enhance } from '$app/forms';
+  import { deserialize, enhance } from '$app/forms';
   import { Icon, appUrlById } from '@saganta/ui';
   import { page } from '$app/stores';
   import type { ActionData, PageData } from './$types';
-  import type { KalenderEvent } from '$lib/kalender-bff';
+  import type { KalenderEvent, Konflikt, KonfliktVorschlag, KonfliktWeg } from '$lib/kalender-bff';
   import QuickCapture from '$lib/QuickCapture.svelte';
   import SekretaerHeute from '$lib/SekretaerHeute.svelte';
   import AktivitaetsInsights from '$lib/AktivitaetsInsights.svelte';
@@ -30,7 +30,7 @@
     isContextDaytypeCal,
     isHolidayEvent,
     isBirthdayEvent,
-    monthLabel,
+    kopfTitel,
     shiftDay,
     shiftMonth,
     startOf,
@@ -38,7 +38,8 @@
     timeCol,
     uniqueBy,
     weekGridDays,
-    weekLabel,
+    AUFGABEN_KALENDER,
+    istAufgabe,
   } from '$lib/cal';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -122,7 +123,9 @@
   let prefillStart = $state('');
   let prefillEnd = $state('');
   const editableCalendars = $derived(
-    data.calendars.filter((c) => !/^daytype-/.test(c.id) && !/^system-geburtstage/.test(c.id)),
+    data.calendars.filter(
+      (c) => !/^daytype-/.test(c.id) && !/^system-geburtstage/.test(c.id) && c.id !== AUFGABEN_KALENDER,
+    ),
   );
   const formError = $derived(
     form && typeof form === 'object' && 'error' in form ? (form.error as string) : null,
@@ -153,7 +156,44 @@
   function isEditable(ev: KalenderEvent): boolean {
     const cid = ev.calendar_id ?? '';
     if (/^daytype-/.test(cid) || /^system-geburtstage/.test(cid)) return false;
-    return !ev.is_recurring_instance;
+    // Aufgaben werden in der Aufgaben-App bearbeitet (seit 2026-11-11).
+    if (istAufgabe(ev)) return false;
+    // Serien-Vorkommen oeffnen seit 2026-11-14 den Dialog im Vorkommen-Modus
+    // (Zeit nur fuer diesen Tag, verwerfen). Vorher landete der Klick im
+    // Tages-Detail, und ein Filmabend liess sich in der Woche nicht absagen.
+    return true;
+  }
+
+  // ── Überschneidungen (seit 2026-11-14) ────────────────────────────────
+  const konfliktIds = $derived.by(() => {
+    const menge = new Set<string>();
+    for (const k of data.konflikte ?? []) {
+      menge.add(k.a.id);
+      menge.add(k.b.id);
+    }
+    return menge;
+  });
+  const konflikteZumTermin = $derived(
+    editing ? (data.konflikte ?? []).filter((k: Konflikt) => k.a.id === editing!.id || k.b.id === editing!.id) : [],
+  );
+
+  async function konfliktVorschlag(paar: Konflikt): Promise<KonfliktVorschlag | null> {
+    const daten = new FormData();
+    daten.set('paar', JSON.stringify({ a: paar.a, b: paar.b }));
+    const antwort = await fetch('?/konfliktVorschlag', { method: 'POST', body: daten });
+    if (!antwort.ok) return null;
+    // `deserialize` liest die Action-Antwort so, wie `use:enhance` es taete.
+    const ergebnis = deserialize(await antwort.text());
+    if (ergebnis.type !== 'success' || !ergebnis.data) return null;
+    return (ergebnis.data as { vorschlag?: KonfliktVorschlag }).vorschlag ?? null;
+  }
+
+  async function konfliktWeg(weg: KonfliktWeg): Promise<void> {
+    const felder: Record<string, string> = { art: weg.ziel.art, id: weg.ziel.id, aktion: weg.aktion };
+    if (weg.start) felder.start = weg.start.length === 16 ? `${weg.start}:00` : weg.start;
+    if (weg.ende) felder.ende = weg.ende.length === 16 ? `${weg.ende}:00` : weg.ende;
+    await deckeAktion('konfliktLoesen', felder);
+    if (!deckeFehler) closeModal();
   }
   function openCreate(date = '', start = '', end = ''): void {
     editing = null;
@@ -239,12 +279,9 @@
   const offeneZiele = $derived((data.goals ?? []).filter((g) => g.status !== 'achieved').length);
   const aufgabenBasis = $derived(appUrlById('aufgaben', $page.url.host));
 
-  const headerTitle = $derived(
-    data.view === 'month'
-      ? monthLabel(data.month)
-      : data.view === 'week'
-        ? weekLabel(data.week)
-        : `Nächste ${data.days} Tage`,
+  // Kopf wie in der App (Owner-Wahl 13.11.): angesehener Zeitraum + Bezug zu heute.
+  const kopf = $derived(
+    kopfTitel(data.view, { month: data.month, week: data.week, days: data.days }, data.today),
   );
   const weekDays = $derived(weekGridDays(data.week));
 
@@ -305,7 +342,10 @@
     <div class="flex flex-wrap items-end justify-between gap-3">
       <div>
         <p class="font-mono text-xs uppercase tracking-widest text-muted">Saganta · Kalender</p>
-        <h1 class="font-display text-4xl capitalize leading-tight">{headerTitle}</h1>
+        <h1 class="font-display text-4xl leading-tight">{kopf.titel}</h1>
+        {#if kopf.untertitel}
+          <p class="mt-0.5 text-sm text-muted">{kopf.untertitel}</p>
+        {/if}
       </div>
       <!-- Bricht am Handy um: die vier Elemente brauchen gut 420 px, und ohne
            flex-wrap lief die ganze Seite 50 px seitlich ueber (Sichtprobe 08.11.). -->
@@ -472,6 +512,7 @@
               {onSelectEvent}
               {onCreateAt}
               onMoveEvent={terminVerschieben}
+              {konfliktIds}
             />
           </div>
         </div>
@@ -491,8 +532,8 @@
       {/if}
     </div>
 
-    <!-- Sidebar, nach Aufmerksamkeit sortiert: gewählter Tag → heutiger Anker →
-         Erfassen → seltene Aktion → einklappbare Einblicke → einklappbare Referenz. -->
+    <!-- Sidebar, nach Aufmerksamkeit sortiert (Owner-Wahl 13.11.): gewählter Tag →
+         Jetzt dran → Tagesdecke → Gewohnheiten → Dein Tag → Erfassen → „Mehr". -->
     <aside class="space-y-5">
       <!-- Tages-Detail: unmittelbare Reaktion auf einen Tages-Klick → ganz oben,
            damit die Auswahl nicht unter dem Anker-Block verschwindet. -->
@@ -559,13 +600,10 @@
         fehler={data.zeitFehler}
       />
 
-      <!-- Dein Tag (adaptiver Sekretär), der tägliche Anker: Check-in +
-           „Wie lief's?" sollen das Erste sein, was ins Auge fällt. -->
-      <SekretaerHeute assistant={data.assistant} today={data.today} {aufgabenBasis} />
 
       <!-- Die Tagesdecke: der wache Tag lückenlos, Erholung eingeschlossen.
-           Steht direkt unter „Dein Tag", weil sie dieselbe Frage beantwortet,
-           nur vollständig: nicht „was steht an", sondern „wo geht der Tag hin". -->
+           Direkt unter „Jetzt dran": nicht „was steht an", sondern „wo geht
+           der Tag hin". -->
       <Tagesdecke
         decke={data.tagesdecke}
         beschaeftigt={deckeLaeuft}
@@ -581,178 +619,195 @@
       {/if}
 
       <!-- Gewohnheiten: Wochenfortschritt + die Sitzungen, die der Scheduler
-           selbst geplant hat. Direkt unter „Dein Tag“, weil ein offener
-           Vorschlag eine Antwort braucht, bevor seine Zeit verstreicht. -->
+           selbst geplant hat. Weit oben, weil ein offener Vorschlag eine
+           Antwort braucht, bevor seine Zeit verstreicht. -->
       <Gewohnheiten fortschritt={data.habitProgress} sitzungen={data.habitSessions} />
+
+      <!-- Dein Tag (adaptiver Sekretär): Check-in und Tagesbild. -->
+      <SekretaerHeute assistant={data.assistant} today={data.today} {aufgabenBasis} />
 
       <QuickCapture prefill={data.prefillCapture} prefillDate={data.prefillDate} {form} />
 
-      <!-- Feierabend heute: seltene Tages-Aktion: im Ruhezustand nur ein Knopf
-           (keine permanente Card), expandiert erst bei Bestätigung/Ergebnis. -->
-      <section>
-        {#if feierabendResult}
-          <div class="space-y-2 rounded-xl border border-border bg-surface-2/40 p-4">
-            <p class="flex items-center gap-2 text-sm">
-              <Icon name="moon" size={15} /> Feierabend: {feierabendResult.cancelled.length}
-              {feierabendResult.cancelled.length === 1 ? 'Termin' : 'Termine'} abgesagt.
-            </p>
-            {#if feierabendResult.planned.length > 0}
-              <ul class="space-y-1 text-xs text-muted">
-                {#each feierabendResult.planned as p (p.title + (p.day ?? ''))}
-                  <li>
-                    {p.title}
-                    {#if p.day}
-                      → {dayLabel(p.day, nowMs)}{#if p.start}, {fmtTime(p.start)}{/if}
-                    {:else}
-                      → kein freier Slot gefunden
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-            <p class="text-xs text-muted">Genieß den Feierabend.</p>
-          </div>
-        {:else if feierabendConfirm}
-          <div class="rounded-xl border border-border bg-surface-2/40 p-4">
-            <p class="mb-3 text-sm text-muted">
-              Heute Feierabend? Die noch offene Routine wird abgesagt und in die nächsten Tage verschoben.
-            </p>
-            <div class="flex gap-2">
-              <form
-                method="POST"
-                action="?/feierabend"
-                use:enhance={() =>
-                  async ({ update }) => {
-                    await update();
-                    feierabendConfirm = false;
-                  }}
-              >
-                <button
-                  type="submit"
-                  class="rounded-lg bg-accent-500 px-4 py-1.5 text-sm font-medium text-accent-ink hover:bg-accent-400"
-                  >Ja, Feierabend</button
-                >
-              </form>
+      <!-- Seltenes und Rueckblick (Owner-Wahl 13.11.: Seitenleiste ausduennen):
+           Feierabend, Einblicke und Legende liegen eingeklappt unter „Mehr". -->
+      <details class="group/mehr rounded-xl border border-border bg-surface-2/20">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3">
+          <h3 class="font-mono text-xs uppercase tracking-wider text-muted">Mehr</h3>
+          <Icon
+            name="chevron-down"
+            size={16}
+            class="shrink-0 text-muted transition-transform duration-200 group-open/mehr:rotate-180"
+          />
+        </summary>
+        <div class="space-y-5 border-t border-border px-3 py-3">
+          <!-- Feierabend heute: seltene Tages-Aktion: im Ruhezustand nur ein Knopf
+               (keine permanente Card), expandiert erst bei Bestätigung/Ergebnis. -->
+          <section>
+            {#if feierabendResult}
+              <div class="space-y-2 rounded-xl border border-border bg-surface-2/40 p-4">
+                <p class="flex items-center gap-2 text-sm">
+                  <Icon name="moon" size={15} /> Feierabend: {feierabendResult.cancelled.length}
+                  {feierabendResult.cancelled.length === 1 ? 'Termin' : 'Termine'} abgesagt.
+                </p>
+                {#if feierabendResult.planned.length > 0}
+                  <ul class="space-y-1 text-xs text-muted">
+                    {#each feierabendResult.planned as p (p.title + (p.day ?? ''))}
+                      <li>
+                        {p.title}
+                        {#if p.day}
+                          → {dayLabel(p.day, nowMs)}{#if p.start}, {fmtTime(p.start)}{/if}
+                        {:else}
+                          → kein freier Slot gefunden
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+                <p class="text-xs text-muted">Genieß den Feierabend.</p>
+              </div>
+            {:else if feierabendConfirm}
+              <div class="rounded-xl border border-border bg-surface-2/40 p-4">
+                <p class="mb-3 text-sm text-muted">
+                  Heute Feierabend? Die noch offene Routine wird abgesagt und in die nächsten Tage verschoben.
+                </p>
+                <div class="flex gap-2">
+                  <form
+                    method="POST"
+                    action="?/feierabend"
+                    use:enhance={() =>
+                      async ({ update }) => {
+                        await update();
+                        feierabendConfirm = false;
+                      }}
+                  >
+                    <button
+                      type="submit"
+                      class="rounded-lg bg-accent-500 px-4 py-1.5 text-sm font-medium text-accent-ink hover:bg-accent-400"
+                      >Ja, Feierabend</button
+                    >
+                  </form>
+                  <button
+                    type="button"
+                    onclick={() => (feierabendConfirm = false)}
+                    class="rounded-lg border border-border px-4 py-1.5 text-sm text-muted hover:text-text"
+                    >Abbrechen</button
+                  >
+                </div>
+              </div>
+            {:else}
               <button
                 type="button"
-                onclick={() => (feierabendConfirm = false)}
-                class="rounded-lg border border-border px-4 py-1.5 text-sm text-muted hover:text-text"
-                >Abbrechen</button
+                onclick={() => (feierabendConfirm = true)}
+                class="flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-muted hover:border-accent-500/60 hover:text-text"
+                ><Icon name="moon" size={15} /> Feierabend heute</button
               >
-            </div>
-          </div>
-        {:else}
-          <button
-            type="button"
-            onclick={() => (feierabendConfirm = true)}
-            class="flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm text-muted hover:border-accent-500/60 hover:text-text"
-            ><Icon name="moon" size={15} /> Feierabend heute</button
-          >
-        {/if}
-      </section>
+            {/if}
+          </section>
 
-      <!-- Einblicke: Reflexion (was Saganta gelernt hat + Zeit-Verteilung) in
-           einer Gruppe, einklappbar: sekundär, soll nicht permanent Reize ziehen. -->
-      {#if (data.insights?.length ?? 0) > 0 || timeStats.rows.length > 0 || (data.reviewable?.length ?? 0) > 0}
-        <details class="group rounded-xl border border-border bg-surface-2/40" open>
-          <summary
-            class="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3"
-          >
-            <h3 class="font-mono text-xs uppercase tracking-wider text-muted">Einblicke</h3>
-            <Icon
-              name="chevron-down"
-              size={16}
-              class="shrink-0 text-muted transition-transform duration-200 group-open:rotate-180"
-            />
-          </summary>
-          <div class="space-y-5 border-t border-border px-4 py-4">
-            <!-- „Wie lief's?" lag bis 2026-09-13 mitten im Tagesblock und zog
-                 dort Aufmerksamkeit fuer eine Frage, die den vergangenen Tag
-                 betrifft. Hier steht sie neben dem, was daraus entsteht. -->
-            {#if (data.reviewable?.length ?? 0) > 0}
-              <div class="space-y-2">
-                <h4 class="font-mono text-xs uppercase tracking-wider text-muted">
-                  Wie lief's? ({data.reviewable.length})
-                </h4>
-                <ul class="space-y-2">
-                  {#each data.reviewable.slice(0, 5) as a (a.instance_id)}
-                    <AktivitaetsFeedback activity={a} />
-                  {/each}
-                </ul>
-                {#if data.reviewable.length > 5}
-                  <p class="text-xs text-muted">
-                    +{data.reviewable.length - 5} ältere warten noch auf eine Rückmeldung.
-                  </p>
+          <!-- Einblicke: Reflexion (was Saganta gelernt hat + Zeit-Verteilung) in
+               einer Gruppe, einklappbar: sekundär, soll nicht permanent Reize ziehen. -->
+          {#if (data.insights?.length ?? 0) > 0 || timeStats.rows.length > 0 || (data.reviewable?.length ?? 0) > 0}
+            <details class="group rounded-xl border border-border bg-surface-2/40" open>
+              <summary
+                class="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3"
+              >
+                <h3 class="font-mono text-xs uppercase tracking-wider text-muted">Einblicke</h3>
+                <Icon
+                  name="chevron-down"
+                  size={16}
+                  class="shrink-0 text-muted transition-transform duration-200 group-open:rotate-180"
+                />
+              </summary>
+              <div class="space-y-5 border-t border-border px-4 py-4">
+                <!-- „Wie lief's?" lag bis 2026-09-13 mitten im Tagesblock und zog
+                     dort Aufmerksamkeit fuer eine Frage, die den vergangenen Tag
+                     betrifft. Hier steht sie neben dem, was daraus entsteht. -->
+                {#if (data.reviewable?.length ?? 0) > 0}
+                  <div class="space-y-2">
+                    <h4 class="font-mono text-xs uppercase tracking-wider text-muted">
+                      Wie lief's? ({data.reviewable.length})
+                    </h4>
+                    <ul class="space-y-2">
+                      {#each data.reviewable.slice(0, 5) as a (a.instance_id)}
+                        <AktivitaetsFeedback activity={a} />
+                      {/each}
+                    </ul>
+                    {#if data.reviewable.length > 5}
+                      <p class="text-xs text-muted">
+                        +{data.reviewable.length - 5} ältere warten noch auf eine Rückmeldung.
+                      </p>
+                    {/if}
+                  </div>
+                {/if}
+
+                <AktivitaetsInsights insights={data.insights} bare />
+
+                {#if timeStats.rows.length > 0}
+                  <div>
+                    <div class="mb-3 flex items-baseline justify-between">
+                      <h4 class="font-mono text-xs uppercase tracking-wider text-muted">Zeit-Verteilung</h4>
+                      <span class="text-xs text-muted">{rangeLabel} · {fmtH(timeStats.total)}</span>
+                    </div>
+                    <div class="space-y-2">
+                      {#each timeStats.rows as r (r.name)}
+                        <div class="space-y-1">
+                          <div class="flex items-center justify-between text-xs">
+                            <span class="flex items-center gap-1.5 text-muted">
+                              <span class="h-2 w-2 rounded-full" style="background-color:{r.color}"></span>
+                              {r.name}
+                            </span>
+                            <span class="text-muted">{fmtH(r.min)}</span>
+                          </div>
+                          <div class="h-1.5 overflow-hidden rounded-full bg-white/10">
+                            <div
+                              class="h-full rounded-full"
+                              style="width:{timeStats.max ? (r.min / timeStats.max) * 100 : 0}%; background-color:{r.color}"
+                            ></div>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
                 {/if}
               </div>
-            {/if}
+            </details>
+          {/if}
 
-            <AktivitaetsInsights insights={data.insights} bare />
-
-            {#if timeStats.rows.length > 0}
-              <div>
-                <div class="mb-3 flex items-baseline justify-between">
-                  <h4 class="font-mono text-xs uppercase tracking-wider text-muted">Zeit-Verteilung</h4>
-                  <span class="text-xs text-muted">{rangeLabel} · {fmtH(timeStats.total)}</span>
+          <!-- Legende: reine Referenz, einklappbar (im Ruhezustand zu). -->
+          {#if legendCals.length > 0}
+            <details class="group rounded-xl border border-border bg-surface-2/40">
+              <summary
+                class="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3"
+              >
+                <h3 class="font-mono text-xs uppercase tracking-wider text-muted">Legende</h3>
+                <Icon
+                  name="chevron-down"
+                  size={16}
+                  class="shrink-0 text-muted transition-transform duration-200 group-open:rotate-180"
+                />
+              </summary>
+              <div class="border-t border-border px-4 py-4">
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                  {#each legendCals as c (c.name)}
+                    <div class="flex items-center gap-2 text-xs">
+                      <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color:{c.color}"></span>
+                      <span class="truncate text-muted">{c.name}</span>
+                    </div>
+                  {/each}
                 </div>
-                <div class="space-y-2">
-                  {#each timeStats.rows as r (r.name)}
-                    <div class="space-y-1">
-                      <div class="flex items-center justify-between text-xs">
-                        <span class="flex items-center gap-1.5 text-muted">
-                          <span class="h-2 w-2 rounded-full" style="background-color:{r.color}"></span>
-                          {r.name}
-                        </span>
-                        <span class="text-muted">{fmtH(r.min)}</span>
-                      </div>
-                      <div class="h-1.5 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          class="h-full rounded-full"
-                          style="width:{timeStats.max ? (r.min / timeStats.max) * 100 : 0}%; background-color:{r.color}"
-                        ></div>
-                      </div>
+                <div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2.5">
+                  {#each daytypeLegend as d (d.label)}
+                    <div class="flex items-center gap-1.5 text-xs">
+                      <span class="h-2 w-2 shrink-0 rounded-[3px]" style="background-color:{d.color}"></span>
+                      <span class="text-muted">{d.label}</span>
                     </div>
                   {/each}
                 </div>
               </div>
-            {/if}
-          </div>
-        </details>
-      {/if}
-
-      <!-- Legende: reine Referenz, einklappbar (im Ruhezustand zu). -->
-      {#if legendCals.length > 0}
-        <details class="group rounded-xl border border-border bg-surface-2/40">
-          <summary
-            class="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3"
-          >
-            <h3 class="font-mono text-xs uppercase tracking-wider text-muted">Legende</h3>
-            <Icon
-              name="chevron-down"
-              size={16}
-              class="shrink-0 text-muted transition-transform duration-200 group-open:rotate-180"
-            />
-          </summary>
-          <div class="border-t border-border px-4 py-4">
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
-              {#each legendCals as c (c.name)}
-                <div class="flex items-center gap-2 text-xs">
-                  <span class="h-2.5 w-2.5 shrink-0 rounded-full" style="background-color:{c.color}"></span>
-                  <span class="truncate text-muted">{c.name}</span>
-                </div>
-              {/each}
-            </div>
-            <div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2.5">
-              {#each daytypeLegend as d (d.label)}
-                <div class="flex items-center gap-1.5 text-xs">
-                  <span class="h-2 w-2 shrink-0 rounded-[3px]" style="background-color:{d.color}"></span>
-                  <span class="text-muted">{d.label}</span>
-                </div>
-              {/each}
-            </div>
-          </div>
-        </details>
-      {/if}
+            </details>
+          {/if}
+        </div>
+      </details>
     </aside>
   </div>
 
@@ -800,6 +855,9 @@
     {notizenBasis}
     notizenStumm={data.notizenStumm}
     {notizFehler}
+    konflikte={konflikteZumTermin}
+    onVorschlag={konfliktVorschlag}
+    onWeg={konfliktWeg}
     onClose={closeModal}
   />
 </section>

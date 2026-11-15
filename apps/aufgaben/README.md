@@ -64,7 +64,14 @@ Kalender steht weiter „Naheliegend jetzt" mit dem staerksten Vorschlag.
   sechzig offenen Aufgaben ein Sturm von sechzig Anfragen.
 - **Projekte** kommen aus derselben Engine (`project_id` an der Aufgabe). Die
   Projektansicht verlinkt ins ProjectDeck, fuehrt die Projekte aber nicht.
-- **Termine** entstehen aus der Planung und liegen im Kalender.
+- **Im Kalender** (seit 2026-11-11): Aufgaben mit Uhrzeit oder Plantag zeigt
+  der Kalender (Web und App) als nur lesenden Pseudo-Kalender
+  `saganta-aufgaben`, gelesen ueber `GET /api/aufgaben/zeitraum` am
+  `kalender-bff`. Bearbeitet wird nur hier; der Kalender haelt keine Kopie.
+- **Wann** (seit 2026-11-11): Plantag, Tageszeit und ein Zeitfenster stehen im
+  Dialog. „Tag planen" schickt sie als `fenster` an den Planer des Kalenders,
+  der nur darin sucht. An Arbeitstagen gibt es tagsueber meist keinen freien
+  Platz; dann steht die Aufgabe unter „kein freies Fenster".
 
 ## Betrieb
 

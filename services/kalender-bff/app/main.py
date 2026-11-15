@@ -19,6 +19,7 @@ from .routes_places import router as places_router
 from .routes_tagesdecke import router as tagesdecke_router
 from .routes_tasks import router as tasks_router
 from .routes_zeit import router as zeit_router
+from .routes_aufgaben import router as aufgaben_router
 
 
 structlog.configure(processors=[structlog.processors.JSONRenderer()])
@@ -83,3 +84,4 @@ app.include_router(mobile_router, tags=["mobile"])
 app.include_router(places_router, tags=["places"])
 app.include_router(tagesdecke_router, tags=["tagesdecke"])
 app.include_router(zeit_router, tags=["zeit"])
+app.include_router(aufgaben_router, tags=["aufgaben"])

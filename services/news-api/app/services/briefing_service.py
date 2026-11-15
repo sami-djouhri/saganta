@@ -135,11 +135,16 @@ def audio_erlaubt(prof: BriefingProfile | None) -> bool:
     return bool(plans.features(prof.plan)["audio"])
 
 
-def render_audio(db: Session, sub: str, for_date: date | None = None) -> bool:
+def render_audio(db: Session, sub: str, for_date: date | None = None,
+                 nur_mit_modell: bool = False) -> bool:
     """Rendert das Audio für ein bereits erzeugtes Briefing (CPU-schwer, ~1-2 min).
 
     Als eigene Funktion, damit Routen sie via BackgroundTask asynchron aufrufen können,
     ohne den HTTP-Request ~100 s zu blockieren.
+
+    `nur_mit_modell` ist der zweite Versuch des Schedulers: das vorhandene Audio
+    wird nur ersetzt, wenn jetzt eine Modellfassung entsteht. Eine zweite
+    Textvorlage würde dieselbe Datei neu vertonen und nichts gewinnen.
     """
     if not briefing_tts.available():
         return False
@@ -164,6 +169,9 @@ def render_audio(db: Session, sub: str, for_date: date | None = None) -> bool:
         narration, herkunft = briefing_assembly.spoken_narration(ub.content or {})
     else:
         narration, herkunft = (ub.content or {}).get("spoken_text", ""), "deterministisch_tarif"
+    if nur_mit_modell and not herkunft.startswith("llm"):
+        log.info("briefing.audio.nachholen_ohne_modell", sub=sub, herkunft=herkunft)
+        return False
     path, mime = briefing_tts.render(sub, for_date.isoformat(), narration, voice)
     if path:
         ub.audio_path = path
@@ -178,6 +186,9 @@ def render_audio(db: Session, sub: str, for_date: date | None = None) -> bool:
         inhalt = dict(ub.content or {})
         inhalt["audio_text"] = narration
         inhalt["audio_text_herkunft"] = herkunft
+        inhalt["audio_fertig_um"] = datetime.now(timezone.utc).isoformat()
+        if nur_mit_modell:
+            inhalt["llm_nachgeholt"] = True
         ub.content = inhalt
         db.commit()
         log.info("briefing.audio.fertig", sub=sub, herkunft=herkunft,
@@ -203,6 +214,10 @@ def _fire_webhook(db: Session, sub: str, ub: UserBriefing) -> None:
             "title": top.get("title"),
             "item_count": (ub.content or {}).get("item_count", 0),
             "audio_url": audio_url,
+            # Woher der gesprochene Text kommt (`llm`, `llm_ausweich`,
+            # `deterministisch_…`). Der Empfänger entscheidet, ob er einen
+            # Rückfall meldet; hier ist es nur eine Angabe zum Briefing.
+            "herkunft": (ub.content or {}).get("audio_text_herkunft"),
         },
     )
 

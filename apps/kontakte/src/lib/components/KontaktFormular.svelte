@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { enhance } from '$app/forms';
   import { Button, Icon } from '@saganta/ui';
+  import { ortHinweis } from '$lib/anzeige';
   import type { Jahrestag, Kontakt } from '$lib/typen';
 
   interface Props {
@@ -51,6 +52,14 @@
   <label class="block space-y-1">
     <span class="text-sm text-muted">Adresse</span>
     <input name="adresse" maxlength="300" value={kontakt?.adresse ?? ''} class={feldKlasse} />
+    {#if kontakt}
+      {@const ort = ortHinweis(kontakt)}
+      {#if ort}
+        <span class="block text-xs text-muted">
+          {ort.text}{#if ort.karte} · <a href={ort.karte} class="text-akzent underline">Karte öffnen</a>{/if}
+        </span>
+      {/if}
+    {/if}
   </label>
 
   <div class="grid gap-4 sm:grid-cols-2">

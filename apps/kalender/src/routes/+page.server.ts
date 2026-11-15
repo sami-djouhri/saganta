@@ -19,10 +19,20 @@ import {
   type ReviewableResponse,
   type Tagesdecke,
   type UpcomingResponse,
+  type Konflikt,
+  type KonfliktVorschlag,
+  type KonfliktWeg,
 } from '$lib/kalender-bff';
 import { notizDazuAusFormular, notizenZu, type NotizKurz } from '@saganta/notizen-anschluss';
 import { notizAnschluss, terminKennung } from '$lib/server/notizen';
-import { weekGridDays } from '$lib/cal';
+import {
+  AUFGABEN_FARBE,
+  AUFGABEN_KALENDER,
+  aufgabeAlsTermin,
+  startOf,
+  weekGridDays,
+  type GeplanteAufgabe,
+} from '$lib/cal';
 import type { Beleg, LaufenderTimer } from '$lib/handzeit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -87,6 +97,8 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
   // vorhanden", und das wäre eine Aussage über einen ungelesenen Bestand.
   let notizenNach: Record<string, NotizKurz[]> = {};
   let notizenStumm = false;
+  // Überschneidungen im gezeigten Zeitraum (seit 2026-11-14), fail-soft.
+  let konflikte: Konflikt[] = [];
 
   // Heute in Haus-Zeitzone (Tagesziele + Default-Datum neuer Einträge). en-CA → YYYY-MM-DD.
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
@@ -124,14 +136,22 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
     const baseUrl = env.KALENDER_BFF_BASE_URL;
 
     let eventsPath: string;
+    // Derselbe Zeitraum fuer die geplanten Aufgaben (seit 2026-11-11).
+    let aufgabenVon: string;
+    let aufgabenBis: string;
     if (view === 'month') {
       const rng = monthRange(month);
       eventsPath = `/api/events/range?start=${rng.start}&end=${rng.end}`;
+      [aufgabenVon, aufgabenBis] = [rng.start, rng.end];
     } else if (view === 'week') {
       const wd = weekGridDays(week);
       eventsPath = `/api/events/range?start=${wd[0]}&end=${wd[6]}`;
+      [aufgabenVon, aufgabenBis] = [wd[0]!, wd[6]!];
     } else {
       eventsPath = `/api/events/upcoming?days=${days}&limit=200`;
+      const bis = new Date(`${today}T12:00:00Z`);
+      bis.setUTCDate(bis.getUTCDate() + days - 1);
+      [aufgabenVon, aufgabenBis] = [today, bis.toISOString().slice(0, 10)];
     }
 
     const [
@@ -148,6 +168,8 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
       deckeRes,
       zeitRes,
       heuteRes,
+      aufgabenRes,
+      konflikteRes,
     ] = await Promise.allSettled([
       kalenderBffFetch<UpcomingResponse>(baseUrl, eventsPath, token, fetch),
       kalenderBffFetch<KalenderCalendar[]>(baseUrl, '/api/events/calendars', token, fetch),
@@ -182,7 +204,22 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
         fetch,
       ),
       kalenderBffFetch<UpcomingResponse>(baseUrl, `/api/events/range?start=${today}&end=${today}`, token, fetch),
+      kalenderBffFetch<GeplanteAufgabe[]>(
+        baseUrl,
+        `/api/aufgaben/zeitraum?von=${aufgabenVon}&bis=${aufgabenBis}`,
+        token,
+        fetch,
+      ),
+      kalenderBffFetch<{ konflikte?: Konflikt[] }>(
+        baseUrl,
+        `/api/planung/konflikte?von=${aufgabenVon}&bis=${aufgabenBis}`,
+        token,
+        fetch,
+      ),
     ]);
+    if (konflikteRes.status === 'fulfilled' && Array.isArray(konflikteRes.value?.konflikte)) {
+      konflikte = konflikteRes.value.konflikte;
+    }
 
     if (upcomingRes.status === 'fulfilled') {
       upcoming = upcomingRes.value;
@@ -258,6 +295,23 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
     const notizen = await notizenZu('termin', kennungen, notizAnschluss(locals, fetch));
     notizenNach = notizen.nach;
     notizenStumm = notizen.stumm;
+
+    // ── Geplante Aufgaben (seit 2026-11-11) ──
+    // Erst nach den Notizen: sie gehoeren zu Terminen, nicht zu Aufgaben.
+    // Fail-soft: ohne Aufgaben-Dienst bleibt die Terminliste, wie sie ist.
+    if (aufgabenRes.status === 'fulfilled' && Array.isArray(aufgabenRes.value)) {
+      const eintraege = aufgabenRes.value
+        .map(aufgabeAlsTermin)
+        .filter((e): e is KalenderEvent => e !== null);
+      if (eintraege.length > 0) {
+        const alle = [...(upcoming?.items ?? []), ...eintraege];
+        alle.sort((a, b) => startOf(a).localeCompare(startOf(b)));
+        upcoming = upcoming
+          ? { ...upcoming, items: alle }
+          : { user: '', from: aufgabenVon, to: aufgabenBis, items: alle };
+      }
+      calendars = [...calendars, { id: AUFGABEN_KALENDER, name: 'Aufgaben', color: AUFGABEN_FARBE }];
+    }
   }
 
   return {
@@ -270,6 +324,7 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
     upcoming,
     notizenNach,
     notizenStumm,
+    konflikte,
     calendars,
     todos,
     goals,
@@ -667,6 +722,29 @@ export const actions: Actions = {
     }
   },
 
+  /** Zeit fuer eine Gewohnheit ohne geplante Sitzung (seit 2026-11-13). */
+  zeitNachtragen: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    const fd = await request.formData();
+    const habitId = String(fd.get('habit_id') ?? '').trim();
+    const start = String(fd.get('start') ?? '');
+    const ende = String(fd.get('ende') ?? '');
+    const zeit = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+    if (!habitId) return fail(400, { error: 'Gewohnheit fehlt.' });
+    if (!zeit.test(start) || !zeit.test(ende) || ende <= start) return fail(400, { error: 'Zeiten prüfen.' });
+    try {
+      await kalenderBffFetch(ctx.base, '/api/zeit/nachtragen', ctx.token, fetch, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ habit_id: habitId, start, ende }),
+      });
+      return { zeitOk: true };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
   // ── Termine (Events) ──
   eventCreate: async ({ locals, fetch, request }) => {
     const ctx = bffCtx(locals);
@@ -745,23 +823,104 @@ export const actions: Actions = {
   /**
    * Termin per Ziehen in der Woche verschieben (seit 2026-11-07). Nur Beginn
    * und Ende gehen hinaus, der bff nimmt Teilaenderungen (`EventPatch`).
-   * Serien werden in der Oberflaeche nicht gezogen.
+   *
+   * Ein Serien-Vorkommen (`basis::datum`) geht seit 2026-11-14 ueber
+   * `/api/planung/konflikt/loesen`: EXDATE an der Serie plus Einzeltermin zur
+   * neuen Zeit, die Reihe bleibt fuer alle anderen Wochen stehen. Vorher war
+   * Ziehen fuer Serien gesperrt, und Lagerlogistik, Filmabend und jede andere
+   * Wiederholung liess sich in der Woche nicht anfassen.
    */
   eventVerschieben: async ({ locals, fetch, request }) => {
     const ctx = bffCtx(locals);
     if (!ctx) return fail(401, { error: 'nicht angemeldet' });
     const fd = await request.formData();
     const id = String(fd.get('id') ?? '');
-    const start = String(fd.get('start') ?? '');
-    const end = String(fd.get('end') ?? '');
+    // datetime-local liefert ohne Sekunden, das Ziehen mit: beides annehmen.
+    const mitSekunden = (t: string) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(t) ? `${t}:00` : t);
+    const start = mitSekunden(String(fd.get('start') ?? ''));
+    const end = mitSekunden(String(fd.get('end') ?? ''));
     const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
-    if (!id || id.includes('::')) return fail(400, { error: 'Serien werden im Editor verschoben.' });
+    if (!id) return fail(400, { error: 'id fehlt' });
     if (!iso.test(start) || !iso.test(end) || start >= end) return fail(400, { error: 'Zeit unlesbar.' });
     try {
-      await kalenderBffFetch(ctx.base, `/api/events/${encodeURIComponent(id)}`, ctx.token, fetch, {
-        method: 'PUT',
+      if (id.includes('::')) {
+        await kalenderBffFetch(ctx.base, '/api/planung/konflikt/loesen', ctx.token, fetch, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ art: 'termin', id, aktion: 'verschieben', start, ende: end }),
+        });
+      } else {
+        await kalenderBffFetch(ctx.base, `/api/events/${encodeURIComponent(id)}`, ctx.token, fetch, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start, end }),
+        });
+      }
+      return { eventOk: true };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
+  /** Wege fuer ein ueberlappendes Paar, gerechnet im nativen Dienst. */
+  konfliktVorschlag: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    const fd = await request.formData();
+    let paar: unknown;
+    try {
+      paar = JSON.parse(String(fd.get('paar') ?? ''));
+    } catch {
+      return fail(400, { error: 'Paar unlesbar.' });
+    }
+    try {
+      const antwort = await kalenderBffFetch<KonfliktVorschlag & { optionen?: { aktion: string; start?: string; ende?: string }[] }>(
+        ctx.base,
+        '/api/planung/konflikt/vorschlag',
+        ctx.token,
+        fetch,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(paar) },
+      );
+      // Ein aelterer Dienst kennt `wege` nicht und liefert nur `optionen` fuer
+      // den Weichenden: daraus dieselbe Form bauen, damit die Knoepfe da sind.
+      if (!Array.isArray(antwort.wege) && antwort.weicht) {
+        const w = antwort.weicht;
+        antwort.wege = (antwort.optionen ?? []).map((o) => ({
+          aktion: o.aktion as KonfliktWeg['aktion'],
+          ziel: { art: w.art, id: w.id, titel: w.titel },
+          start: o.start,
+          ende: o.ende,
+          text: o.aktion === 'aussetzen' ? `„${w.titel}“ diesmal aussetzen` : `„${w.titel}“ auf ${(o.start ?? '').slice(11, 16)} verschieben`,
+        }));
+      }
+      return { vorschlag: antwort };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
+  /** Einen Weg ausfuehren: verschieben, kuerzen, aussetzen, loeschen. */
+  konfliktLoesen: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    const fd = await request.formData();
+    const art = String(fd.get('art') ?? '');
+    const id = String(fd.get('id') ?? '');
+    const aktion = String(fd.get('aktion') ?? '');
+    const start = String(fd.get('start') ?? '');
+    const ende = String(fd.get('ende') ?? '');
+    if (!['termin', 'sitzung'].includes(art) || !id) return fail(400, { error: 'Ziel fehlt.' });
+    if (!['verschieben', 'kuerzen', 'aussetzen', 'loeschen'].includes(aktion)) {
+      return fail(400, { error: `unbekannte Aktion: ${aktion}` });
+    }
+    const rumpf: Record<string, string> = { art, id, aktion };
+    if (start) rumpf.start = start;
+    if (ende) rumpf.ende = ende;
+    try {
+      await kalenderBffFetch(ctx.base, '/api/planung/konflikt/loesen', ctx.token, fetch, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start, end }),
+        body: JSON.stringify(rumpf),
       });
       return { eventOk: true };
     } catch (err) {

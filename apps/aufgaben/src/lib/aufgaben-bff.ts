@@ -38,12 +38,33 @@ export interface Aufgabe {
   /** hoch | mittel | niedrig */
   energy_required?: string | null;
   project_id?: string | null;
+  /** Liste des Aufgaben-Dienstes; schliesst `project_id` aus. */
+  liste_id?: string | null;
   goal_id?: string | null;
   recurrence?: string | null;
   /** Wie oft die Aufgabe schon verschoben wurde. Traegt die Verfall-Warnung. */
   defer_count?: number;
   last_deferred_at?: string | null;
   defer_reason?: string | null;
+  /** morgens | mittags | nachmittags | abends (Grenzen im Aufgaben-Dienst). */
+  tageszeit?: string | null;
+  /** Wochentage (0 = Montag) mit Uhrzeit von bis; geplant wird nur darin. */
+  zeitfenster?: Zeitfenster[] | null;
+  /** Checkliste, eine Ebene (Owner 2026-11-06); die App hatte sie, das Web bis 13.11. nicht. */
+  unteraufgaben?: Unteraufgabe[] | null;
+  /** Turnus ab Erledigung in Tagen: beim Abhaken legt der Dienst die naechste Runde an. */
+  turnus_tage?: number | null;
+}
+
+export interface Unteraufgabe {
+  text: string;
+  erledigt: boolean;
+}
+
+export interface Zeitfenster {
+  tage: number[];
+  von: string;
+  bis: string;
 }
 
 /** Tagesziel (native DailyGoal, A/B/C). */
@@ -67,6 +88,17 @@ export interface Projekt {
   icon?: string | null;
   status?: string;
   slug?: string | null;
+}
+
+/** Eine Liste des Aufgaben-Dienstes (Bereich wie „Wohnung & Haushalt"). */
+export interface Liste {
+  id: string;
+  name: string;
+  position: number;
+  /** Nach aussen neutral (Briefing, Push nennen nur „privater Termin“). */
+  vertraulich?: boolean;
+  /** Offene Aufgaben darin, so wie der Dienst zaehlt. */
+  offen?: number;
 }
 
 /** Ein Termin, soweit die Aufgabenliste ihn braucht (belegte Zeit). */

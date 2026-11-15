@@ -150,6 +150,19 @@ const NUR_DOWNLOAD: AppDownload[] = [
     web: '',
     plattformen: ['android'],
   },
+  {
+    // Seit 2026-11-14. Die Web-App bekommt ihren Link mit dem Namen
+    // schach.home.arpa; bis der DNS-Eintrag steht, nur die APK, damit hier
+    // kein toter Link steht. Danach gehoert Schach nach apps.ts.
+    id: 'schach',
+    release: 'schach',
+    name: 'Saganta Schach',
+    description:
+      'Schach gegen Stockfish, direkt auf dem Telefon und ohne Netz. Sechs Spielstärken, Tipp, Bewertung, Zug zurück und PGN zum Teilen.',
+    icon: 'chess-knight',
+    web: '',
+    plattformen: ['android'],
+  },
 ];
 
 /**

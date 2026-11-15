@@ -11,6 +11,8 @@ die stabile öffentliche Auswahl fürs Onboarding.
 """
 from __future__ import annotations
 
+import re
+
 # tag -> (Anzeigename, Keywords lowercase). Keywords matchen als Substring auf
 # den normalisierten (lowercase) Text von Titel + Summary.
 INTERESTS: dict[str, tuple[str, list[str]]] = {
@@ -77,7 +79,7 @@ INTERESTS: dict[str, tuple[str, list[str]]] = {
     "welt": (
         "Weltgeschehen",
         ["ukraine", "russland", "china", "usa", "nahost", "israel", "gaza", "krieg",
-         "un-", "vereinte nationen", "sanktion", "flüchtling"],
+         "un-", "uno-", "vereinte nationen", "sanktion", "flüchtling"],
     ),
     "auto": (
         "Auto & Mobilität",
@@ -105,6 +107,20 @@ def label_for(tag: str) -> str:
     return entry[0] if entry else tag.capitalize()
 
 
+# Kurze Stichwörter treffen als Teilwort fast alles: „esa" stand in „Teresa"
+# (14.11., Türkei-Demo unter Wissenschaft), „dax" in „Redaxo", „rki" in
+# „Parkinson". Bis drei Zeichen gilt deshalb nur der Wortanfang. Längere
+# Wörter bleiben Teilwort-Suche, sonst fiele „Bundestagswahl" bei „wahl" weg.
+_WORTANFANG_BIS = 3
+
+
+def _treffer(kw: str, low: str) -> bool:
+    kern = kw.strip()
+    if len(kern) > _WORTANFANG_BIS:
+        return kw in low
+    return re.search(r"(?<![a-zäöüß0-9])" + re.escape(kern), low) is not None
+
+
 def match_tags(text: str) -> set[str]:
     """Gibt die Interessen-Tags zurück, deren Keywords im Text vorkommen."""
     low = f" {text.lower()} "
@@ -113,7 +129,7 @@ def match_tags(text: str) -> set[str]:
         if not keywords:
             continue
         for kw in keywords:
-            if kw in low:
+            if _treffer(kw, low):
                 hits.add(tag)
                 break
     return hits

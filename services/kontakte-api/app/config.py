@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # Schluessel, mit dem die BFFs ihre Token stempeln (`jwt_secret`).
     kalender_bff_url: str = "http://saganta-kalender-bff:8000"
 
+    # Offline-Adresssuche des Karten-Portals (node1). Loest die Adresse eines
+    # Kontakts in eine Koordinate auf (``orte.py``). Leer = aus, dann bleibt
+    # ``ort_stand`` leer und nichts verlaesst den Dienst.
+    adresssuche_url: str = "http://192.0.2.10:8144/adressen"
+
     # Tage, die ein geloeschter Kontakt im Papierkorb liegt (Entscheid
     # 06.11.: in allen Apps gleich, 30 Tage).
     papierkorb_tage: int = 30

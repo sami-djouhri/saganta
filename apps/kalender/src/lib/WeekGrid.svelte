@@ -12,6 +12,7 @@
     eventColor,
     fmtTime,
     inclusiveEndKey,
+    istAufgabe,
     isMultiDay,
     localYmd,
     minutesOfDay,
@@ -27,8 +28,10 @@
     onCreateAt: (dayKey: string, hour: number) => void;
     /** Ziehen: Tage und Minuten (Raster 15), seit 2026-11-07. Ohne: kein Ziehen. */
     onMoveEvent?: (ev: KalenderEvent, tage: number, minuten: number) => void;
+    /** Kennungen der Termine, die sich mit etwas überschneiden (seit 2026-11-14). */
+    konfliktIds?: Set<string>;
   }
-  let { days, today, events, calMeta, nowMs, onSelectEvent, onCreateAt, onMoveEvent }: Props = $props();
+  let { days, today, events, calMeta, nowMs, onSelectEvent, onCreateAt, onMoveEvent, konfliktIds = new Set() }: Props = $props();
 
   // Ziehen mit Zeiger-Ereignissen statt HTML5-Drag: das gibt es auf dem
   // Telefon nicht. Maus: ab 6 px Bewegung. Finger: erst nach 400 ms Halten,
@@ -38,8 +41,11 @@
   let warte: ReturnType<typeof setTimeout> | undefined;
   let klickSperre = false;
 
+  // Serien-Vorkommen sind seit 2026-11-14 ziehbar: der Server nimmt nur dieses
+  // eine Vorkommen aus der Reihe und legt es zur neuen Zeit einzeln ab.
+  // Aufgaben gehoeren der Aufgaben-App, die werden hier nicht gezogen.
   function ziehbar(ev: KalenderEvent): boolean {
-    return !!onMoveEvent && !ev.recurrence_rule && !ev.is_recurring_instance && !String(ev.id).includes('::');
+    return !!onMoveEvent && !istAufgabe(ev);
   }
 
   function runter(e: PointerEvent, ev: KalenderEvent) {
@@ -345,9 +351,14 @@
               100}% + 2px); width:calc({100 / b.lanes}% - 4px); background-color:{c}26; border-color:{c};{zug?.id === b.ev.id
               ? ` transform:translate(${zug.dx}px, ${zug.dy}px); z-index:20; touch-action:none; cursor:grabbing;`
               : ziehbar(b.ev) ? ' cursor:grab;' : ''}"
-            title="{fmtTime(b.ev.start_at ?? b.ev.start ?? '')} {b.ev.title}"
+            title="{fmtTime(b.ev.start_at ?? b.ev.start ?? '')} {b.ev.title}{konfliktIds.has(b.ev.id) ? ' (überschneidet sich)' : ''}"
           >
-            <div class="truncate font-medium text-text">{b.ev.title}</div>
+            <div class="flex items-center gap-1 truncate font-medium text-text">
+              {#if konfliktIds.has(b.ev.id)}
+                <span class="shrink-0 text-kupfer" aria-label="Überschneidung"><Icon name="alert-triangle" size={11} /></span>
+              {/if}
+              <span class="truncate">{b.ev.title}</span>
+            </div>
             {#if b.height > 28}
               <div class="truncate text-muted">{fmtTime(b.ev.start_at ?? b.ev.start ?? '')}</div>
             {/if}

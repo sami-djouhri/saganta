@@ -17,6 +17,7 @@
   const vorrat = $derived(pool(data.aufgaben, heute));
   const kommend = $derived(demnaechst(data.aufgaben, heute));
   const projekteNach = $derived(new Map(data.projekte.map((p) => [p.id, p])));
+  const listenNach = $derived(new Map(data.listen.map((l) => [l.id, l])));
   const kapazitaet = $derived(data.tagesbild?.capacity ?? null);
   const frei = $derived(data.tagesbild?.free_minutes ?? 0);
   const liegen = $derived(data.tagesbild?.backlog ?? []);
@@ -117,7 +118,7 @@
        dann entscheiden. -->
   <Tagesplan {plan} festgelegt={planFestgelegt} {heute} poolGroesse={vorrat.length} />
 
-  <SchnellErfassen projekte={data.projekte} {heute} />
+  <SchnellErfassen projekte={data.projekte} listen={data.listen} {heute} />
 
   {#if liegen.length > 0}
     <section class="rounded-lg border border-warnung/40 bg-warnung/[0.07] p-3">
@@ -169,6 +170,7 @@
               aufgabe={a}
               {heute}
               projekt={a.project_id ? (projekteNach.get(a.project_id) ?? null) : null}
+              liste={a.liste_id ? (listenNach.get(a.liste_id) ?? null) : null}
               notizen={data.notizenNach[a.id] ?? []}
               zeigeDatum={gruppe.schluessel !== 'heute'}
               oeffnen={(x) => (bearbeitet = x)}
@@ -280,6 +282,7 @@
             aufgabe={a}
             {heute}
             projekt={a.project_id ? (projekteNach.get(a.project_id) ?? null) : null}
+              liste={a.liste_id ? (listenNach.get(a.liste_id) ?? null) : null}
             notizen={data.notizenNach[a.id] ?? []}
             oeffnen={(x) => (bearbeitet = x)}
           />
@@ -312,6 +315,7 @@
               aufgabe={a}
               {heute}
               projekt={a.project_id ? (projekteNach.get(a.project_id) ?? null) : null}
+              liste={a.liste_id ? (listenNach.get(a.liste_id) ?? null) : null}
               notizen={data.notizenNach[a.id] ?? []}
               oeffnen={(x) => (bearbeitet = x)}
             />
@@ -345,7 +349,7 @@
 <AufgabeDialog
   offen={bearbeitet !== null}
   aufgabe={bearbeitet}
-  projekte={data.projekte}
+  projekte={data.projekte} listen={data.listen}
   notizen={notizenZu}
   {notizenBasis}
   {heute}

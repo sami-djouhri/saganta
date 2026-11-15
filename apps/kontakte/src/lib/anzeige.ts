@@ -53,3 +53,33 @@ export function gruppenStil(gruppe: string): string {
 export function telAdresse(nummer: string): string {
   return `tel:${nummer.replace(/[^\d+]/g, '')}`;
 }
+
+/**
+ * Der Wohnort unter dem Adressfeld: wie genau er gefunden wurde und der Weg
+ * auf die Karte. `null`, wenn es nichts zu sagen gibt (keine Adresse).
+ */
+export function ortHinweis(k: {
+  adresse: string | null;
+  lat: number | null;
+  lon: number | null;
+  ort_stand: string | null;
+  ort_genauigkeit: string | null;
+}): { text: string; karte: string | null } | null {
+  if (k.lat !== null && k.lon !== null) {
+    const zoom = k.ort_genauigkeit === 'ort' ? 13 : k.ort_genauigkeit === 'strasse' ? 16 : 18;
+    const text =
+      k.ort_genauigkeit === 'hand' ? 'Punkt von Hand gesetzt'
+      : k.ort_genauigkeit === 'strasse' ? 'Auf der Karte: nur die Straße, die Hausnummer kennt die Adresssuche nicht'
+      : k.ort_genauigkeit === 'ort' ? 'Auf der Karte: nur der Ort, Straße nicht gefunden'
+      : 'Auf der Karte';
+    return {
+      text,
+      karte: `https://karten.home.arpa/#${zoom}/${k.lat.toFixed(5)}/${k.lon.toFixed(5)}`,
+    };
+  }
+  if (!k.adresse) return null;
+  if (k.ort_stand === 'nicht_gefunden') {
+    return { text: 'Nicht auf der Karte: die Adresssuche kennt diese Adresse nicht (Form „Straße Nr, PLZ Ort“ hilft)', karte: null };
+  }
+  return { text: 'Wird gleich auf der Karte gesucht', karte: null };
+}

@@ -6,7 +6,7 @@
 # gegen den Quellbaum beweist, dass die Dateien stimmen, nicht dass der Dienst
 # sie hat. Am 30.08.2026 lag ein Filter in acht Baeumen und wirkte in einem.
 #
-# Erwartung: "36 passed". Laeuft eine kleinere Zahl durch, wurde ein Modul still
+# Erwartung: "51 passed". Laeuft eine kleinere Zahl durch, wurde ein Modul still
 # uebersprungen, und das ist nicht als gruen zu verbuchen.
 set -euo pipefail
 cd "$(dirname "$0")"

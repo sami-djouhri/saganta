@@ -112,6 +112,28 @@
     return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('de-DE', { dateStyle: 'medium' });
   }
 
+  /** Datum und Uhrzeit eines Stands; der Dienst liefert naives UTC ohne Zone. */
+  function standZeit(roh: string): string {
+    const d = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(roh) ? roh : `${roh}Z`);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  function zeichenText(n: number): string {
+    return n === 1 ? '1 Zeichen' : `${n.toLocaleString('de-DE')} Zeichen`;
+  }
+
+  // Nach dem Zurückholen sind die Seitendaten neu, die Felder aber bewusst
+  // gelöst (untrack oben). Ohne Nachziehen stünde der alte Text im Editor,
+  // die Seite meldete „ungespeichert", und Speichern überschriebe das eben
+  // Zurückgeholte wieder.
+  function felderNachziehen() {
+    titel = data.notiz.titel;
+    inhalt = data.notiz.inhalt;
+    tags = data.notiz.tags.join(', ');
+  }
+
   function groesse(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -199,8 +221,10 @@
           else verlassenErlaubt = true;
         }}
       >
-        <Button type="submit" variant="ghost" size="sm" title="Löschen">
-          <Icon name="x" size={16} />
+        <!-- Papierkorb statt nacktem x: neben "Teilen" las sich das x wie
+             "Schliessen", nicht wie "in den Papierkorb". -->
+        <Button type="submit" variant="ghost" size="sm" class="max-sm:min-w-11" title="In den Papierkorb" aria-label="In den Papierkorb">
+          <Icon name="trash" size={16} /><span class="max-sm:hidden">Löschen</span>
         </Button>
       </form>
     </div>
@@ -238,25 +262,34 @@
          anderer Stand im Bestand an, antwortet die API mit 409 statt still zu
          überschreiben; nach jedem Neuladen der Daten zieht der Wert nach. -->
     <input type="hidden" name="basis" value={data.notiz.geaendert_am} />
-    <input
+    <!-- Titel als Ueberschrift, randlos und mitwachsend: das einzeilige Feld
+         schnitt lange Titel am Handy ab. Enter schreibt keinen Zeilenumbruch. -->
+    <textarea
       name="titel"
       bind:value={titel}
+      rows="1"
       placeholder="Titel"
-      class="w-full rounded-md border border-border-stark bg-surface px-3 py-2 font-display text-xl"
-    />
+      aria-label="Titel"
+      onkeydown={(e) => {
+        if (e.key === 'Enter') e.preventDefault();
+      }}
+      class="w-full resize-none rounded-md border border-transparent bg-transparent px-1 py-1 font-display text-2xl leading-tight [field-sizing:content] hover:border-border focus:border-border-stark focus:outline-none"
+    ></textarea>
 
     <div class="flex flex-wrap items-center gap-2 text-sm">
-      <div class="inline-flex overflow-hidden rounded-md border border-border">
+      <div class="inline-flex overflow-hidden rounded-md border border-border-stark">
         <button
           type="button"
+          aria-pressed={ansicht === 'schreiben'}
           onclick={() => (ansicht = 'schreiben')}
-          class="px-3 py-1.5 {ansicht === 'schreiben' ? 'bg-surface-2 text-text' : 'text-muted'}"
+          class="px-3 py-1.5 max-md:min-h-11 {ansicht === 'schreiben' ? 'bg-surface-2 text-text' : 'text-muted'}"
           >Schreiben</button
         >
         <button
           type="button"
+          aria-pressed={ansicht === 'lesen'}
           onclick={() => (ansicht = 'lesen')}
-          class="px-3 py-1.5 {ansicht === 'lesen' ? 'bg-surface-2 text-text' : 'text-muted'}"
+          class="px-3 py-1.5 max-md:min-h-11 {ansicht === 'lesen' ? 'bg-surface-2 text-text' : 'text-muted'}"
           >Vorschau</button
         >
       </div>
@@ -264,7 +297,7 @@
       <select
         name="notizbuch_id"
         bind:value={notizbuchId}
-        class="rounded-md border border-border-stark bg-surface px-2 py-1.5"
+        class="rounded-md border border-border-stark bg-surface px-2 py-1.5 max-md:min-h-11"
       >
         <option value="">Ohne Notizbuch</option>
         {#each data.notizbuecher as buch (buch.id)}
@@ -276,14 +309,17 @@
         name="tags"
         bind:value={tags}
         placeholder="Tags, mit Komma getrennt"
-        class="min-w-40 flex-1 rounded-md border border-border-stark bg-surface px-3 py-1.5"
+        class="min-w-40 flex-1 rounded-md border border-border-stark bg-surface px-3 py-1.5 max-md:min-h-11"
       />
 
-      <Button type="submit" size="sm" disabled={!geaendert}>
-        {geaendert ? 'Speichern' : 'Gespeichert'}
-      </Button>
-      {#if gespeichertUm && !geaendert}
-        <span class="text-xs text-muted">um {gespeichertUm}</span>
+      <!-- Gespeichert ist ein Zustand, kein Knopf: vorher stand dauerhaft ein
+           ausgegrauter Messing-Knopf "Gespeichert" da, Messing auf Messing. -->
+      {#if geaendert}
+        <Button type="submit" size="sm">Speichern</Button>
+      {:else}
+        <span class="inline-flex items-center gap-1 text-xs text-muted" role="status">
+          <Icon name="check" size={12} /> Gespeichert{gespeichertUm ? ` um ${gespeichertUm}` : ''}
+        </span>
       {/if}
     </div>
 
@@ -295,11 +331,11 @@
         spellcheck="true"
         onpaste={bildEingefuegt}
         placeholder="Markdown: # Überschrift, **fett**, - Liste, [Link](https://…), ```Code```"
-        class="w-full rounded-md border border-border-stark bg-surface px-3 py-2 font-mono text-sm leading-relaxed"
+        class="min-h-96 w-full max-w-3xl rounded-md border border-border bg-surface px-4 py-3 text-base leading-7 [field-sizing:content] focus:border-border-stark focus:outline-none"
       ></textarea>
     {:else}
       <input type="hidden" name="inhalt" value={inhalt} />
-      <div class="min-h-64 rounded-md border border-border bg-surface px-4 py-3">
+      <div class="min-h-64 max-w-3xl rounded-md border border-border bg-surface px-4 py-3">
         <MarkdownAnsicht quelle={inhalt} />
       </div>
     {/if}
@@ -310,10 +346,22 @@
     <section class="rounded-lg border border-border p-4">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold">Verknüpft mit</h2>
-        <Button type="button" variant="ghost" size="sm" onclick={() => (verknuepfenOffen = true)}>
-          <Icon name="plus" size={14} /> Verknüpfen
-        </Button>
+        <div class="flex items-center gap-1">
+          {#if data.kannAufgabe}
+            <form method="POST" action="?/aufgabeDazu" use:enhance>
+              <Button type="submit" variant="ghost" size="sm" title="Aufgabe mit dem Titel dieser Notiz anlegen und verbinden">
+                <Icon name="check" size={14} /> Aufgabe dazu
+              </Button>
+            </form>
+          {/if}
+          <Button type="button" variant="ghost" size="sm" onclick={() => (verknuepfenOffen = true)}>
+            <Icon name="plus" size={14} /> Verknüpfen
+          </Button>
+        </div>
       </div>
+      {#if form && 'hinweis' in form}
+        <p class="mt-2 text-xs text-muted" role="status">{form.hinweis}</p>
+      {/if}
 
       <form method="POST" action="?/verknuepfen" bind:this={verknuepfenForm} use:enhance={() => {
         return async ({ update }) => {
@@ -339,15 +387,17 @@
               <span class="shrink-0 text-muted"><Icon name={TYP_SYMBOL[v.typ]} size={16} /></span>
               <span class="min-w-0 flex-1">
                 {#if ziel}
-                  <a href={ziel} class="block truncate text-sm hover:underline">{v.label || v.ref}</a>
+                  <a href={ziel} class="block truncate text-sm hover:underline max-md:py-1.5">{v.label || v.ref}</a>
                 {:else}
                   <span class="block truncate text-sm">{v.label || v.ref}</span>
                 {/if}
                 <span class="text-xs text-muted">{TYP_BESCHRIFTUNG[v.typ]}</span>
               </span>
-              <form method="POST" action="?/entknuepfen" use:enhance class="opacity-0 group-hover:opacity-100">
+              <!-- Am PC erst beim Ueberfahren, am Handy immer sichtbar: dort gibt es
+                   kein Hover, der Knopf war unsichtbar und blind antippbar. -->
+              <form method="POST" action="?/entknuepfen" use:enhance class="md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                 <input type="hidden" name="id" value={v.id} />
-                <button type="submit" class="text-muted hover:text-text" aria-label="Verknüpfung lösen">
+                <button type="submit" class="grid size-11 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text md:size-8" aria-label="Verknüpfung lösen">
                   <Icon name="x" size={14} />
                 </button>
               </form>
@@ -399,12 +449,14 @@
               <span class="shrink-0 text-muted"><Icon name="download" size={16} /></span>
               <a
                 href="/notiz/{data.notiz.id}/anhang/{a.id}"
-                class="min-w-0 flex-1 truncate text-sm hover:underline">{a.dateiname}</a
+                class="min-w-0 flex-1 truncate text-sm hover:underline max-md:py-3">{a.dateiname}</a
               >
               <span class="shrink-0 text-xs text-muted">{groesse(a.groesse)}</span>
-              <form method="POST" action="?/anhangLoeschen" use:enhance class="opacity-0 group-hover:opacity-100">
+              <!-- Am PC erst beim Ueberfahren, am Handy immer sichtbar: dort gibt es
+                   kein Hover, der Knopf war unsichtbar und blind antippbar. -->
+              <form method="POST" action="?/anhangLoeschen" use:enhance class="md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                 <input type="hidden" name="id" value={a.id} />
-                <button type="submit" class="text-muted hover:text-text" aria-label="Anhang löschen">
+                <button type="submit" class="grid size-11 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text md:size-8" aria-label="Anhang löschen">
                   <Icon name="x" size={14} />
                 </button>
               </form>
@@ -425,6 +477,72 @@
       {/if}
     </section>
   </div>
+
+  <!-- Frühere Stände (seit 2026-11-14) -->
+  {#if data.stand}
+    <section class="rounded-lg border border-akzent/60 p-4" aria-labelledby="stand-kopf">
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 id="stand-kopf" class="flex-1 text-sm font-semibold">
+          Stand vom {standZeit(data.stand.stand_vom)}
+        </h2>
+        <form
+          method="POST"
+          action="?/standWiederherstellen"
+          use:enhance={() =>
+            async ({ update }) => {
+              await update();
+              felderNachziehen();
+            }}
+        >
+          <input type="hidden" name="id" value={data.stand.id} />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={geaendert}
+            title={geaendert ? 'Erst speichern oder verwerfen, sonst ginge Ungespeichertes verloren' : undefined}
+          >
+            Diesen Stand zurückholen
+          </Button>
+        </form>
+        <a href="/notiz/{data.notiz.id}" class="text-xs text-muted underline hover:text-text">schließen</a>
+      </div>
+      <p class="mt-1 text-xs text-muted">
+        Der jetzige Text wird dabei selbst als Stand abgelegt, das Zurückholen lässt sich also
+        zurücknehmen.
+      </p>
+      {#if data.stand.titel}<p class="mt-3 font-semibold">{data.stand.titel}</p>{/if}
+      <div class="mt-2 max-h-96 overflow-auto rounded-md bg-surface-2/40 p-3">
+        <MarkdownAnsicht quelle={data.stand.inhalt} />
+      </div>
+      {#if data.stand.tags.length}
+        <p class="mt-2 text-xs text-muted">Tags: {data.stand.tags.join(', ')}</p>
+      {/if}
+    </section>
+  {/if}
+
+  {#if data.staende?.length}
+    <section class="rounded-lg border border-border p-4">
+      <h2 class="text-sm font-semibold">Frühere Stände</h2>
+      <ul class="mt-3 flex flex-col gap-1">
+        {#each data.staende as s (s.id)}
+          <li>
+            <a
+              href="?stand={s.id}"
+              class="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-surface-2 {data.stand?.id === s.id ? 'bg-surface-2' : ''}"
+            >
+              <span class="shrink-0 text-muted"><Icon name="clock" size={16} /></span>
+              <span class="min-w-0 flex-1 truncate">{standZeit(s.stand_vom)}</span>
+              <span class="shrink-0 text-xs text-muted">{zeichenText(s.zeichen)}</span>
+            </a>
+          </li>
+        {/each}
+      </ul>
+      <p class="mt-2 text-xs text-muted">
+        Die letzten fünf. Abgelegt wird der Stand vor jeder Sitzung, in der Titel, Text oder Tags
+        sich ändern.
+      </p>
+    </section>
+  {/if}
 
   <!-- Freigaben dieser Notiz -->
   {#if data.notiz.freigaben.length}
@@ -453,7 +571,7 @@
             {#if f.zustand === 'aktiv'}
               <form method="POST" action="?/freigabeWiderrufen" use:enhance>
                 <input type="hidden" name="id" value={f.id} />
-                <button type="submit" class="text-xs text-muted underline hover:text-text">
+                <button type="submit" class="min-h-11 text-xs text-muted underline hover:text-text md:min-h-0">
                   zurückziehen
                 </button>
               </form>

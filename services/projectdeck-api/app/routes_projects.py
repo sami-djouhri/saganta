@@ -79,6 +79,8 @@ def list_projects(
         ProjectOut.model_validate(p).model_copy(update={
             "open_tasks": je_slug.get(p.slug, {}).get("offen", 0),
             "open_high": je_slug.get(p.slug, {}).get("hoch", 0),
+            "overdue_tasks": je_slug.get(p.slug, {}).get("ueberfaellig", 0),
+            "done_7d": je_slug.get(p.slug, {}).get("erledigt_7", 0),
         })
         for p in projekte
     ]

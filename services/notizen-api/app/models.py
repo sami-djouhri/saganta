@@ -20,7 +20,7 @@ from .util import jetzt
 # Typ kostet hier nichts ausser einem Eintrag.
 VERKNUEPFUNGS_TYPEN = {
     "termin",   # Kalender-Event (uuid)
-    "aufgabe",  # Kalender-Todo
+    "aufgabe",  # Aufgabe im Aufgaben-Dienst (uuid), seit 05.11. auch Projektaufgaben
     "ziel",     # Kalender-Goal
     "projekt",  # ProjectDeck-Projekt (slug)
     "kontakt",  # Kalender-Kontakt
@@ -69,6 +69,7 @@ class Notiz(Base):
         back_populates="notiz", cascade="all, delete-orphan"
     )
     freigaben: Mapped[list["Freigabe"]] = relationship(back_populates="notiz")
+    staende: Mapped[list["NotizStand"]] = relationship(cascade="all, delete-orphan")
 
 
 class Anhang(Base):
@@ -218,3 +219,33 @@ class Papierkorb(Base):
     daten: Mapped[str] = mapped_column(Text)
     geloescht_am: Mapped[datetime] = mapped_column(DateTime, default=jetzt, index=True)
 
+
+
+class NotizStand(Base):
+    """Fruehere Staende einer Notiz, hoechstens fuenf je Notiz (seit 2026-11-14).
+
+    Abgelegt wird der Stand **vor** einer Aenderung an Titel, Text oder Tags,
+    und nur, wenn er seit mindestens ``STAND_RUHE_MINUTEN`` unveraendert war.
+    Die Ruhezeit ist der Kern: wer zehnmal hintereinander speichert, haette
+    sonst nach dem fuenften Mal den Stand von vor der Sitzung verloren, und
+    genau den will man zurueck, wenn man sich verschrieben hat. So bleibt je
+    Arbeitssitzung der Stand davor.
+
+    CASCADE an der Notiz: eine geloeschte Notiz nimmt ihre Staende mit. Der
+    Papierkorb haelt eine eigene Kopie des letzten Stands.
+    """
+
+    __tablename__ = "notiz_staende"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_sub: Mapped[str] = mapped_column(String(128), index=True)
+    notiz_id: Mapped[int] = mapped_column(
+        ForeignKey("notizen.id", ondelete="CASCADE"), index=True
+    )
+    titel: Mapped[str] = mapped_column(String(300), default="")
+    inhalt: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[str] = mapped_column(String(400), default="")
+    # Wann dieser Stand gespeichert worden war, also ``geaendert_am`` der Notiz
+    # zu dem Zeitpunkt. Das zeigt die Oberflaeche, nicht den Moment der Ablage.
+    stand_vom: Mapped[datetime] = mapped_column(DateTime)
+    erstellt_am: Mapped[datetime] = mapped_column(DateTime, default=jetzt)

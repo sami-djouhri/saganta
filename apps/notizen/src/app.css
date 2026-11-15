@@ -7,16 +7,29 @@
    aendert. */
 .markdown {
   line-height: 1.65;
+  /* Lesebreite: bei 1400 px lief ein Absatz sonst ueber rund 120 Zeichen. */
+  max-width: 68ch;
 }
 .markdown > * + * {
   margin-top: 0.85em;
 }
+/* Titelschrift wie `font-display` aus theme.css. Hier stand bis 2026-11-14
+   `var(--font-display)`, das es seit dem 02.11. nicht mehr gibt: die
+   Ueberschriften fielen still auf Gewicht 400, h3 sah aus wie Fliesstext. */
 .markdown h1,
 .markdown h2,
 .markdown h3 {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.25;
-  margin-top: 1.4em;
+  margin-top: 1.6em;
+}
+.markdown h2 {
+  margin-top: 1.8em;
+}
+.markdown > :first-child {
+  margin-top: 0;
 }
 .markdown h1 {
   font-size: 1.6rem;

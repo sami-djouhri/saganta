@@ -1,0 +1,303 @@
+/* Saganta-Bausteine: Masse und Bausteine der Hausdienste, eine Quelle.
+ *
+ * WARUM ES DIESE DATEI GIBT. Seit 2026-11-02 teilen die Hausdienste die
+ * Farben (`nachtstudie.css`, erzeugt aus `theme.css`). Alles darueber hatte
+ * jeder Dienst selbst: gemessen am 2026-11-14 trug lager 19, mealprep 25 und
+ * einkaufsliste 5 verschiedene Schriftgroessen, davon allein zwoelf zwischen
+ * .75 und .95rem, die das Auge nicht unterscheidet; dazu je eigene Knopfsorten
+ * (mealprep elf), Radien und Leer-, Fehler- und Ladezustaende. Gleiche Farbe,
+ * verschiedene Handschrift: jede App wirkte wie ein Nachbau der anderen.
+ *
+ * Entscheid 2026-11-14 ("Fundament + Apps"): Schriftskala, Raster,
+ * Knopfarten und Zustaende kommen in EINE Quelle, die Dienste bekommen eine
+ * erzeugte Kopie `saganta-bausteine.css` (saganta/scripts/nachtstudie-erzeugen.py,
+ * bewacht vom design-waechter wie die Nachtstudie).
+ *
+ * Bewusst NICHT in theme.css: deren Pruefsumme steht im Kopf jeder
+ * Nachtstudie- und Kopf-Kopie, eine Zeile dort machte zehn Kopien in acht
+ * Repos veraltet. Diese Datei hat eigene Ziele und betrifft nur Dienste, die
+ * sie einbinden.
+ *
+ * Die Namen der Knoepfe und Zustaende stammen aus dem Lager (`.btn`,
+ * `.btn-primary`, `.empty-state`, `.load-error`), weil lager und mealprep sie
+ * schon fuehrten: eine neue Namenswelt haette jede Vorlage umgeschrieben.
+ *
+ * Voraussetzung: `nachtstudie.css` ist vorher eingebunden (Farben, Schrift).
+ * Einbinden als ERSTE Regel nach der Nachtstudie: dann gewinnt jede spaetere
+ * Regel des Dienstes mit gleicher Spezifitaet, ein Dienst passt an, statt
+ * gegen das Fundament zu kaempfen.
+ * ⚠️ Die Klassen stehen bewusst NICHT in `:where()`. Spezifitaet null hiesse,
+ * dass der uebliche Reset `* { padding: 0 }` weiter unten jedes Knopfpolster
+ * loescht. In `:where()` stehen nur die Element-Grundregeln.
+ */
+
+:root {
+  /* ── Schrift: sechs Stufen. Wer eine siebte braucht, begruendet sie hier. */
+  --saganta-text-klein: .75rem;    /* 12 px  Etikett, Rubrik, Fussnote */
+  --saganta-text-fein: .8125rem;   /* 13 px  Nebentext, Gruende, Knopf klein */
+  --saganta-text-mittel: .875rem;  /* 14 px  Knopf, Listenzusatz */
+  --saganta-text-basis: 1rem;      /* 16 px  Fliesstext, Eingabefeld (iOS zoomt darunter) */
+  --saganta-text-gross: 1.125rem;  /* 18 px  Abschnittstitel (h2) */
+  --saganta-text-titel: 1.75rem;   /* 28 px  Seitentitel (h1) */
+
+  --saganta-zeile: 1.5;
+  --saganta-zeile-eng: 1.25;
+
+  --saganta-gewicht: 400;
+  --saganta-gewicht-mittel: 500;
+  --saganta-gewicht-halbfett: 600;
+
+  /* ── Raster: Vielfache von 4. Ungerade Pixelwerte gibt es nicht mehr. */
+  --saganta-abstand-1: 4px;
+  --saganta-abstand-2: 8px;
+  --saganta-abstand-3: 12px;
+  --saganta-abstand-4: 16px;
+  --saganta-abstand-5: 20px;
+  --saganta-abstand-6: 24px;
+  --saganta-abstand-7: 32px;
+  --saganta-abstand-8: 48px;
+
+  /* ── Ecken: zwei Stufen und die Pille. */
+  --saganta-radius: 10px;
+  --saganta-radius-klein: 6px;
+  --saganta-radius-pille: 999px;
+
+  /* ── Tippflaeche: 44 px ist die Untergrenze fuer einen Finger (WCAG 2.5.5).
+     Knoepfe sind es immer, nicht erst bei `pointer: coarse`: auch ein
+     Laptop mit Beruehrungsbildschirm meldet eine feine Maus. */
+  --saganta-tippflaeche: 44px;
+  --saganta-knopf-klein: 36px;
+
+  /* Flaechen der Bedeutungsfarben, abgeleitet statt als Hexwert. */
+  --saganta-fehler-flaeche: rgb(var(--saganta-fehler-rgb) / .12);
+  --saganta-erfolg-flaeche: rgb(var(--saganta-erfolg-rgb) / .12);
+  --saganta-warnung-flaeche: rgb(var(--saganta-warnung-rgb) / .12);
+}
+
+/* ── Grundregeln ──────────────────────────────────────────────────────── */
+
+/* Formularelemente erben die Schrift nicht von selbst. Ohne diese Zeile stand
+   im Rezeptformular von mealprep Monospace im Textfeld (gesehen 2026-11-14). */
+:where(button, input, select, textarea) { font: inherit; color: inherit; }
+
+:where(:focus-visible) {
+  outline: 2px solid var(--saganta-focus);
+  outline-offset: 2px;
+}
+
+/* ── Ueberschriften ───────────────────────────────────────────────────── */
+
+.seitentitel {
+  font-size: var(--saganta-text-titel);
+  font-weight: var(--saganta-gewicht-halbfett);
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  color: var(--saganta-text);
+}
+
+/* Die mittlere Stufe, die vorher fehlte: zwischen dem 28-px-Titel und den
+   Versal-Etiketten gab es nichts. Normale Schreibung, halbfett. */
+.abschnittstitel {
+  font-size: var(--saganta-text-gross);
+  font-weight: var(--saganta-gewicht-halbfett);
+  letter-spacing: -.01em;
+  line-height: var(--saganta-zeile-eng);
+  color: var(--saganta-text);
+}
+
+/* Versalien nur noch fuer Kleinstetiketten (Gruppe in einer Liste). */
+.rubrik {
+  font-size: var(--saganta-text-klein);
+  font-weight: var(--saganta-gewicht-halbfett);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--saganta-muted);
+}
+
+/* ── Knoepfe: drei Arten, zwei Groessen ───────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--saganta-abstand-2);
+  min-height: var(--saganta-tippflaeche);
+  padding: 0 var(--saganta-abstand-4);
+  font-family: var(--saganta-schrift);
+  font-size: var(--saganta-text-mittel);
+  font-weight: var(--saganta-gewicht-halbfett);
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--saganta-radius);
+  background: var(--saganta-surface-2);
+  color: var(--saganta-text);
+  cursor: pointer;
+  transition: background var(--saganta-motion-fast) var(--saganta-ease),
+              border-color var(--saganta-motion-fast) var(--saganta-ease),
+              transform var(--saganta-motion-fast) var(--saganta-ease);
+}
+.btn:active:not(:disabled) { transform: scale(.98); }
+.btn:disabled, .btn[aria-disabled='true'] { opacity: .45; cursor: not-allowed; }
+
+/* Primaer: die eine Hauptaktion einer Ansicht, Messing als Flaeche. */
+.btn-primary {
+  background: var(--saganta-akzent);
+  color: var(--saganta-auf-messing);
+}
+.btn-primary:hover:not(:disabled) { background: var(--saganta-akzent-stark); }
+
+/* Sekundaer: alles andere, das ein Knopf ist. Der Rand ist `border-stark`
+   (3:1, WCAG 1.4.11), nicht der Trennstrich: ein Knopf muss als Knopf
+   erkennbar sein, auch wenn er nicht der wichtigste ist. */
+.btn-secondary {
+  background: var(--saganta-surface-2);
+  border-color: var(--saganta-border-stark);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--saganta-surface-hover); }
+
+/* Gefaehrlich: loescht oder bucht aus. Rand und Schrift in Fehlerfarbe,
+   keine rote Vollflaeche, damit er nicht lauter ist als die Hauptaktion. */
+.btn-danger {
+  background: transparent;
+  border-color: rgb(var(--saganta-fehler-rgb) / .6);
+  color: var(--saganta-fehler);
+}
+.btn-danger:hover:not(:disabled) { background: var(--saganta-fehler-flaeche); }
+
+/* Still: Textknopf ohne Rand (Zurueckholen, Abbrechen). Die Tippflaeche
+   bleibt 44 px, nur die Flaeche faellt weg. */
+.btn-still {
+  background: transparent;
+  color: var(--saganta-muted);
+  padding: 0 var(--saganta-abstand-3);
+}
+.btn-still:hover:not(:disabled) { color: var(--saganta-text); background: var(--saganta-surface-hover); }
+
+.btn-sm {
+  min-height: var(--saganta-knopf-klein);
+  padding: 0 var(--saganta-abstand-3);
+  font-size: var(--saganta-text-fein);
+}
+.btn-block { display: flex; width: 100%; }
+
+/* Symbolknopf: quadratisch, volle Tippflaeche. Braucht `aria-label`. */
+.btn-symbol {
+  width: var(--saganta-tippflaeche);
+  padding: 0;
+}
+
+@media (pointer: coarse) {
+  .btn-sm { min-height: var(--saganta-tippflaeche); }
+}
+
+/* ── Eingabefeld ──────────────────────────────────────────────────────── */
+
+.feld {
+  min-height: var(--saganta-tippflaeche);
+  padding: var(--saganta-abstand-2) var(--saganta-abstand-3);
+  font-size: var(--saganta-text-basis);
+  background: var(--saganta-surface-sunken);
+  border: 1px solid var(--saganta-border-stark);
+  border-radius: var(--saganta-radius);
+  color: var(--saganta-text);
+}
+.feld::placeholder { color: var(--saganta-text-dim); }
+
+/* ── Zustaende: leer, Fehler, laden, Meldung ──────────────────────────── */
+
+/* Leer heisst: hier ist noch nichts, und so kommt etwas hinein. Ein leerer
+   Zustand ohne naechsten Schritt (`.empty-state-aktion`) ist eine Sackgasse. */
+.empty-state {
+  padding: var(--saganta-abstand-7) var(--saganta-abstand-5);
+  text-align: center;
+  background: var(--saganta-surface-2);
+  border: 1px dashed var(--saganta-border-stark);
+  border-radius: var(--saganta-radius);
+}
+.empty-state-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--saganta-abstand-3);
+  color: var(--saganta-text-dim);
+}
+.empty-state-icon svg { width: 28px; height: 28px; }
+.empty-state-text {
+  font-size: var(--saganta-text-mittel);
+  line-height: var(--saganta-zeile);
+  color: var(--saganta-muted);
+}
+.empty-state-aktion { margin-top: var(--saganta-abstand-4); }
+
+/* Ein Fehler sagt, was nicht ging, und bietet den naechsten Schritt an. */
+.load-error {
+  padding: var(--saganta-abstand-4);
+  background: var(--saganta-fehler-flaeche);
+  border: 1px solid rgb(var(--saganta-fehler-rgb) / .6);
+  border-radius: var(--saganta-radius);
+}
+.load-error-title {
+  margin-bottom: var(--saganta-abstand-1);
+  font-size: var(--saganta-text-mittel);
+  font-weight: var(--saganta-gewicht-halbfett);
+  color: var(--saganta-fehler);
+}
+.load-error-detail {
+  margin-bottom: var(--saganta-abstand-3);
+  font-size: var(--saganta-text-fein);
+  line-height: var(--saganta-zeile);
+  color: var(--saganta-muted);
+}
+
+/* Laden: Text bleibt stehen, die Seite springt nicht. */
+.lade-hinweis {
+  display: flex;
+  align-items: center;
+  gap: var(--saganta-abstand-2);
+  padding: var(--saganta-abstand-4) 0;
+  font-size: var(--saganta-text-mittel);
+  color: var(--saganta-muted);
+}
+.lade-hinweis::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--saganta-border-stark);
+  border-top-color: var(--saganta-akzent);
+  border-radius: 50%;
+  animation: saganta-drehen .8s linear infinite;
+}
+@keyframes saganta-drehen { to { transform: rotate(360deg); } }
+
+/* Meldung nach einer Aktion. Die Art steht im Namen, nie nur in der Farbe:
+   bis 2026-11-14 zeigte mealprep auch "Zahl ungueltig" gruen. */
+.meldung {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--saganta-abstand-2);
+  padding: var(--saganta-abstand-3) var(--saganta-abstand-4);
+  font-size: var(--saganta-text-mittel);
+  line-height: var(--saganta-zeile);
+  border: 1px solid var(--saganta-border-stark);
+  border-radius: var(--saganta-radius);
+  background: var(--saganta-surface-2);
+  color: var(--saganta-text);
+}
+.meldung-erfolg {
+  background: var(--saganta-erfolg-flaeche);
+  border-color: rgb(var(--saganta-erfolg-rgb) / .5);
+}
+.meldung-fehler {
+  background: var(--saganta-fehler-flaeche);
+  border-color: rgb(var(--saganta-fehler-rgb) / .6);
+}
+.meldung-hinweis {
+  background: var(--saganta-warnung-flaeche);
+  border-color: rgb(var(--saganta-warnung-rgb) / .5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lade-hinweis::before { animation: none; }
+  .btn:active:not(:disabled) { transform: none; }
+}

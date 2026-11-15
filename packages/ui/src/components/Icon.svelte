@@ -54,6 +54,10 @@
     plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
     'layout-dashboard':
       '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+    // Springer aus dem Figurensatz der Schach-App (ai-services/schach/static/pieces/wN.svg),
+    // von 100 auf 24 Einheiten verkleinert; die Strichstaerke gleicht das aus.
+    'chess-knight':
+      '<g transform="scale(0.24)" stroke-width="8"><path d="M72.0 88.0 L72.0 82.5 C72.0 81.0 69.0 81.0 69.0 79.5 C69.0 77.2 64.5 77.2 64.5 75.0 C64.5 70.5 62.5 70.5 62.5 66.0 C62.5 63.0 65.5 63.0 65.5 60.0 L64.0 57.0 L36.0 57.0 L34.5 60.0 C34.5 63.0 37.5 63.0 37.5 66.0 C37.5 70.5 35.5 70.5 35.5 75.0 C35.5 77.2 31.0 77.2 31.0 79.5 C31.0 81.0 28.0 81.0 28.0 82.5 L28.0 88.0"/><path d="M40 58C39 49 41 42 47.5 36.5 44 34.5 40 33.5 36 34 30 34.5 26 32 24 28c-1.5-4 1-7.5 5.5-10.5 5-3.5 9.5-6 13.5-9L46 4l4.5 7.5L56 5.5c10 6 16 18 16 32c0 8.5-1.5 15-3.5 20.5z"/></g>',
     'layout-grid':
       '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
     clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',

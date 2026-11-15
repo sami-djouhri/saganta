@@ -63,6 +63,20 @@ async def haken(data: Haken, me: Me = CurrentUser) -> dict:
     return r.json()
 
 
+class Nachtrag(BaseModel):
+    habit_id: str = Field(..., min_length=1, max_length=36)
+    start: str
+    ende: str
+    titel: str | None = Field(default=None, max_length=300)
+
+
+@router.post("/api/zeit/nachtragen", status_code=201)
+async def nachtragen(data: Nachtrag, me: Me = CurrentUser) -> dict:
+    """Zeit fuer eine Gewohnheit ohne geplante Sitzung (seit 2026-11-13)."""
+    r = await upstream("POST", "/api/zeit/nachtragen", json=data.model_dump(exclude_none=True))
+    return r.json()
+
+
 @router.get("/api/zeit/belege")
 async def belege(
     von: date = Query(...),

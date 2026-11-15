@@ -14,6 +14,7 @@
     isPast,
     timeCol,
     uniqueBy,
+    istAufgabe,
   } from '$lib/cal';
 
   interface Props {
@@ -58,7 +59,7 @@
   /** Generierte Kalender bleiben tabu: Tagestypen und Geburtstage werden erzeugt. */
   function istVerwaltet(ev: KalenderEvent): boolean {
     const cid = ev.calendar_id ?? '';
-    return /^daytype-/.test(cid) || /^system-geburtstage/.test(cid);
+    return /^daytype-/.test(cid) || /^system-geburtstage/.test(cid) || istAufgabe(ev);
   }
 
   function isEditable(ev: KalenderEvent): boolean {

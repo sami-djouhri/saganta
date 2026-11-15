@@ -11,6 +11,7 @@
 
   const heute = $derived(data.heute);
   const projekteNach = $derived(new Map(data.projekte.map((p) => [p.id, p])));
+  const listenNach = $derived(new Map(data.listen.map((l) => [l.id, l])));
   const notizenBasis = $derived(appUrlById('notizen', $page.url.host));
 
   /**
@@ -77,6 +78,7 @@
               aufgabe={a}
               {heute}
               projekt={a.project_id ? (projekteNach.get(a.project_id) ?? null) : null}
+              liste={a.liste_id ? (listenNach.get(a.liste_id) ?? null) : null}
               notizen={data.notizenNach[a.id] ?? []}
               zeigeDatum={false}
               oeffnen={(x) => (bearbeitet = x)}
@@ -91,7 +93,7 @@
 <AufgabeDialog
   offen={bearbeitet !== null}
   aufgabe={bearbeitet}
-  projekte={data.projekte}
+  projekte={data.projekte} listen={data.listen}
   notizen={notizenZu}
   {notizenBasis}
   {heute}

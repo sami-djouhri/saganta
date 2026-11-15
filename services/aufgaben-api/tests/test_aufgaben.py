@@ -86,3 +86,31 @@ def test_loeschen(client, kopf):
     a = _neu(client, kopf)
     assert client.delete(f"/api/aufgaben/{a['id']}", headers=kopf).status_code == 204
     assert client.delete(f"/api/aufgaben/{a['id']}", headers=kopf).status_code == 404
+
+
+def test_zeitraum_liefert_geplante_und_plantage_aber_keine_fristen(client, kopf, kopf_zwei):
+    """Was der Kalender zeigt: Zeit oder Plantag im Zeitraum, offen, eigene."""
+    mit_zeit = _neu(client, kopf, titel="Mit Zeit")
+    client.put(f"/api/aufgaben/{mit_zeit['id']}", headers=kopf,
+               json={"tag": "2026-11-12", "start": "2026-11-12T10:00:00", "ende": "2026-11-12T10:30:00"})
+    plantag = _neu(client, kopf, titel="Plantag", tag="2026-11-13")
+    _neu(client, kopf, titel="Nur Frist", faellig="2026-11-12")
+    _neu(client, kopf, titel="Danach", tag="2026-11-20")
+    _neu(client, kopf, titel="Vorrat")
+    erledigt = _neu(client, kopf, titel="Erledigt", tag="2026-11-12")
+    client.post(f"/api/aufgaben/{erledigt['id']}/erledigt", headers=kopf)
+    _neu(client, kopf_zwei, titel="Fremd", tag="2026-11-12")
+    # Letzter Tag eingeschlossen, auch fuer eine Zeit am Abend.
+    spaet = _neu(client, kopf, titel="Spaet")
+    client.put(f"/api/aufgaben/{spaet['id']}", headers=kopf,
+               json={"tag": "2026-11-15", "start": "2026-11-15T22:00:00", "ende": "2026-11-15T23:00:00"})
+
+    r = client.get("/api/aufgaben/zeitraum?von=2026-11-12&bis=2026-11-15", headers=kopf)
+    assert r.status_code == 200
+    assert sorted(a["titel"] for a in r.json()) == ["Mit Zeit", "Plantag", "Spaet"]
+
+
+def test_zeitraum_grenzen(client, kopf):
+    assert client.get("/api/aufgaben/zeitraum?von=2026-11-12&bis=2026-11-11", headers=kopf).status_code == 422
+    assert client.get("/api/aufgaben/zeitraum?von=2026-01-01&bis=2026-12-31", headers=kopf).status_code == 422
+    assert client.get("/api/aufgaben/zeitraum?von=2026-11-01&bis=2026-12-31", headers=kopf).status_code == 200

@@ -1,5 +1,13 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { ApiFehler, api } from '$lib/notizen-api';
+import {
+  SAMMEL_AKTIONEN,
+  SAMMEL_HOECHSTENS,
+  ausgewaehlteIds,
+  sammelAufrufe,
+  sammelMeldung,
+  type SammelAktion,
+} from '$lib/sammel';
 import type { Notiz, NotizKurz, Notizbuch } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -70,6 +78,56 @@ export const actions: Actions = {
       throw e;
     }
     return { ok: true };
+  },
+
+  notizbuchAendern: async ({ locals, request, fetch }) => {
+    const user = locals.user;
+    if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
+    const felder = await request.formData();
+    const id = Number(felder.get('id'));
+    const name = String(felder.get('name') ?? '').trim();
+    if (!id || !name) return fail(400, { fehler: 'Name fehlt' });
+    const farbe = String(felder.get('farbe') ?? '') || null;
+    try {
+      // PUT ersetzt alle Felder: die Sortierung kommt deshalb unverändert mit,
+      // sonst fiele jedes umbenannte Notizbuch auf 0 zurück.
+      await api(user, `/api/notizbuecher/${id}`, fetch, {
+        method: 'PUT',
+        body: JSON.stringify({ name, farbe, sortierung: Number(felder.get('sortierung')) || 0 }),
+      });
+    } catch (e) {
+      if (e instanceof ApiFehler) return fail(e.status, { fehler: e.detail });
+      throw e;
+    }
+    return { ok: true };
+  },
+
+  sammel: async ({ locals, request, fetch }) => {
+    const user = locals.user;
+    if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
+    const felder = await request.formData();
+    const aktion = String(felder.get('aktion') ?? '') as SammelAktion;
+    if (!SAMMEL_AKTIONEN.includes(aktion)) return fail(400, { fehler: 'Unbekannte Aktion' });
+    const ids = ausgewaehlteIds(felder.getAll('id'));
+    if (!ids.length) return fail(400, { fehler: 'Keine Notiz ausgewählt' });
+    if (ids.length > SAMMEL_HOECHSTENS) return fail(400, { fehler: 'Zu viele auf einmal' });
+    let gelungen = 0;
+    let fehler = 0;
+    // Nacheinander, nicht parallel: der Dienst schreibt in eine SQLite-Datei,
+    // und hundert gleichzeitige Schreiber warteten nur aufeinander.
+    for (const a of sammelAufrufe(aktion, ids, String(felder.get('buch') ?? ''))) {
+      try {
+        await api(user, a.pfad, fetch, {
+          method: a.methode,
+          ...(a.rumpf ? { body: JSON.stringify(a.rumpf) } : {}),
+        });
+        gelungen++;
+      } catch (e) {
+        if (!(e instanceof ApiFehler)) throw e;
+        fehler++;
+      }
+    }
+    return { sammelMeldung: sammelMeldung(aktion, gelungen, fehler), papierkorb: aktion === 'loeschen' };
   },
 
   notizbuchLoeschen: async ({ locals, request, fetch }) => {

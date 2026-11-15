@@ -13,14 +13,16 @@
    */
   import { enhance } from '$app/forms';
   import { Icon } from '@saganta/ui';
-  import type { Projekt } from '$lib/aufgaben-bff';
+  import type { Liste, Projekt } from '$lib/aufgaben-bff';
   import { PRIORITAETEN, PRIO_STIL, tagePlus } from '$lib/ordnen';
+  import ZuordnungAuswahl from './ZuordnungAuswahl.svelte';
 
   interface Props {
     projekte: Projekt[];
+    listen?: Liste[];
     heute: string;
   }
-  let { projekte, heute }: Props = $props();
+  let { projekte, listen = [], heute }: Props = $props();
 
   let mehr = $state(false);
   let feld = $state<HTMLInputElement | undefined>();
@@ -96,16 +98,13 @@
         />
       </label>
       <label class="space-y-1">
-        <span class="text-xs uppercase tracking-wider text-muted">Projekt</span>
-        <select
-          name="projekt"
-          class="w-full rounded-md border border-border-stark bg-surface px-2 py-1.5 text-sm"
-        >
-          <option value="">ohne</option>
-          {#each projekte as p (p.id)}
-            <option value={p.id}>{p.name}</option>
-          {/each}
-        </select>
+        <span class="text-xs uppercase tracking-wider text-muted">Bereich oder Projekt</span>
+        <ZuordnungAuswahl
+          {listen}
+          {projekte}
+          leer="ohne"
+          klasse="w-full rounded-md border border-border-stark bg-surface px-2 py-1.5 text-sm"
+        />
       </label>
     </div>
   {/if}

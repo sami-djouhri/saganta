@@ -86,6 +86,7 @@ class AufgabeNeu(Eingang):
     zeitfenster: list[Fenster] | None = Field(default=None, max_length=14)
     unteraufgaben: list[Unteraufgabe] | None = Field(default=None, max_length=50)
     tageszeit: Tageszeit | None = None
+    turnus_tage: int | None = Field(default=None, ge=1, le=730)
     #: Nur fuer den Umzug: Herkunft und, bei schon Erledigten, wann.
     herkunft: str | None = Field(default=None, min_length=1, max_length=64)
     erledigt_am: datetime | None = None
@@ -126,6 +127,7 @@ class AufgabeAenderung(Eingang):
     zeitfenster: list[Fenster] | None = Field(default=None, max_length=14)
     unteraufgaben: list[Unteraufgabe] | None = Field(default=None, max_length=50)
     tageszeit: Tageszeit | None = None
+    turnus_tage: int | None = Field(default=None, ge=1, le=730)
 
 
 class Verschieben(Eingang):
@@ -165,6 +167,7 @@ class AufgabeAus(BaseModel):
     zeitfenster: list[Fenster] | None
     unteraufgaben: list[Unteraufgabe] | None = None
     tageszeit: str | None
+    turnus_tage: int | None = None
     herkunft: str | None
     geaendert_am: datetime | None = None
     #: Ausgewertet beim Lesen: wartet sie heute noch (Datum, Aufgabe, Grund)?
@@ -173,6 +176,7 @@ class AufgabeAus(BaseModel):
 
 class ListeNeu(Eingang):
     name: str = Field(..., min_length=1, max_length=100)
+    vertraulich: bool = False
 
     @field_validator("name")
     @classmethod
@@ -186,6 +190,7 @@ class ListeNeu(Eingang):
 class ListeAenderung(Eingang):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     position: int | None = Field(default=None, ge=0, le=10000)
+    vertraulich: bool | None = None
 
 
 class ListeAus(BaseModel):
@@ -194,6 +199,7 @@ class ListeAus(BaseModel):
     id: str
     name: str
     position: int
+    vertraulich: bool = False
     #: offene Aufgaben darin
     offen: int = 0
 

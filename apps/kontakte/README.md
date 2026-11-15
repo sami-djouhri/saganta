@@ -28,6 +28,31 @@ vorher, jeweils ab 08:00.
 - Die Schreibrouten für Kontakte am kalender-bff antworten seither mit 410: was
   dort geschrieben würde, verschwände beim nächsten Abgleich.
 
+## Wohnort auf der Karte (seit 2026-11-15)
+
+Ein Kontakt mit Adresse bekommt `lat`/`lon` (`services/kontakte-api/app/orte.py`).
+Aufgeloest wird allein ueber die Offline-Adresssuche auf node1
+(`ADRESSSUCHE_URL`, Vorgabe `http://192.0.2.10:8144/adressen`), nie ueber
+einen fremden Geocoder. Am besten in der Form „Straße Nr, PLZ Ort“: mit Komma
+geht es strukturiert Ort > Straße > Hausnummer, sonst ueber die freie Suche.
+`ort_genauigkeit` sagt `adresse`, `strasse`, `ort` oder `hand`.
+
+- Gesucht wird beim Speichern und, falls die Adresssuche nicht antwortet, im
+  Hintergrundlauf (15 s nach dem Start, dann alle zehn Minuten). Das holt
+  auch den Altbestand nach.
+- Nur eine **geaenderte** Adresse loest eine neue Suche aus. Die App
+  schickt beim Speichern alle Felder mit; sonst ginge ein von Hand gesetzter
+  Punkt (`lat`+`lon` im PATCH) beim naechsten Speichern verloren.
+- Kein Adresstext im Protokoll: der Dienst loggt nur Zahlen, sein
+  Fehlertext traegt nie die URL, und der nginx auf node1 protokolliert
+  `/adressen/` ohne Query.
+- Die Karte ist die Ebene „Kontakte“ in `karten.home.arpa`. Der Browser
+  holt `kontakte.home.arpa/orte.json` mit dem Saganta-Cookie; CORS gibt die
+  Antwort nur an diese eine Herkunft frei (`src/lib/karten.ts`). Der Pfad ist
+  im Auth-Hook oeffentlich und antwortet ohne Anmeldung mit 401 samt
+  Anmeldeadresse, weil eine Weiterleitung im `fetch` nicht von „schlaeft“ zu
+  unterscheiden waere.
+
 ## Umzug aus dem Kalender
 
 `POST /api/umzug/kalender` (Knopf „Aus dem Kalender übernehmen“ in der leeren

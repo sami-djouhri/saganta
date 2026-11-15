@@ -6,12 +6,14 @@
   import SchnellErfassen from '$lib/components/SchnellErfassen.svelte';
   import type { Aufgabe } from '$lib/aufgaben-bff';
   import { PRIORITAETEN, PRIO_STIL, istOffen, nachDringlichkeit } from '$lib/ordnen';
+  import { zuordnungVon } from '$lib/zuordnung';
   import type { ActionData, PageData } from './$types';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
 
   const heute = $derived(data.heute);
   const projekteNach = $derived(new Map(data.projekte.map((p) => [p.id, p])));
+  const listenNach = $derived(new Map(data.listen.map((l) => [l.id, l])));
   const notizenBasis = $derived(appUrlById('notizen', $page.url.host));
 
   // Die Filter leben im Browser, nicht in der Adresse: sie sind eine Sicht auf
@@ -25,7 +27,7 @@
     data.aufgaben
       .filter(istOffen)
       .filter((a) => !prio || a.priority === prio)
-      .filter((a) => !projekt || a.project_id === projekt)
+      .filter((a) => !projekt || zuordnungVon(a) === projekt)
       .filter((a) => !nurUndatiert || !a.due_date)
       .filter((a) => {
         const s = suche.trim().toLowerCase();
@@ -73,7 +75,7 @@
     <p class="rounded-lg border border-fehler/40 bg-fehler/10 px-3 py-2 text-sm">{fehlermeldung}</p>
   {/if}
 
-  <SchnellErfassen projekte={data.projekte} {heute} />
+  <SchnellErfassen projekte={data.projekte} listen={data.listen} {heute} />
 
   <!-- Filterleiste -->
   <div class="flex flex-wrap items-center gap-2">
@@ -108,16 +110,27 @@
       {/each}
     </select>
 
-    {#if data.projekte.length > 0}
+    {#if data.projekte.length > 0 || data.listen.length > 0}
       <select
         bind:value={projekt}
-        aria-label="Nach Projekt filtern"
+        aria-label="Nach Bereich oder Projekt filtern"
         class="rounded-md border border-border-stark bg-surface-2 px-2 py-1.5 text-sm"
       >
-        <option value="">Jedes Projekt</option>
-        {#each data.projekte as p (p.id)}
-          <option value={p.id}>{p.name}</option>
-        {/each}
+        <option value="">Jeder Bereich, jedes Projekt</option>
+        {#if data.listen.length > 0}
+          <optgroup label="Bereiche">
+            {#each data.listen as l (l.id)}
+              <option value="liste:{l.id}">{l.name}</option>
+            {/each}
+          </optgroup>
+        {/if}
+        {#if data.projekte.length > 0}
+          <optgroup label="Projekte">
+            {#each data.projekte as p (p.id)}
+              <option value="projekt:{p.id}">{p.name}</option>
+            {/each}
+          </optgroup>
+        {/if}
       </select>
     {/if}
 
@@ -144,6 +157,7 @@
           aufgabe={a}
           {heute}
           projekt={a.project_id ? (projekteNach.get(a.project_id) ?? null) : null}
+              liste={a.liste_id ? (listenNach.get(a.liste_id) ?? null) : null}
           notizen={data.notizenNach[a.id] ?? []}
           oeffnen={(x) => (bearbeitet = x)}
         />
@@ -155,7 +169,7 @@
 <AufgabeDialog
   offen={bearbeitet !== null}
   aufgabe={bearbeitet}
-  projekte={data.projekte}
+  projekte={data.projekte} listen={data.listen}
   notizen={notizenZu}
   {notizenBasis}
   {heute}

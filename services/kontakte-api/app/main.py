@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from .auth import verify_jwt
 from .config import settings
-from . import abgleich
+from . import abgleich, orte
 from .db import Base, SessionLocal, engine, get_db, init_db
 from .konto import PLAN as LOESCHPLAN
 from .routes import router
@@ -41,8 +41,22 @@ def _nachholen_einmal() -> None:
         db.close()
 
 
+def _orte_einmal() -> None:
+    db = SessionLocal()
+    try:
+        orte.nachziehen(db)
+    except Exception as exc:  # der Lauf darf den Dienst nie beenden
+        log.warning("kontakte.orte_fehler", art=type(exc).__name__)
+    finally:
+        db.close()
+
+
 async def _nachholen_schleife() -> None:
+    # Die Orte zuerst: so bekommt der Altbestand seine Punkte kurz nach dem
+    # Start und nicht erst nach zehn Minuten.
+    await asyncio.sleep(15)
     while True:
+        await asyncio.to_thread(_orte_einmal)
         await asyncio.sleep(NACHHOLEN_ALLE_S)
         await asyncio.to_thread(_nachholen_einmal)
 

@@ -4,7 +4,6 @@
   import {
     type CalMeta,
     DAYTYPE_LABEL,
-    DAYTYPE_TINT,
     DAYTYPE_DOT,
     byStart,
     dayKeyOf,
@@ -79,6 +78,20 @@
     return map;
   });
 
+  // Legende nur mit den Typen, die im angezeigten Monat vorkommen (wie die App,
+  // Owner-Wahl 13.11.). Feiertage zaehlen mit, sie haben eine eigene Farbe.
+  const legende = $derived.by(() => {
+    const da = new Set<string>();
+    for (const [tag, typ] of dayTypeByDay) if (tag.slice(0, 7) === month) da.add(typ);
+    const eintraege = Object.keys(DAYTYPE_LABEL)
+      .filter((t) => da.has(t))
+      .map((t) => ({ label: DAYTYPE_LABEL[t]!, farbe: DAYTYPE_DOT[t]! }));
+    const feiertag = gridDays.some((d) => d.slice(0, 7) === month && holidayTitle(d));
+    if (feiertag) eintraege.push({ label: 'Feiertag', farbe: FEIERTAG_FARBE });
+    return eintraege;
+  });
+  const FEIERTAG_FARBE = '#cf8524';
+
   const isCurrentMonth = (dayKey: string): boolean => dayKey.slice(0, 7) === month;
   const isWeekend = (dayKey: string): boolean => {
     const dow = new Date(dayKey + 'T12:00:00Z').getUTCDay();
@@ -129,14 +142,22 @@
             onSelectDay(day);
           }
         }}
-        style={dt && DAYTYPE_TINT[dt] ? `background-color:${DAYTYPE_TINT[dt]}` : ''}
         class="group relative flex min-h-14 cursor-pointer sm:min-h-[6.5rem] flex-col gap-1 border-b border-r border-border/70 p-1.5 text-left transition-colors hover:bg-accent-500/[0.06] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent-500
           {idx % 7 === 6 ? 'border-r-0' : ''}
           {idx >= 35 ? 'border-b-0' : ''}
           {!inMonth ? 'opacity-45' : ''}
-          {weekend && !dt ? 'bg-black/10' : ''}
+          {weekend ? 'bg-black/10' : ''}
           {isSel ? 'ring-1 ring-inset ring-accent-500' : ''}"
       >
+        <!-- Tagestyp als Leiste oben in der Zelle, auch am Handy sichtbar (wie in
+             der App seit 09.11.; vorher eine Toenung, die am Handy kaum auffiel). -->
+        {#if dt || holiday}
+          <span
+            class="absolute inset-x-0 top-0 h-1"
+            style="background-color:{holiday ? FEIERTAG_FARBE : DAYTYPE_DOT[dt ?? '']}"
+            aria-hidden="true"
+          ></span>
+        {/if}
         <div class="flex items-center justify-between">
           <span
             class="grid h-6 min-w-6 place-items-center rounded-full px-1 font-mono text-xs
@@ -205,4 +226,14 @@
       </div>
     {/each}
   </div>
+  {#if legende.length > 0}
+    <div class="flex flex-wrap gap-x-4 gap-y-1 border-t border-border px-3 py-2">
+      {#each legende as l (l.label)}
+        <span class="flex items-center gap-1.5 text-xs text-muted">
+          <span class="h-1 w-3 rounded-full" style="background-color:{l.farbe}"></span>
+          {l.label}
+        </span>
+      {/each}
+    </div>
+  {/if}
 </div>

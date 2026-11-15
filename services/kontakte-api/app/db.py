@@ -38,7 +38,12 @@ def get_db() -> Session:
 
 #: Spalten, die nach dem ersten Ausrollen dazukommen. ``create_all`` legt nur
 #: fehlende Tabellen an, nie fehlende Spalten.
-_NACHZUZIEHEN: dict[str, list[tuple[str, str]]] = {"kontakte": []}
+_NACHZUZIEHEN: dict[str, list[tuple[str, str]]] = {"kontakte": [
+    ("lat", "FLOAT"),
+    ("lon", "FLOAT"),
+    ("ort_stand", "VARCHAR(16)"),
+    ("ort_genauigkeit", "VARCHAR(16)"),
+]}
 
 
 def _spalten_nachziehen() -> None:

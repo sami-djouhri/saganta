@@ -107,7 +107,13 @@ class Aufgabe(Base):
     #: morgens | mittags | nachmittags | abends (Grenzen in ``TAGESZEITEN``).
     tageszeit: Mapped[str | None] = mapped_column(String(12), nullable=True)
 
-    #: Woher sie kam, z. B. ``projectdeck:42``. Macht den Umzug wiederholbar.
+    #: Turnus ab Erledigung (Entscheid K32, 13.11.): beim Abhaken entsteht
+    #: eine neue Aufgabe, faellig ``turnus_tage`` nach dem Abhaken. Die alte
+    #: bleibt erledigt stehen, damit der Verlauf sichtbar ist.
+    turnus_tage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    #: Woher sie kam, z. B. ``projectdeck:42`` oder ``turnus:<id>`` (die
+    #: Folgeaufgabe einer Turnus-Aufgabe). Macht Umzug und Abhaken wiederholbar.
     herkunft: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     erledigt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -134,6 +140,10 @@ class Liste(Base):
     owner_sub: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Nach aussen neutral (Entscheid K20, 13.11.): wer Aufgaben dieser
+    #: Liste ausserhalb der Aufgaben-App zeigt (Briefing, Push), nennt nur
+    #: „privater Termin", nie den Titel.
+    vertraulich: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     erstellt_am: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=jetzt)
 
 

@@ -8,6 +8,7 @@ alles für den Startbildschirm liefert.
 **Der Feed-Token ist der heikle Teil dieser Datei.** Siehe Kommentar dort.
 """
 from datetime import date as _date
+from datetime import datetime as _datetime
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
@@ -75,6 +76,29 @@ async def bootstrap(
     r = await upstream(
         "GET", "/api/mobile/bootstrap", params={"start": start, "end": end}, timeout=30.0
     )
+    return r.json() if r.content else {}
+
+
+class ErinnerungsQuittungIn(BaseModel):
+    """Die App meldet: bis hierhin sind Erinnerungen auf dem Geraet gestellt."""
+    geplant_bis: _datetime
+    anzahl: int = Field(ge=0, le=10000)
+
+
+@router.post("/api/mobile/erinnerungen")
+async def erinnerungen_quittieren(data: ErinnerungsQuittungIn, me: Me = CurrentUser) -> dict:
+    """Quittung der App-Erinnerungen (ZIELBILD 75): solange sie gilt, schweigt
+    der ntfy-Weg des Kalenders fuer Termine, Sitzungen und Bettvorbereitung.
+
+    Diese Route fehlte bis zum 2026-11-13. Die App ab 0.10.6 schickte die
+    Quittung, der BFF antwortete 404, die App schluckte den Fehler, und ntfy
+    erinnerte weiter zusaetzlich zur App: doppelt statt „nur bei Ausfall".
+    Die Frist deckelt der native Dienst (48 h), hier nur die Form.
+    """
+    r = await upstream("POST", "/api/mobile/erinnerungen", json={
+        "geplant_bis": data.geplant_bis.isoformat(),
+        "anzahl": data.anzahl,
+    })
     return r.json() if r.content else {}
 
 
@@ -506,3 +530,129 @@ async def review_schreiben(data: ReviewIn, tag: str = Path(..., pattern=_DATE), 
     _tag(tag)
     r = await upstream("PUT", f"/api/reviews/{tag}", json=data.model_dump())
     return r.json() if r.content else {}
+
+
+# ── Zeitbudget: Regler fuer Gewohnheiten (seit 2026-11-09) ───────────────
+# Wochenstunden je Gewohnheit, Sitzungslaenge, Schlafdauer und Fuellgrad freier
+# Tage. Gerechnet wird ausschliesslich im nativen Dienst (`routers/planung.py`);
+# die Vorschau plant dort auf Probe und rollt zurueck.
+class ZeitbudgetIn(BaseModel):
+    woche: _date | None = None
+    #: habit_id -> Wochenminuten
+    wuensche: dict[str, float] = Field(default_factory=dict)
+    #: habit_id -> uebliche Sitzungslaenge in Minuten
+    laengen: dict[str, int] = Field(default_factory=dict)
+    schlaf_minuten: int | None = Field(None, ge=360, le=600)
+    fuellgrad: int | None = Field(None, ge=0, le=100)
+
+
+def _budget_rumpf(data: ZeitbudgetIn) -> dict:
+    rumpf = data.model_dump(exclude_none=True)
+    if data.woche:
+        rumpf["woche"] = data.woche.isoformat()
+    return rumpf
+
+
+@router.get("/api/planung/zeitbudget")
+async def zeitbudget(me: Me = CurrentUser, woche: str | None = Query(None, pattern=_DATE)) -> dict:
+    if woche:
+        _tag(woche)
+    r = await upstream("GET", "/api/planung/zeitbudget", params={"woche": woche} if woche else None)
+    return r.json() if r.content else {}
+
+
+@router.post("/api/planung/zeitbudget/vorschau")
+async def zeitbudget_vorschau(data: ZeitbudgetIn, me: Me = CurrentUser) -> dict:
+    # Die Vorschau plant die Woche auf Probe (gemessen 2,5 s, Dienst bei 0,25 CPU).
+    r = await upstream("POST", "/api/planung/zeitbudget/vorschau", json=_budget_rumpf(data), timeout=30)
+    return r.json() if r.content else {}
+
+
+@router.put("/api/planung/zeitbudget")
+async def zeitbudget_speichern(data: ZeitbudgetIn, me: Me = CurrentUser) -> dict:
+    # Speichern plant drei Wochen neu.
+    r = await upstream("PUT", "/api/planung/zeitbudget", json=_budget_rumpf(data), timeout=30)
+    return r.json() if r.content else {}
+
+
+# ── Belegungen anderer Dienste (seit 2026-11-13) ─────────────────────────
+# Absender ist der Aufgaben-Dienst, im Namen des Nutzers (eigenes 60-s-Token).
+# Er schickt die ganze Liste seiner kuenftigen Aufgaben mit Uhrzeit; der
+# Kalender ersetzt damit den Bestand und plant betroffene Wochen neu.
+class BelegungIn(BaseModel):
+    id: str = Field(..., min_length=1, max_length=200)
+    titel: str = Field("", max_length=300)
+    start: _datetime
+    ende: _datetime
+
+
+class BelegungenIn(BaseModel):
+    eintraege: list[BelegungIn] = Field(default_factory=list, max_length=500)
+
+
+@router.put("/api/planung/belegungen/{quelle}")
+async def belegungen_abgleichen(
+    data: BelegungenIn,
+    quelle: str = Path(..., pattern=r"^aufgaben$"),
+    me: Me = CurrentUser,
+) -> dict:
+    rumpf = {"eintraege": [
+        {"id": e.id, "titel": e.titel, "start": e.start.isoformat(), "ende": e.ende.isoformat()}
+        for e in data.eintraege
+    ]}
+    # Neu planen kostet je Woche rund 2,5 s bei 0,25 CPU.
+    r = await upstream("PUT", f"/api/planung/belegungen/{quelle}", json=rumpf, timeout=60)
+    return r.json() if r.content else {}
+
+
+# ── Ueberschneidungen loesen (seit 2026-11-14) ───────────────────────────
+# Das Web zeigt Konflikte der angesehenen Woche und bietet die vom nativen
+# Dienst gerechneten Wege an (`konflikt_loesen.wege`). Gerechnet und geaendert
+# wird nur dort; hier werden Form und Pflichtfelder gespiegelt, damit ein
+# Tippfehler mit 422 an dieser Grenze endet.
+class KonfliktSeite(BaseModel):
+    art: str = Field(pattern=r"^(termin|sitzung|weg)$")
+    id: str = Field(min_length=1, max_length=200)
+    titel: str = ""
+    start: str
+    ende: str
+
+
+class KonfliktPaarIn(BaseModel):
+    a: KonfliktSeite
+    b: KonfliktSeite
+
+
+class KonfliktLoesenIn(BaseModel):
+    art: str = Field(pattern=r"^(termin|sitzung)$")
+    id: str = Field(min_length=1, max_length=200)
+    aktion: str = Field(pattern=r"^(verschieben|aussetzen|kuerzen|loeschen)$")
+    start: str | None = None
+    ende: str | None = None
+
+
+@router.get("/api/planung/konflikte")
+async def konflikte(
+    von: str = Query(..., pattern=_DATE),
+    bis: str = Query(..., pattern=_DATE),
+    me: Me = CurrentUser,
+) -> dict:
+    _tag(von)
+    _tag(bis)
+    # `/api/mobile/konflikte` gibt es im nativen Dienst laenger als die
+    # Planungs-Schwester; gleicher Inhalt, hier der aeltere Pfad.
+    r = await upstream("GET", "/api/mobile/konflikte", params={"von": von, "bis": bis})
+    return r.json()
+
+
+@router.post("/api/planung/konflikt/vorschlag")
+async def konflikt_vorschlag(data: KonfliktPaarIn, me: Me = CurrentUser) -> dict:
+    r = await upstream("POST", "/api/planung/konflikt/vorschlag", json=data.model_dump(), timeout=30)
+    return r.json()
+
+
+@router.post("/api/planung/konflikt/loesen")
+async def konflikt_loesen(data: KonfliktLoesenIn, me: Me = CurrentUser) -> dict:
+    r = await upstream("POST", "/api/planung/konflikt/loesen",
+                       json=data.model_dump(exclude_none=True), timeout=30)
+    return r.json() if r.content else {"ok": True}

@@ -140,6 +140,14 @@ class NachbauHandler(BaseHTTPRequestHandler):
                                       "start": "2026-08-25T09:00:00",
                                       "end": "2026-08-25T10:00:00",
                                       "recurrence_rule": None})
+        if zerlegt.path == "/api/mobile/konflikte":
+            if not self._pflicht(abfrage, ("von", "bis")):
+                return
+            return self._senden(200, {"konflikte": [{"datum": abfrage["von"],
+                "a": {"art": "termin", "id": "s1::2026-11-16", "titel": "Film",
+                      "start": "2026-11-16T20:00", "ende": "2026-11-16T23:00"},
+                "b": {"art": "termin", "id": "e2", "titel": "Anruf",
+                      "start": "2026-11-16T22:00", "ende": "2026-11-16T23:00"}}]})
         if zerlegt.path == "/api/search":
             if not self._pflicht(abfrage, ("q",)):
                 return
@@ -329,6 +337,47 @@ class BffRoutenTest(unittest.TestCase):
         self.assertEqual(angekommen, {"start": "2026-08-25", "end": "2026-08-31"})
         self.assertNotIn("date", angekommen)
 
+    def test_erinnerungs_quittung_kommt_stromaufwaerts_an(self):
+        """Regression 2026-11-13: die Route fehlte, die App bekam 404 und
+        ntfy erinnerte zusaetzlich zur App."""
+        antwort = self.klient.post(
+            "/api/mobile/erinnerungen", headers=self.kopf,
+            json={"geplant_bis": "2026-11-14T12:00+01:00", "anzahl": 7})
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        angekommen = self._abfrage_an("/api/mobile/erinnerungen")
+        self.assertEqual(angekommen["anzahl"], 7)
+        self.assertEqual(angekommen["geplant_bis"], "2026-11-14T12:00:00+01:00")
+
+    def test_belegungen_reicht_die_ganze_liste_durch(self):
+        antwort = self.klient.put(
+            "/api/planung/belegungen/aufgaben", headers=self.kopf,
+            json={"eintraege": [{"id": "a1", "titel": "Video-Ident",
+                                 "start": "2026-11-14T13:00:00+01:00",
+                                 "ende": "2026-11-14T14:00:00+01:00"}]})
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        angekommen = self._abfrage_an("/api/planung/belegungen/aufgaben")
+        self.assertEqual(angekommen["eintraege"][0]["id"], "a1")
+        self.assertEqual(angekommen["eintraege"][0]["start"], "2026-11-14T13:00:00+01:00")
+
+    def test_belegungen_fremde_quelle_kommt_nicht_durch(self):
+        antwort = self.klient.put(
+            "/api/planung/belegungen/fremd", headers=self.kopf, json={"eintraege": []})
+        self.assertEqual(antwort.status_code, 422)
+        self.assertEqual(GESEHEN, [])
+
+    def test_nachtragen_reicht_durch(self):
+        antwort = self.klient.post(
+            "/api/zeit/nachtragen", headers=self.kopf,
+            json={"habit_id": "h1", "start": "2026-11-13T09:00", "ende": "2026-11-13T11:00"})
+        self.assertEqual(antwort.status_code, 201, antwort.text)
+        self.assertEqual(self._abfrage_an("/api/zeit/nachtragen")["habit_id"], "h1")
+
+    def test_erinnerungs_quittung_ohne_datum_ist_422(self):
+        antwort = self.klient.post(
+            "/api/mobile/erinnerungen", headers=self.kopf, json={"anzahl": 1})
+        self.assertEqual(antwort.status_code, 422)
+        self.assertEqual(GESEHEN, [])
+
     def test_bootstrap_ohne_parameter_ist_422(self):
         self.assertEqual(
             self.klient.get("/api/mobile/bootstrap", headers=self.kopf).status_code, 422)
@@ -414,6 +463,52 @@ class BffRoutenTest(unittest.TestCase):
             "start_time": "19:30", "end_time": "21:30", "dauer_min": 120})
         self.assertEqual(r.status_code, 201, r.text)
         self.assertEqual(self._abfrage_an("/api/capture/commit")["dauer_min"], 120)
+
+    # ── Zeitbudget (2026-11-09) ───────────────────────────────────────────
+    def test_zeitbudget_vorschau_reicht_regler_durch(self):
+        r = self.klient.post("/api/planung/zeitbudget/vorschau", headers=self.kopf, json={
+            "woche": "2026-11-09", "wuensche": {"h1": 90}, "laengen": {"h1": 45},
+            "fuellgrad": 70, "schlaf_minuten": 480})
+        self.assertEqual(r.status_code, 200, r.text)
+        rumpf = self._abfrage_an("/api/planung/zeitbudget/vorschau")
+        self.assertEqual(rumpf["woche"], "2026-11-09")
+        self.assertEqual(rumpf["laengen"], {"h1": 45})
+        self.assertEqual(rumpf["fuellgrad"], 70)
+
+    # ── Ueberschneidungen (seit 2026-11-14) ────────────────────────────────
+    def test_konflikte_reicht_von_bis_durch(self):
+        r = self.klient.get("/api/planung/konflikte?von=2026-11-16&bis=2026-11-22", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["konflikte"][0]["a"]["titel"], "Film")
+        self.assertEqual(self._abfrage_an("/api/mobile/konflikte"), {"von": "2026-11-16", "bis": "2026-11-22"})
+
+    def test_konflikt_vorschlag_reicht_beide_seiten_durch(self):
+        paar = {"a": {"art": "termin", "id": "s1::2026-11-16", "titel": "Film",
+                      "start": "2026-11-16T20:00", "ende": "2026-11-16T23:00"},
+                "b": {"art": "termin", "id": "e2", "titel": "Anruf",
+                      "start": "2026-11-16T22:00", "ende": "2026-11-16T23:00"}}
+        r = self.klient.post("/api/planung/konflikt/vorschlag", headers=self.kopf, json=paar)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self._abfrage_an("/api/planung/konflikt/vorschlag"), paar)
+
+    def test_konflikt_loesen_kuerzen_mit_ende_und_unbekannte_aktion_422(self):
+        r = self.klient.post("/api/planung/konflikt/loesen", headers=self.kopf, json={
+            "art": "termin", "id": "s1::2026-11-16", "aktion": "kuerzen",
+            "start": "2026-11-16T20:00", "ende": "2026-11-16T22:00"})
+        self.assertEqual(r.status_code, 200, r.text)
+        rumpf = self._abfrage_an("/api/planung/konflikt/loesen")
+        self.assertEqual(rumpf["aktion"], "kuerzen")
+        self.assertEqual(rumpf["ende"], "2026-11-16T22:00")
+        GESEHEN.clear()
+        r = self.klient.post("/api/planung/konflikt/loesen", headers=self.kopf, json={
+            "art": "termin", "id": "e2", "aktion": "ersetzen"})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(GESEHEN, [])
+
+    def test_zeitbudget_fuellgrad_ueber_100_erreicht_den_kalender_nicht(self):
+        r = self.klient.put("/api/planung/zeitbudget", headers=self.kopf, json={"fuellgrad": 150})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(GESEHEN, [])
 
     # ── Auth-Riegel ───────────────────────────────────────────────────────
     def test_ohne_token_kein_zugriff(self):
