@@ -27,6 +27,8 @@ export interface KalenderEvent {
   reminder_minutes?: number | null;
   // Markiert ein Event als flexible, bewertbare Aktivität + Kategorie fürs Lernen.
   activity_type?: string | null; // lernen | sport | lesen | hobby | sonstige | null
+  /** ProjectDeck-Projekt (Slug), seit 2026-11-15. */
+  projekt?: string | null;
 }
 
 /** Eine Seite einer Überschneidung (aus /api/planung/konflikte, Felder des Dienstes). */

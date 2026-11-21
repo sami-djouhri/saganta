@@ -43,6 +43,9 @@ export interface Project {
   overdue_tasks?: number;
   /** In den letzten sieben Tagen erledigt. */
   done_7d?: number;
+  /** Gliederung (15.11.): direkte Ober- und Unterprojekte als Kennungen. */
+  eltern_ids?: number[];
+  kinder_ids?: number[];
   created_at: string;
   updated_at: string;
 }
@@ -65,6 +68,8 @@ export interface Aufgabe {
   erledigt: boolean;
   erledigt_am: string | null;
   projekt: string | null;
+  /** Zusaetzlich angeheftete Projekte (Slugs), neben dem Zuhause `projekt`. */
+  weitere_projekte?: string[] | null;
   wartet: boolean;
   wartet_grund: string | null;
   wartet_bis: string | null;
@@ -177,4 +182,94 @@ export interface AISuggest {
   summary: string;
   reasoning: string[];
   data: Record<string, unknown>;
+}
+
+/** Kurzform eines Projekts in Pfad, Eltern und Kacheln der Akte. */
+export interface ProjektKurz {
+  id: number;
+  slug: string;
+  name: string;
+  status: string;
+}
+
+export interface UnterprojektKachel extends ProjektKurz {
+  offen: number;
+  hoch: number;
+  ueberfaellig: number;
+  erledigt_7: number;
+  naechstes_datum: string | null;
+  unterprojekte: number;
+}
+
+export interface NotizKurz {
+  id: number;
+  titel: string;
+  ausschnitt: string;
+  tags: string[];
+  projekt?: string;
+}
+
+export interface AkteAufgabe extends Aufgabe {
+  notizen: NotizKurz[];
+}
+
+export interface Zeitpunkt {
+  art: 'termin' | 'frist' | 'meilenstein' | 'projektfrist' | 'durchsicht' | 'geplant';
+  datum: string;
+  uhrzeit: string | null;
+  ende: string | null;
+  titel: string;
+  projekt: string;
+  ref: string | null;
+  ort?: string | null;
+  prioritaet?: string | null;
+}
+
+export interface AkteKontakt {
+  verweis_id: number;
+  kontakt_id: string;
+  rolle: string | null;
+  projekt: string;
+  projekt_name: string;
+  name: string | null;
+  telefon: string | null;
+  email: string | null;
+  fehlt: boolean;
+  unbekannt: boolean;
+}
+
+export interface BudgetSumme {
+  budget_cent: number | null;
+  ausgaben_cent: number;
+  einnahmen_cent: number;
+  rest_cent: number | null;
+  anzahl_buchungen: number;
+}
+
+export interface Akte {
+  projekt: Project;
+  pfad: ProjektKurz[];
+  eltern: ProjektKurz[];
+  kinder: UnterprojektKachel[];
+  projekte: Record<string, { id: number; name: string }>;
+  aufgaben: AkteAufgabe[];
+  aufgaben_fehlen: boolean;
+  zeitleiste: Zeitpunkt[];
+  termine_fehlen: boolean;
+  kontakte: AkteKontakt[];
+  budget: {
+    verfuegbar: boolean;
+    gesamt: BudgetSumme | null;
+    je: Record<string, BudgetSumme & { projekt: string }>;
+    letzte: { datum: string; betrag_cent: number; text: string; kategorie: string | null }[];
+  };
+  notizen: NotizKurz[];
+  notizen_fehlen: boolean;
+}
+
+/** Ein Kontakt aus Saganta Kontakte, fuer die Auswahl beim Anheften. */
+export interface KontaktAuswahl {
+  id: string;
+  name: string;
+  gruppe?: string | null;
 }

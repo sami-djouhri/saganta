@@ -122,6 +122,30 @@ def test_projekt_loesen_laesst_aufgaben_stehen_und_trifft_kein_fremdkonto(client
     assert client.get(f"/api/aufgaben/{fremd['id']}", headers=kopf_zwei).json()["projekt"] == "altprojekt"
 
 
+def test_weitere_projekte_und_filter_ueber_mehrere(client, kopf):
+    """Ein Zuhause, an weitere Projekte geheftet (U3, 15.11.); der Filter nimmt Kommalisten."""
+    bot = _neu(client, kopf, projekt="gartiko-bot", weitere_projekte=["discord-bots", "discord-bots", "gartiko-bot"])
+    assert bot["weitere_projekte"] == ["discord-bots"]
+    web = _neu(client, kopf, projekt="gartiko-web")
+    _neu(client, kopf, projekt="lager")
+    ids = lambda q: sorted(x["id"] for x in client.get(f"/api/aufgaben?projekt={q}", headers=kopf).json())
+    assert ids("discord-bots") == [bot["id"]]
+    assert ids("gartiko-bot,gartiko-web") == sorted([bot["id"], web["id"]])
+    leer = client.put(f"/api/aufgaben/{bot['id']}", json={"weitere_projekte": None}, headers=kopf).json()
+    assert leer["weitere_projekte"] is None
+    assert ids("discord-bots") == []
+
+
+def test_weitere_projekte_brauchen_slugs(client, kopf):
+    _neu(client, kopf, status=422, weitere_projekte=["Kein Slug"])
+
+
+def test_projekt_loesen_nimmt_es_auch_aus_weiteren(client, kopf):
+    a = _neu(client, kopf, projekt="gartiko-bot", weitere_projekte=["altprojekt", "discord-bots"])
+    assert client.post("/api/projekte/altprojekt/loesen", headers=kopf).json() == {"geloest": 1}
+    assert client.get(f"/api/aufgaben/{a['id']}", headers=kopf).json()["weitere_projekte"] == ["discord-bots"]
+
+
 # --- Wo, wartet -----------------------------------------------------------
 
 
@@ -322,3 +346,25 @@ def test_planer_nimmt_projektaufgaben_nur_geheftet_oder_faellig(kal, client, kop
     _, anfrage = _plan(client, kopf, kal)
     assert {a["id"] for a in anfrage["aufgaben"]} == {eigene["id"], geheftet["id"], faellig["id"]}, \
         "Projektaufgaben ohne Tag und ohne Frist bleiben unter Projekte"
+
+
+def test_zaehlung_kennt_weitere_projekte(client, kopf):
+    """Eine angeheftete Aufgabe zaehlt auch beim weiteren Projekt, wie in der Akte."""
+    _neu(client, kopf, projekt="medien", weitere_projekte=["jellyfin"])
+    _neu(client, kopf, projekt="jellyfin")
+    stand = client.get("/api/projekte/zaehlung", headers=kopf).json()
+    assert stand["medien"]["offen"] == 1
+    assert stand["jellyfin"]["offen"] == 2
+
+
+def test_zaehlung_gruppen_zaehlt_jede_aufgabe_einmal(client, kopf, kopf_zwei):
+    """Im Teilbaum medien+jellyfin zaehlt die angeheftete Aufgabe einmal, nicht zweimal."""
+    _neu(client, kopf, projekt="medien", weitere_projekte=["jellyfin"], prioritaet="hoch")
+    _neu(client, kopf, projekt="jellyfin")
+    _neu(client, kopf_zwei, projekt="medien")
+    stand = client.post("/api/projekte/zaehlung/gruppen", headers=kopf, json={
+        "teilbaum": ["medien", "jellyfin"], "nur_jelly": ["jellyfin"], "leer": ["nichts"]}).json()
+    assert stand["teilbaum"]["offen"] == 2
+    assert stand["teilbaum"]["hoch"] == 1
+    assert stand["nur_jelly"]["offen"] == 2
+    assert stand["leer"] == {"offen": 0, "erledigt": 0, "hoch": 0, "ueberfaellig": 0, "erledigt_7": 0}

@@ -6,10 +6,10 @@ waere ``ablehnen`` moeglich, aber dann verhielte er sich anders als alle
 Schwestern, und der Schalter ist je Dienst ohnehin in der Umgebung.
 """
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 from saganta_dienst.eingang import Eingang
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -28,6 +28,9 @@ TAGESZEITEN: dict[str, tuple[int, int]] = {
 }
 
 _UHRZEIT = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+
+#: Slug eines ProjectDeck-Projekts.
+Slug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]{0,119}$")]
 
 
 class Unteraufgabe(BaseModel):
@@ -74,9 +77,18 @@ class AufgabeNeu(Eingang):
     faellig: date | None = None
     tag: date | None = None
     termin_id: str | None = Field(default=None, max_length=64)
+    #: Uhrzeit gleich beim Anlegen (seit 2026-11-15): die Schnelleingabe der
+    #: App versteht „morgen 9 Uhr“, und ihre Warteschlange faltet eine spaetere
+    #: Aenderung in ein noch wartendes Anlegen. Ohne die Felder hier lehnte der
+    #: Dienst (Fremdfelder ablehnen) genau diese Aufgabe ab.
+    start: datetime | None = None
+    ende: datetime | None = None
     dauer_min: int | None = Field(default=None, ge=1, le=1440)
     energie: Energie | None = None
     projekt: str | None = Field(default=None, min_length=1, max_length=120)
+    #: Weitere Projekte, an denen die Aufgabe zusaetzlich steht (Slugs, 2026-11-15).
+    #: Ihr Zuhause bleibt ``projekt``; hier steht, was sie ausserdem betrifft.
+    weitere_projekte: list[Slug] | None = Field(default=None, max_length=10)
     liste_id: str | None = Field(default=None, max_length=36)
     wo: Wo | None = None
     ort_name: str | None = Field(default=None, min_length=1, max_length=100)
@@ -118,6 +130,9 @@ class AufgabeAenderung(Eingang):
     dauer_min: int | None = Field(default=None, ge=1, le=1440)
     energie: Energie | None = None
     projekt: str | None = Field(default=None, min_length=1, max_length=120)
+    #: Weitere Projekte, an denen die Aufgabe zusaetzlich steht (Slugs, 2026-11-15).
+    #: Ihr Zuhause bleibt ``projekt``; hier steht, was sie ausserdem betrifft.
+    weitere_projekte: list[Slug] | None = Field(default=None, max_length=10)
     liste_id: str | None = Field(default=None, max_length=36)
     wo: Wo | None = None
     ort_name: str | None = Field(default=None, min_length=1, max_length=100)
@@ -158,6 +173,7 @@ class AufgabeAus(BaseModel):
     erledigt_am: datetime | None
     verschoben: int
     projekt: str | None
+    weitere_projekte: list[str] | None = None
     liste_id: str | None
     wo: str | None
     ort_name: str | None

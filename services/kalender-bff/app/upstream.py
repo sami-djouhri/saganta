@@ -103,6 +103,8 @@ async def upstream(
     unterscheiden kann, ob etwas fehlt oder der Dienst weg ist, ein pauschales
     502 haette beides gleich aussehen lassen.
     """
+    if timeout is None and method.upper() not in ("GET", "HEAD"):
+        timeout = settings.kalender_schreib_timeout_seconds
     async with authed_kalender_client() as client:
         try:
             r = await client.request(

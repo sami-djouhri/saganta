@@ -249,3 +249,31 @@ class NotizStand(Base):
     # zu dem Zeitpunkt. Das zeigt die Oberflaeche, nicht den Moment der Ablage.
     stand_vom: Mapped[datetime] = mapped_column(DateTime)
     erstellt_am: Mapped[datetime] = mapped_column(DateTime, default=jetzt)
+
+
+class NotizVerweis(Base):
+    """Zwei Notizen, von Hand miteinander verbunden (seit 2026-11-20).
+
+    Ungerichtet: gespeichert wird jedes Paar genau einmal, die kleinere Kennung
+    in ``a_id``. So kann es nicht zwei Zeilen fuer dieselbe Verbindung geben,
+    von denen beim Loesen nur eine faellt.
+
+    Eine eigene Tabelle statt eines siebten Typs ``notiz`` in
+    ``verknuepfungen``: dort zeigt ``ref`` auf etwas ausserhalb des Dienstes
+    und haengt an keinem Fremdschluessel. Eine geloeschte Zielnotiz liesse
+    einen Verweis ins Leere stehen, und eine aus dem Papierkorb geholte bekaeme
+    eine neue Kennung, auf die nichts mehr zeigt. Hier faellt die Zeile per
+    CASCADE mit jeder der beiden Notizen.
+
+    ``[[Titel]]`` im Text braucht keine Zeile: diese Verweise werden beim Lesen
+    aus dem Text bestimmt (``routes_netz``), sonst gaebe es zwei Wahrheiten.
+    """
+
+    __tablename__ = "notiz_verweise"
+    __table_args__ = (UniqueConstraint("a_id", "b_id", name="uq_notiz_verweis_paar"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_sub: Mapped[str] = mapped_column(String(128), index=True)
+    a_id: Mapped[int] = mapped_column(ForeignKey("notizen.id", ondelete="CASCADE"), index=True)
+    b_id: Mapped[int] = mapped_column(ForeignKey("notizen.id", ondelete="CASCADE"), index=True)
+    erstellt_am: Mapped[datetime] = mapped_column(DateTime, default=jetzt)

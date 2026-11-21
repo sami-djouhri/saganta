@@ -10,6 +10,8 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from saganta_dienst.suchmuster import ESCAPE, enthaelt
+
 from . import abgleich, kalender, orte
 from .auth import Me, verify_jwt
 from .config import settings
@@ -98,13 +100,13 @@ def liste(
     if gruppe:
         q = q.where(Kontakt.gruppe == gruppe)
     if suche and suche.strip():
-        muster = f"%{suche.strip().lower()}%"
+        muster = enthaelt(suche.strip().lower())
         q = q.where(or_(
-            func.lower(Kontakt.name).like(muster),
-            func.lower(func.coalesce(Kontakt.email, "")).like(muster),
-            func.coalesce(Kontakt.telefon, "").like(muster),
-            func.lower(func.coalesce(Kontakt.adresse, "")).like(muster),
-            func.lower(func.coalesce(Kontakt.gruppe, "")).like(muster),
+            func.lower(Kontakt.name).like(muster, escape=ESCAPE),
+            func.lower(func.coalesce(Kontakt.email, "")).like(muster, escape=ESCAPE),
+            func.coalesce(Kontakt.telefon, "").like(muster, escape=ESCAPE),
+            func.lower(func.coalesce(Kontakt.adresse, "")).like(muster, escape=ESCAPE),
+            func.lower(func.coalesce(Kontakt.gruppe, "")).like(muster, escape=ESCAPE),
         ))
     kontakte = db.scalars(q.order_by(func.lower(Kontakt.name))).all()
     return KontaktListe(

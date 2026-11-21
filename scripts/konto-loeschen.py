@@ -58,7 +58,7 @@ from konto_soll import ruht
 
 # Alle Dienste mit einem Loeschplan (``app/konto.py``), in zwei Bauarten:
 # die sieben Saganta-Backends teilen die Mechanik ueber ``saganta_dienst``, die
-# vier nativen tragen sie als abgeglichene Kopie (``konto_mechanik.py``).
+# fuenf nativen tragen sie als abgeglichene Kopie (``konto_mechanik.py``).
 # Gerufen wird beide Male gleich, deshalb steht hier eine Liste und nicht zwei.
 # Dass die Kopien nicht driften, prueft ``loeschwege-abgleichen.py``.
 MIT_LOESCHWEG = [
@@ -73,6 +73,7 @@ MIT_LOESCHWEG = [
     ("mealprep", "mealprep"),
     ("fitness", "fitness"),
     ("briefkasten", "briefkasten"),
+    ("nachrichten", "nachrichten"),  # Leser-Konten der Engine, loest news-api ab
 ]
 
 # Dienste, die Mandantenbestand halten und keinen Loeschweg haben. Sie werden

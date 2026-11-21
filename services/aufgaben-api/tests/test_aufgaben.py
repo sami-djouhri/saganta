@@ -114,3 +114,13 @@ def test_zeitraum_grenzen(client, kopf):
     assert client.get("/api/aufgaben/zeitraum?von=2026-11-12&bis=2026-11-11", headers=kopf).status_code == 422
     assert client.get("/api/aufgaben/zeitraum?von=2026-01-01&bis=2026-12-31", headers=kopf).status_code == 422
     assert client.get("/api/aufgaben/zeitraum?von=2026-11-01&bis=2026-12-31", headers=kopf).status_code == 200
+
+
+def test_uhrzeit_gleich_beim_anlegen(client, kopf):
+    """Schnelleingabe der App (seit 2026-11-15): „morgen 9 Uhr“ geht mit dem Anlegen hinaus."""
+    a = _neu(client, kopf, faellig="2026-11-16", start="2026-11-16T09:00:00+01:00", ende="2026-11-16T09:30:00+01:00")
+    assert a["start"].startswith("2026-11-16T09:00")
+    assert a["ende"].startswith("2026-11-16T09:30")
+    falsch = client.post("/api/aufgaben", json={"titel": "x", "start": "2026-11-16T10:00:00", "ende": "2026-11-16T09:00:00"},
+                         headers=kopf)
+    assert falsch.status_code == 422

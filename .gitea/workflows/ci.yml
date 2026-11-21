@@ -1,0 +1,112 @@
+# CI fuer apps/saganta (ZIELBILD 46 B1), Quelle: interne Notiz.
+# Liegt im Repo als .gitea/workflows/ci.yml (melden.py liest nur ci.yml); `pruefen.py`
+# vergleicht Zeichen fuer Zeichen, Aenderungen hier machen und `--verteilen`.
+#
+# Ein Monorepo: elf Backends unter services/, je mit eigenem pyproject. Die Python-Vorlage
+#   kennt nur EIN Paket an der Wurzel, deshalb eine eigene Vorlage. Die Schleife ueber die
+#   Dienste steht im Repo (`scripts/ci-tests.sh`, je Dienst eine venv, Mindestzahl je
+#   Dienst), damit derselbe Lauf auch von Hand geht.
+# Python und Node wie in den Dockerfiles (seit B2 am 2026-11-21: 3.13 und 24). pruefen.py
+#   vergleicht jedes FROM im Repo mit den Werten im Eintrag "saganta".
+# Zwei Jobs: `dienste` (elf venvs, auf dem Pi gemessen gut zehn Minuten) und
+#   `oberflaechen` (pnpm im Node der App-Dockerfiles, vitest in allen Paketen mit Tests,
+#   2026-11-21: 296 Tests). Der Runner hat capacity 1, die Jobs laufen nacheinander.
+# Mindestzahl Frontend: Summe der vitest-Zeilen "Tests N passed" ueber alle Pakete.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "apps/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "scripts/ci-tests.sh"
+      - ".gitea/**"
+  workflow_dispatch:
+
+jobs:
+  dienste:
+    runs-on: homelab
+    timeout-minutes: 45
+    container:
+      image: mirror.gcr.io/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+    steps:
+      - name: Quelltext holen
+        env:
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import io, os, tarfile, urllib.request
+          url = f"http://192.0.2.10:8103/api/v1/repos/{os.environ['REPO']}/archive/{os.environ['SHA']}.tar.gz"
+          anfrage = urllib.request.Request(url, headers={"Authorization": f"token {os.environ['TOKEN']}"})
+          with urllib.request.urlopen(anfrage, timeout=120) as antwort:
+              daten = antwort.read()
+          # Gitea legt das Archiv ohne Wurzelordner an, die Dateien liegen direkt oben.
+          with tarfile.open(fileobj=io.BytesIO(daten)) as tar:
+              tar.extractall(".", filter="data")
+          print(f"{len(daten)} Bytes, Stand {os.environ['SHA'][:10]}")
+          PY
+
+      # Hausregeln (leitstand #14): Kopie aus docker/scripts/hausregeln, verteilt von
+      # pruefen.py. Rot nur bei einem Verstoss, der nicht in der Grundlinie steht.
+      - name: Hausregeln
+        run: |
+          python -m pip install -q --disable-pip-version-check --root-user-action=ignore pyyaml
+          python .gitea/hausregeln.py .
+
+      - name: Ruff
+        run: |
+          python -m pip install -q --disable-pip-version-check --root-user-action=ignore ruff
+          python -m ruff check --select E9,F63,F7,F82 services scripts
+
+      - name: Tests je Dienst
+        run: bash scripts/ci-tests.sh
+
+  oberflaechen:
+    runs-on: homelab
+    timeout-minutes: 30
+    container:
+      image: mirror.gcr.io/library/node:24-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
+    env:
+      CI_MINDEST: "296"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      # node-Image ohne Python: Archiv ueber node selbst holen und mit tar auspacken.
+      - name: Quelltext holen
+        env:
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          node -e '
+            const url = `http://192.0.2.10:8103/api/v1/repos/${process.env.REPO}/archive/${process.env.SHA}.tar.gz`;
+            fetch(url, { headers: { Authorization: `token ${process.env.TOKEN}` } })
+              .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer(); })
+              .then(b => require("fs").writeFileSync("/tmp/quelle.tgz", Buffer.from(b)));
+          '
+          tar xzf /tmp/quelle.tgz
+          echo "Stand $SHA"
+
+      - name: Abhaengigkeiten
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --reporter=append-only
+
+      - name: Tests
+        run: |
+          set +e
+          pnpm -r --workspace-concurrency=1 test > /tmp/tests.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/tests.log
+          gelaufen=$(sed 's/\x1b\[[0-9;]*m//g' /tmp/tests.log | sed -n 's/^ *Tests *\([0-9]\{1,\}\) passed.*/\1/p' | awk '{s+=$1} END {print s+0}')
+          echo "gelaufen: $gelaufen, mindestens: $CI_MINDEST, Rueckgabe: $rc"
+          if [ "$gelaufen" -lt "$CI_MINDEST" ]; then
+            echo "FEHLER: zu wenige Tests gelaufen, ein Paket ist still ausgefallen" >&2
+            exit 1
+          fi
+          exit $rc

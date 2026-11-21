@@ -5,6 +5,7 @@ export const APP_NAME = 'Notizen';
 
 export const NAV = [
   { href: '/', label: 'Alle Notizen', kurz: 'Notizen', icon: 'pen' },
+  { href: '/netz', label: 'Netz', icon: 'share-2' },
   { href: '/freigaben', label: 'Geteilte Links', kurz: 'Geteilt', icon: 'globe' },
   { href: '/papierkorb', label: 'Papierkorb', icon: 'trash' },
 ] as const;

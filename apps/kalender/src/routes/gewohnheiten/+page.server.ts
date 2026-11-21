@@ -26,10 +26,14 @@ export interface Gewohnheit {
   learning_mode: boolean;
   focus_block_minutes: number;
   break_minutes: number;
+  /** morgens|mittags|nachmittags|abends, null = egal (seit 2026-11-21). */
+  wunschzeit?: string | null;
 }
 
 /** Muss dem Muster in `kalender/backend/schemas.py` und im kalender-bff gleichen. */
 const KATEGORIEN = ['lernen', 'lesen', 'sport', 'hobby', 'sonstige'] as const;
+/** Leer = egal; gleiches Muster wie Dienst und kalender-bff. */
+const WUNSCHZEITEN = ['', 'morgens', 'mittags', 'nachmittags', 'abends'] as const;
 
 const UHR = /^([01]\d|2[0-3]):[0-5]\d$/;
 const FARBE = /^#[0-9a-fA-F]{6}$/;
@@ -89,6 +93,10 @@ function rumpf(fd: FormData): { daten: Record<string, unknown> } | { fehler: str
   if (zeiten.weekday_end <= zeiten.weekday_start) return { fehler: 'Werktags endet das Fenster vor dem Anfang.' };
   if (zeiten.weekend_end <= zeiten.weekend_start) return { fehler: 'Am Wochenende endet das Fenster vor dem Anfang.' };
 
+  // Immer mitschicken, leer heisst „egal": ein fehlendes Feld liesse der Dienst stehen.
+  const wunschzeit = String(fd.get('wunschzeit') ?? '');
+  if (!(WUNSCHZEITEN as readonly string[]).includes(wunschzeit)) return { fehler: 'Unbekannte Wunschzeit.' };
+
   const lernmodus = fd.get('learning_mode') === 'on';
   const daten: Record<string, unknown> = {
     name,
@@ -97,6 +105,7 @@ function rumpf(fd: FormData): { daten: Record<string, unknown> } | { fehler: str
     target_hours_per_week: ziel,
     session_duration_minutes: dauer,
     ...zeiten,
+    wunschzeit,
     learning_mode: lernmodus,
   };
   if (lernmodus) {

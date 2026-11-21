@@ -69,11 +69,14 @@ VERGLICHEN = ("titel", "notiz", "prioritaet", "faellig", "dauer_min", "projekt",
 
 
 def prioritaet(stufe: int | None) -> str:
+    # Nur Stufe 1 ist hoch. Bis 2026-11-21 galt das auch fuer Stufe 2, der
+    # haeufigsten Planstufe; damit waren 80 von 268 offenen Aufgaben hoch und
+    # die Prioritaet trennte nichts mehr.
     if stufe is None:
         return "mittel"
-    if stufe <= 2:
+    if stufe <= 1:
         return "hoch"
-    if stufe == 3:
+    if stufe <= 3:
         return "mittel"
     return "niedrig"
 
@@ -245,6 +248,8 @@ def selbsttest() -> int:
          {"titel": "Tests nachziehen", "prioritaet": "niedrig", "dauer_min": 30,
           "faellig": "2026-12-01", "wartet_grund": "blockiert (aus dem ProjectDeck)",
           "projekt": "y", "herkunft": "projectdeck:3"}),
+        ({"id": 6, "title": "Planstufe zwei", "status": "open", "priority": 2}, "z",
+         {"titel": "Planstufe zwei", "prioritaet": "mittel"}),
         ({"id": 4, "title": "Ownership klaeren", "status": "in_progress", "priority": 4}, "z",
          {"titel": "Ownership klaeren", "prioritaet": "niedrig"}),
         ({"id": 5, "title": "Grosser Umbau", "status": "open", "priority": 3,

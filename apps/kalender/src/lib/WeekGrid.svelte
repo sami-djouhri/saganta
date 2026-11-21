@@ -17,6 +17,7 @@
     localYmd,
     minutesOfDay,
   } from '$lib/cal';
+  import { dauerText } from '$lib/terminzeit';
 
   interface Props {
     days: string[]; // 7 Keys Mo–So
@@ -28,10 +29,14 @@
     onCreateAt: (dayKey: string, hour: number) => void;
     /** Ziehen: Tage und Minuten (Raster 15), seit 2026-11-07. Ohne: kein Ziehen. */
     onMoveEvent?: (ev: KalenderEvent, tage: number, minuten: number) => void;
+    /** Länge ziehen an der Unterkante: Minuten mehr oder weniger (Raster 15), seit 2026-11-21. */
+    onResizeEvent?: (ev: KalenderEvent, minuten: number) => void;
     /** Kennungen der Termine, die sich mit etwas überschneiden (seit 2026-11-14). */
     konfliktIds?: Set<string>;
+    /** Projektnamen je Slug für die Marke im Block. */
+    projektNamen?: Record<string, string>;
   }
-  let { days, today, events, calMeta, nowMs, onSelectEvent, onCreateAt, onMoveEvent, konfliktIds = new Set() }: Props = $props();
+  let { days, today, events, calMeta, nowMs, onSelectEvent, onCreateAt, onMoveEvent, onResizeEvent, konfliktIds = new Set(), projektNamen = {} }: Props = $props();
 
   // Ziehen mit Zeiger-Ereignissen statt HTML5-Drag: das gibt es auf dem
   // Telefon nicht. Maus: ab 6 px Bewegung. Finger: erst nach 400 ms Halten,
@@ -91,6 +96,56 @@
   }
 
   const HOUR_H = 46; // px pro Stunde
+
+  // ── Länge ziehen (seit 2026-11-21) ──
+  // Ein eigener Griff an der Unterkante, damit Verschieben und Dehnen sich nicht
+  // in die Quere kommen. Raster 15 min, nie kürzer als 15 min. Finger: wie beim
+  // Verschieben erst nach 400 ms Halten.
+  let dehnung = $state<{ id: string; dy: number } | null>(null);
+  let dehnStart: { y: number; aktiv: boolean; finger: boolean; minDy: number } | null = null;
+  let dehnWarte: ReturnType<typeof setTimeout> | undefined;
+  const auf15 = (dy: number) => Math.round((dy / HOUR_H) * 4) * 15;
+
+  function dehnRunter(e: PointerEvent, ev: KalenderEvent, dauerMin: number) {
+    e.stopPropagation();
+    if (!onResizeEvent || istAufgabe(ev) || e.button !== 0) return;
+    const finger = e.pointerType === 'touch';
+    // Höchstens bis 15 min verkürzen.
+    dehnStart = { y: e.clientY, aktiv: !finger, finger, minDy: -((dauerMin - 15) / 60) * HOUR_H };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    if (finger) {
+      dehnWarte = setTimeout(() => {
+        if (dehnStart) { dehnStart.aktiv = true; dehnung = { id: ev.id, dy: 0 }; }
+      }, 400);
+    } else {
+      dehnung = { id: ev.id, dy: 0 };
+    }
+  }
+  function dehnBewegen(e: PointerEvent, ev: KalenderEvent) {
+    e.stopPropagation();
+    if (!dehnStart) return;
+    const dy = e.clientY - dehnStart.y;
+    if (!dehnStart.aktiv) {
+      if (Math.abs(dy) > 8) { clearTimeout(dehnWarte); dehnStart = null; }
+      return;
+    }
+    e.preventDefault();
+    dehnung = { id: ev.id, dy: Math.max(dehnStart.minDy, dy) };
+  }
+  function dehnHoch(e: PointerEvent, ev: KalenderEvent) {
+    e.stopPropagation();
+    clearTimeout(dehnWarte);
+    const aktiv = dehnStart?.aktiv;
+    dehnStart = null;
+    const dy = dehnung?.dy ?? 0;
+    dehnung = null;
+    klickSperre = true;
+    setTimeout(() => (klickSperre = false), 0);
+    const minuten = auf15(dy);
+    if (aktiv && minuten !== 0) onResizeEvent?.(ev, minuten);
+  }
+  const dauerVon = (ev: KalenderEvent) =>
+    Math.max(15, minutesOfDay(ev.end_at ?? ev.end ?? '') - minutesOfDay(ev.start_at ?? ev.start ?? ''));
 
   interface Block {
     ev: KalenderEvent;
@@ -335,6 +390,7 @@
         <!-- Getimte Termine -->
         {#each cell?.timed ?? [] as b (b.ev.id + d)}
           {@const c = eventColor(b.ev, calMeta)}
+          {@const extra = dehnung?.id === b.ev.id ? (auf15(dehnung.dy) / 60) * HOUR_H : 0}
           <button
             type="button"
             onclick={(e) => {
@@ -346,8 +402,8 @@
             onpointermove={(e) => bewegen(e, b.ev)}
             onpointerup={() => hoch(b.ev)}
             onpointercancel={() => { clearTimeout(warte); start = null; zug = null; }}
-            class="absolute overflow-hidden rounded-md border-l-2 px-1 py-0.5 text-left text-xs leading-tight shadow-sm hover:brightness-125"
-            style="top:{b.top}px; height:{b.height}px; left:calc({(b.lane / b.lanes) *
+            class="absolute flex flex-col justify-start overflow-hidden rounded-md border-l-2 px-1 py-0.5 text-left text-xs leading-tight shadow-sm hover:brightness-125"
+            style="top:{b.top}px; height:{Math.max(18, b.height + extra)}px; left:calc({(b.lane / b.lanes) *
               100}% + 2px); width:calc({100 / b.lanes}% - 4px); background-color:{c}26; border-color:{c};{zug?.id === b.ev.id
               ? ` transform:translate(${zug.dx}px, ${zug.dy}px); z-index:20; touch-action:none; cursor:grabbing;`
               : ziehbar(b.ev) ? ' cursor:grab;' : ''}"
@@ -358,9 +414,28 @@
                 <span class="shrink-0 text-kupfer" aria-label="Überschneidung"><Icon name="alert-triangle" size={11} /></span>
               {/if}
               <span class="truncate">{b.ev.title}</span>
+              {#if b.ev.projekt}
+                <span class="shrink-0 text-muted" title="Projekt „{projektNamen[b.ev.projekt] ?? b.ev.projekt}“"><Icon name="folder" size={11} /></span>
+              {/if}
             </div>
             {#if b.height > 28}
-              <div class="truncate text-muted">{fmtTime(b.ev.start_at ?? b.ev.start ?? '')}</div>
+              <div class="truncate text-muted">{fmtTime(b.ev.start_at ?? b.ev.start ?? '')}{#if dehnung?.id === b.ev.id}, {dauerText(dauerVon(b.ev) + auf15(dehnung.dy))}{/if}</div>
+            {/if}
+            {#if b.ev.projekt && b.height > 46}
+              <div class="truncate text-muted">{projektNamen[b.ev.projekt] ?? b.ev.projekt}</div>
+            {/if}
+            {#if onResizeEvent && !istAufgabe(b.ev)}
+              <!-- Griff zum Länge ziehen; ein span, weil ein Knopf im Knopf ungültig wäre. -->
+              <span
+                role="presentation"
+                class="absolute inset-x-0 bottom-0 h-2.5 cursor-ns-resize touch-none hover:bg-white/10"
+                title="Länge ziehen"
+                onpointerdown={(e) => dehnRunter(e, b.ev, dauerVon(b.ev))}
+                onpointermove={(e) => dehnBewegen(e, b.ev)}
+                onpointerup={(e) => dehnHoch(e, b.ev)}
+                onpointercancel={(e) => { e.stopPropagation(); clearTimeout(dehnWarte); dehnStart = null; dehnung = null; }}
+                onclick={(e) => e.stopPropagation()}
+              ></span>
             {/if}
           </button>
         {/each}

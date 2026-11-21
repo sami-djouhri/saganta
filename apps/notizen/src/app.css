@@ -1,6 +1,42 @@
 @import 'tailwindcss';
 @import '@saganta/design-tokens/theme.css';
 
+/* Probe 2026-11-21: Notizen in leuchtendem Orange auf Schwarz statt der
+   warmen Nachtstudie. Erst hier zum Ansehen; gefaellt es, wandert der Satz
+   nach theme.css und gilt fuer die ganze Suite. Die App traegt dieselben
+   Werte (NotizenFarben.kt). Kontraste gegen surface #0A0A0A gerechnet:
+   text 17,4:1, muted 7,6:1, akzent 7,6:1, border-stark 3,9:1, Schrift auf Orange 7,5:1. */
+:root {
+  --saganta-surface: 10 10 10;
+  --saganta-surface-2: 24 24 24;
+  --saganta-text: 240 240 240;
+  --saganta-muted: 160 160 160;
+  --saganta-border: 44 44 44;
+  --saganta-border-stark: 110 110 110;
+  --saganta-focus: 255 122 26;
+  --saganta-akzent: 255 122 26;
+  --saganta-akzent-stark: 255 160 70;
+  --saganta-kupfer: 255 140 50;
+  --color-accent-300: #ffab70;
+  --color-accent-400: #ff8f3d;
+  --color-accent-500: #ff7a1a;
+  --color-accent-600: #e8650a;
+  --color-accent-700: #b84f08;
+  --color-accent-ink: #160a00;
+}
+
+/* Leuchten am Hauptknopf und an gewaehlten Filtern, wie in der Tardis-App.
+   Nur dort, wo das Auge hin soll; leuchtet alles, leuchtet nichts. */
+.bg-accent-500 {
+  box-shadow: 0 0 18px -4px rgb(255 122 26 / 0.65);
+}
+.text-akzent {
+  text-shadow: 0 0 10px rgb(255 122 26 / 0.35);
+}
+h1.font-display {
+  text-shadow: 0 0 22px rgb(255 122 26 / 0.18);
+}
+
 /* Gerendertes Markdown. Die Klassen stehen hier statt an den erzeugten Knoten,
    weil der Renderer (lib/markdown.ts) bewusst nur DOM-Elemente baut und keine
    Gestaltung kennt, er soll auch dann richtig bleiben, wenn sich das Aussehen
@@ -60,6 +96,17 @@
   color: var(--color-akzent);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+/* Verweis auf eine andere Notiz: ohne Unterstrich, mit gepunkteter Linie,
+   damit er sich von Links nach draussen unterscheidet. Fehlt das Ziel, ist er
+   gedaempft und gestrichelt, wie in Obsidian. */
+.markdown a.verweis {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.markdown a.verweis[data-fehlt] {
+  color: var(--color-muted);
+  text-decoration-style: dashed;
 }
 .markdown code {
   background: var(--color-surface-2);

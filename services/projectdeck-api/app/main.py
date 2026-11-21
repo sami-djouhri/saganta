@@ -12,6 +12,7 @@ from .db import Base, engine, get_db, init_db
 from .routes_dashboard import router as dashboard_router
 from .routes_planning import router as planning_router
 from .routes_projects import router as projects_router
+from .routes_akte import router as akte_router
 from .auth import verify_jwt
 from .konto import PLAN as LOESCHPLAN
 
@@ -78,6 +79,7 @@ def health_ready() -> JSONResponse:
 
 
 app.include_router(projects_router, prefix="/api/projects", tags=["projects"])
+app.include_router(akte_router, prefix="/api", tags=["akte"])
 app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 app.include_router(planning_router, prefix="/api", tags=["planning"])
 # Auskunft und Loeschung des eigenen Bestands. Der Loeschweg steht in konto.py,

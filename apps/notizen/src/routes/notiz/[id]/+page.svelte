@@ -5,11 +5,14 @@
   import { Button, Icon } from '@saganta/ui';
   import AnhangBild from '$lib/components/AnhangBild.svelte';
   import MarkdownAnsicht from '$lib/components/MarkdownAnsicht.svelte';
+  import NotizWahl from '$lib/components/NotizWahl.svelte';
   import TeilenDialog from '$lib/components/TeilenDialog.svelte';
   import VerknuepfenDialog from '$lib/components/VerknuepfenDialog.svelte';
+  import VerweisVorschlaege from '$lib/components/VerweisVorschlaege.svelte';
   import { page } from '$app/stores';
+  import { verweisSchluessel } from '$lib/markdown';
   import { TYP_BESCHRIFTUNG, TYP_SYMBOL, zielAdresse } from '$lib/verknuepfungen';
-  import type { Fundstueck } from '$lib/types';
+  import type { Fundstueck, Verknuepfung } from '$lib/types';
   import type { ActionData, PageData } from './$types';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -26,6 +29,8 @@
   let ansicht = $state<'schreiben' | 'lesen'>('schreiben');
   let teilenOffen = $state(false);
   let verknuepfenOffen = $state(false);
+  // Die Aufgabe, deren X gerade gefragt hat (Verknüpfung lösen oder Aufgabe löschen).
+  let loesenFrage = $state<Verknuepfung | null>(null);
   let gespeichertUm = $state('');
 
   // Nach dem Neuladen der Seitendaten (z. B. nach einem Anhang-Upload) die
@@ -169,6 +174,32 @@
     verknuepfenOffen = false;
     // Im nächsten Zyklus abschicken, wenn die versteckten Felder gefüllt sind.
     queueMicrotask(() => verknuepfenForm?.requestSubmit());
+  }
+
+  // --- Verweise zwischen Notizen (seit 2026-11-20) ---------------------
+  let wahlOffen = $state(false);
+  let verbindenForm = $state<HTMLFormElement | null>(null);
+  let verbindenMit = $state('');
+  function verbindungUebernehmen(id: number) {
+    verbindenMit = String(id);
+    wahlOffen = false;
+    queueMicrotask(() => verbindenForm?.requestSubmit());
+  }
+
+  // `[[Titel]]` → Kennung, aus dem gespeicherten Stand. Ein eben getippter,
+  // noch nicht gespeicherter Verweis gilt bis zum Speichern als fehlend.
+  let verweisZiele = $derived(
+    new Map((data.netz?.verweist_auf ?? []).map((v) => [verweisSchluessel(v.text), v.id])),
+  );
+  const aufloesen = (titel: string) => verweisZiele.get(verweisSchluessel(titel)) ?? null;
+
+  let inhaltFeld = $state<HTMLTextAreaElement | null>(null);
+
+  let anlegenForm = $state<HTMLFormElement | null>(null);
+  let anlegenTitel = $state('');
+  function verweisAnlegen(t: string) {
+    anlegenTitel = t;
+    queueMicrotask(() => anlegenForm?.requestSubmit());
   }
 </script>
 
@@ -324,22 +355,126 @@
     </div>
 
     {#if ansicht === 'schreiben'}
+      <!-- relative: an diesem Rahmen richtet sich die Vorschlagsliste für [[ aus. -->
+      <div class="relative max-w-3xl">
       <textarea
         name="inhalt"
+        bind:this={inhaltFeld}
         bind:value={inhalt}
         rows="18"
         spellcheck="true"
         onpaste={bildEingefuegt}
-        placeholder="Markdown: # Überschrift, **fett**, - Liste, [Link](https://…), ```Code```"
+        placeholder="Markdown: # Überschrift, **fett**, - Liste, [Link](https://…), [[andere Notiz]]"
         class="min-h-96 w-full max-w-3xl rounded-md border border-border bg-surface px-4 py-3 text-base leading-7 [field-sizing:content] focus:border-border-stark focus:outline-none"
       ></textarea>
+      <VerweisVorschlaege feld={inhaltFeld} bind:wert={inhalt} ohne={data.notiz.id} />
+      </div>
     {:else}
       <input type="hidden" name="inhalt" value={inhalt} />
       <div class="min-h-64 max-w-3xl rounded-md border border-border bg-surface px-4 py-3">
-        <MarkdownAnsicht quelle={inhalt} />
+        <MarkdownAnsicht quelle={inhalt} verweise={aufloesen} anlegen={verweisAnlegen} />
       </div>
     {/if}
   </form>
+
+  <!-- Verweise zwischen Notizen: von Hand verbunden, per [[Titel]] hin und zurück -->
+  <section class="rounded-lg border border-border p-4" aria-labelledby="netz-kopf">
+    <div class="flex items-center justify-between">
+      <h2 id="netz-kopf" class="text-sm font-semibold">Verbundene Notizen</h2>
+      <div class="flex items-center gap-1">
+        <a href="/netz?fokus={data.notiz.id}" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted hover:bg-surface-2 hover:text-text max-md:min-h-11">
+          <Icon name="share-2" size={14} /> Im Netz
+        </a>
+        <Button type="button" variant="ghost" size="sm" onclick={() => (wahlOffen = true)}>
+          <Icon name="link" size={14} /> Verbinden
+        </Button>
+      </div>
+    </div>
+
+    <form method="POST" action="?/verbinden" bind:this={verbindenForm} use:enhance>
+      <input type="hidden" name="mit" value={verbindenMit} />
+    </form>
+    <form method="POST" action="?/neuAusVerweis" bind:this={anlegenForm} use:enhance={({ cancel }) => {
+      if (geaendert && !confirm('Ungespeicherte Änderungen gehen verloren. Trotzdem die neue Notiz öffnen?')) {
+        cancel();
+        return;
+      }
+      verlassenErlaubt = true;
+    }}>
+      <input type="hidden" name="titel" value={anlegenTitel} />
+    </form>
+
+    {#if !data.netz}
+      <p class="mt-3 text-sm text-muted">Die Verweise ließen sich gerade nicht laden.</p>
+    {:else}
+      {@const netz = data.netz}
+      {#if netz.verbunden.length === 0 && netz.erwaehnt_in.length === 0 && netz.verweist_auf.length === 0}
+        <p class="mt-3 text-sm text-muted">
+          Noch keine. Verbinde diese Notiz mit einer anderen, oder schreib <code>[[</code> in den
+          Text, dann schlägt die Liste passende Titel vor und daraus wird ein Link. Mehrere auf einmal verbindest du in der Liste
+          über „Auswählen“.
+        </p>
+      {/if}
+
+      {#if netz.verbunden.length}
+        <ul class="mt-3 flex flex-col gap-1">
+          {#each netz.verbunden as n (n.id)}
+            <li class="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-2">
+              <span class="shrink-0 text-muted"><Icon name="link" size={16} /></span>
+              <a href="/notiz/{n.id}" class="min-w-0 flex-1 max-md:py-1.5">
+                <span class="block truncate text-sm hover:underline">{n.titel || 'Ohne Titel'}</span>
+                {#if n.ausschnitt}<span class="block truncate text-xs text-muted">{n.archiviert ? 'Archiv · ' : ''}{n.ausschnitt}</span>{/if}
+              </a>
+              <form method="POST" action="?/entbinden" use:enhance class="md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                <input type="hidden" name="mit" value={n.id} />
+                <button type="submit" class="grid size-11 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text md:size-8" aria-label="Verbindung lösen">
+                  <Icon name="x" size={14} />
+                </button>
+              </form>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if netz.verweist_auf.length}
+        <h3 class="mt-4 text-xs font-semibold text-muted">Verweist im Text auf</h3>
+        <ul class="mt-1 flex flex-wrap gap-2">
+          {#each netz.verweist_auf as v (v.text)}
+            <li>
+              {#if v.id}
+                <a href="/notiz/{v.id}" class="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-sm hover:bg-surface-2 max-md:min-h-11">
+                  <Icon name="file-text" size={12} />{v.text}
+                </a>
+              {:else}
+                <button
+                  type="button"
+                  onclick={() => verweisAnlegen(v.text)}
+                  title="Gibt es noch nicht: anlegen"
+                  class="inline-flex items-center gap-1 rounded-full border border-dashed border-border-stark px-2.5 py-1 text-sm text-muted hover:text-text max-md:min-h-11"
+                >
+                  <Icon name="plus" size={12} />{v.text}
+                </button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if netz.erwaehnt_in.length}
+        <h3 class="mt-4 text-xs font-semibold text-muted">Erwähnt in</h3>
+        <ul class="mt-1 flex flex-col gap-1">
+          {#each netz.erwaehnt_in as n (n.id)}
+            <li>
+              <a href="/notiz/{n.id}" class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-2 max-md:min-h-11">
+                <span class="shrink-0 text-muted"><Icon name="file-text" size={16} /></span>
+                <span class="min-w-0 flex-1 truncate text-sm">{n.titel || 'Ohne Titel'}</span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+  </section>
 
   <div class="grid gap-5 lg:grid-cols-2">
     <!-- Verknüpfungen -->
@@ -395,12 +530,19 @@
               </span>
               <!-- Am PC erst beim Ueberfahren, am Handy immer sichtbar: dort gibt es
                    kein Hover, der Knopf war unsichtbar und blind antippbar. -->
-              <form method="POST" action="?/entknuepfen" use:enhance class="md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-                <input type="hidden" name="id" value={v.id} />
-                <button type="submit" class="grid size-11 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text md:size-8" aria-label="Verknüpfung lösen">
+              {#if v.typ === 'aufgabe' && data.kannAufgabe}
+                <!-- Bei einer Aufgabe erst fragen: nur die Verknüpfung oder die Aufgabe selbst. -->
+                <button type="button" onclick={() => (loesenFrage = v)} class="grid size-11 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text md:size-8 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100" aria-label="Verknüpfung lösen oder Aufgabe löschen">
                   <Icon name="x" size={14} />
                 </button>
-              </form>
+              {:else}
+                <form method="POST" action="?/entknuepfen" use:enhance class="md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                  <input type="hidden" name="id" value={v.id} />
+                  <button type="submit" class="grid size-11 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text md:size-8" aria-label="Verknüpfung lösen">
+                    <Icon name="x" size={14} />
+                  </button>
+                </form>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -575,6 +717,13 @@
                   zurückziehen
                 </button>
               </form>
+            {:else}
+              <form method="POST" action="?/freigabeEntfernen" use:enhance>
+                <input type="hidden" name="id" value={f.id} />
+                <button type="submit" class="min-h-11 text-xs text-muted underline hover:text-text md:min-h-0">
+                  entfernen
+                </button>
+              </form>
             {/if}
           </li>
         {/each}
@@ -588,6 +737,40 @@
     </section>
   {/if}
 </div>
+
+<NotizWahl
+  offen={wahlOffen}
+  ohne={[data.notiz.id, ...(data.netz?.verbunden.map((n) => n.id) ?? [])]}
+  schliessen={() => (wahlOffen = false)}
+  uebernehmen={verbindungUebernehmen}
+/>
+
+{#if loesenFrage}
+  {@const frage = loesenFrage}
+  <div
+    class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-24"
+    role="presentation"
+    onclick={(e) => e.target === e.currentTarget && (loesenFrage = null)}
+    onkeydown={(e) => e.key === 'Escape' && (loesenFrage = null)}
+  >
+    <div class="w-full max-w-md rounded-lg border border-border bg-surface p-4 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="loesen-titel">
+      <h2 id="loesen-titel" class="font-semibold">Aufgabe „{frage.label || frage.ref}“</h2>
+      <p class="mt-1 text-sm text-muted">Nur die Verknüpfung zu dieser Notiz entfernen oder die Aufgabe ganz löschen?</p>
+      <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <form method="POST" action="?/entknuepfen" use:enhance={() => async ({ update }) => { loesenFrage = null; await update(); }}>
+          <input type="hidden" name="id" value={frage.id} />
+          <Button type="submit" size="sm">Nur Verknüpfung entfernen</Button>
+        </form>
+        <form method="POST" action="?/aufgabeLoeschen" use:enhance={() => async ({ update }) => { loesenFrage = null; await update(); }}>
+          <input type="hidden" name="id" value={frage.id} />
+          <input type="hidden" name="ref" value={frage.ref} />
+          <Button type="submit" size="sm" variant="danger"><Icon name="trash" size={14} /> Aufgabe löschen</Button>
+        </form>
+        <Button type="button" size="sm" variant="ghost" onclick={() => (loesenFrage = null)}>Abbrechen</Button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <VerknuepfenDialog
   offen={verknuepfenOffen}

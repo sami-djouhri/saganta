@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { notizDazuAusFormular, notizenZuEinem } from '@saganta/notizen-anschluss';
 import type { Fundtermin, Kontakt, TerminVerweis } from '$lib/typen';
-import { DienstFehler, dienst, dienstCtx, termineSuchen, ursache } from '$lib/server/dienst';
+import { DienstFehler, dienst, dienstCtx, projekteDesKontakts, termineSuchen, ursache } from '$lib/server/dienst';
 import { kontaktAus } from '$lib/server/formular';
 import { notizAnschluss } from '$lib/server/notizen';
 import type { Actions, PageServerLoad } from './$types';
@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ locals, fetch, params, url }) => {
     error(502, ursache(err));
   }
   const terminsuche = url.searchParams.get('terminsuche');
-  const [gruppen, notizen, funde] = await Promise.all([
+  const [gruppen, notizen, funde, projekte] = await Promise.all([
     dienst<string[]>(ctx, '/api/gruppen', fetch).catch(() => [] as string[]),
     notizenZuEinem('kontakt', kontakt.id, notizAnschluss(locals, fetch)),
     terminsuche !== null
@@ -26,8 +26,9 @@ export const load: PageServerLoad = async ({ locals, fetch, params, url }) => {
           () => ({ treffer: [] as Fundtermin[], stumm: true }),
         )
       : Promise.resolve(null),
+    projekteDesKontakts(locals.user, kontakt.id, fetch),
   ]);
-  return { kontakt, gruppen, notizen, terminsuche, funde };
+  return { kontakt, gruppen, notizen, terminsuche, funde, projekte };
 };
 
 async function termineSetzen(

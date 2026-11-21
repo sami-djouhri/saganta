@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     # Upstream nativer kalender-Container (cc-core). LAN-Fallback: host:8085.
     kalender_base_url: str = "http://kalender:8085"
     kalender_timeout_seconds: float = 5.0
+    # Schreibzugriffe (Termin anlegen, aendern, verschieben) duerfen laenger:
+    # der Kalender plant danach die Woche neu, rund 2,5 s bei 0,25 CPU, und
+    # waehrend ein anderer Dienst ihn befragt, kam ein PUT in 5 s nicht dran
+    # (502 in der App, gemessen 2026-11-19).
+    kalender_schreib_timeout_seconds: float = 20.0
     # Aufgaben-Dienst, nur lesend: was dort geplant ist, zeigt der Kalender
     # (seit 2026-11-11). 60-s-Token mit `aud=aufgaben-api`, gestempelt mit
     # `jwt_secret`, wie `projectdeck-api/app/aufgaben_dienst.py`.

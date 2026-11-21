@@ -11,3 +11,7 @@
  * Symbole, die fehlen oder die Zeilenhöhe verschieben.
  */
 export { default as Icon } from '../../../packages/ui/src/components/Icon.svelte';
+// Termin-Editor (seit 2026-11-15): Notiz-Block und Projektbaum, echte Dateien.
+export { default as NotizenBlock } from '../../../packages/ui/src/components/NotizenBlock.svelte';
+export { eingerueckt, projektBaum, type BaumZeile } from '../../../packages/ui/src/projektbaum';
+export { projektUrl } from '../../../packages/ui/src/links';

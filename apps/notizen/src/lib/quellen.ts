@@ -17,6 +17,7 @@
 
 import { env } from '$env/dynamic/private';
 import { issueBackendToken, type SagantaUser } from '@saganta/auth';
+import { projektBaum } from '@saganta/ui';
 import type { Fundstueck, VerknuepfungsTyp } from './types';
 
 // Beschriftungen und Zieladressen stehen in `verknuepfungen.ts`, sie werden
@@ -123,6 +124,31 @@ async function kalenderListe(
     .slice(0, MAX_TREFFER);
 }
 
+/**
+ * Offene Aufgaben aus dem Aufgaben-Dienst. Bis 2026-11-21 fragte die Suche
+ * hier `/api/todos` am Kalender, und dort liegt seit dem Umzug vom 03.11.
+ * nichts mehr: die Suche fand keine Aufgabe, ohne zu scheitern.
+ */
+async function offeneAufgaben(
+  user: SagantaUser,
+  suche: string,
+  fetcher: typeof fetch,
+): Promise<Fundstueck[]> {
+  const basis = (env.AUFGABEN_API_BASE_URL ?? '').replace(/\/$/, '');
+  if (!basis) throw new Error('AUFGABEN_API_BASE_URL fehlt');
+  const kopf = { Authorization: `Bearer ${token(user, 'aufgaben-api')}` };
+  const daten = await holen(`${basis}/api/aufgaben`, kopf, fetcher);
+  return alsListe(daten)
+    .map((a) => ({
+      typ: 'aufgabe' as VerknuepfungsTyp,
+      ref: text(a, 'id'),
+      label: text(a, 'titel') || '(ohne Titel)',
+      zusatz: [datumKurz(text(a, 'faellig', 'tag')), text(a, 'projekt')].filter(Boolean).join(' · '),
+    }))
+    .filter((t) => t.ref && passt(suche, t.label, t.zusatz ?? ''))
+    .slice(0, MAX_TREFFER);
+}
+
 async function projekte(
   user: SagantaUser,
   suche: string,
@@ -131,16 +157,44 @@ async function projekte(
   const basis = env.PROJECTDECK_API_BASE_URL ?? 'http://saganta-projectdeck-api:8000';
   const kopf = { Authorization: `Bearer ${token(user, 'projectdeck-api')}` };
   const daten = await holen(`${basis}/api/projects`, kopf, fetcher);
-  return alsListe(daten)
+  const roh = alsListe(daten);
+  // Gliederung (seit 2026-11-15): in Baumreihenfolge, das Oberprojekt als
+  // Zusatz. Nicht in die Beschriftung: die wird an der Verknuepfung als
+  // Kopie gespeichert und soll der Projektname bleiben.
+  const nachId = new Map<number, Record<string, unknown>>();
+  for (const p of roh) if (typeof p.id === 'number') nachId.set(p.id, p);
+  const rang = new Map<string, number>();
+  projektBaum(
+    roh
+      .filter((p) => typeof p.slug === 'string')
+      .map((p) => ({
+        slug: String(p.slug),
+        name: text(p, 'name', 'title') || String(p.slug),
+        deck_id: typeof p.id === 'number' ? p.id : null,
+        eltern_ids: Array.isArray(p.eltern_ids) ? (p.eltern_ids as number[]) : [],
+        kinder_ids: Array.isArray(p.kinder_ids) ? (p.kinder_ids as number[]) : [],
+      })),
+  ).forEach((z, i) => {
+    if (!rang.has(z.slug)) rang.set(z.slug, i);
+  });
+  const oben = (p: Record<string, unknown>): string =>
+    (Array.isArray(p.eltern_ids) ? (p.eltern_ids as number[]) : [])
+      .map((id) => nachId.get(id))
+      .filter((e): e is Record<string, unknown> => !!e)
+      .map((e) => text(e, 'name', 'title'))
+      .filter(Boolean)
+      .join(', ');
+  return roh
     .map((p) => ({
       typ: 'projekt' as VerknuepfungsTyp,
       // Der Slug ist die sprechende Kennung von ProjectDeck und überlebt eine
       // Umbenennung des Projekts, deshalb er und nicht die Zeilennummer.
       ref: text(p, 'slug', 'id'),
       label: text(p, 'name', 'title') || text(p, 'slug'),
-      zusatz: text(p, 'status'),
+      zusatz: [oben(p) ? `unter ${oben(p)}` : '', text(p, 'status')].filter(Boolean).join(' · '),
     }))
     .filter((t) => t.ref && passt(suche, t.label, t.ref))
+    .sort((x, y) => (rang.get(x.ref) ?? 1e9) - (rang.get(y.ref) ?? 1e9))
     .slice(0, MAX_TREFFER);
 }
 
@@ -243,11 +297,7 @@ export async function suchen(
 ): Promise<SuchErgebnis> {
   const aufgaben: { typ: VerknuepfungsTyp; lauf: () => Promise<Fundstueck[]> }[] = [
     { typ: 'termin', lauf: () => termine(user, suche, fetcher) },
-    {
-      typ: 'aufgabe',
-      lauf: () =>
-        kalenderListe(user, suche, fetcher, '/api/todos', 'aufgabe', ['due_date', 'priority']),
-    },
+    { typ: 'aufgabe', lauf: () => offeneAufgaben(user, suche, fetcher) },
     {
       typ: 'ziel',
       lauf: () => kalenderListe(user, suche, fetcher, '/api/goals', 'ziel', ['period', 'status']),

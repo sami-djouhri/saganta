@@ -7,7 +7,7 @@
   import Tagesplan from '$lib/components/Tagesplan.svelte';
   import SchnellErfassen from '$lib/components/SchnellErfassen.svelte';
   import type { Aufgabe, Planung } from '$lib/aufgaben-bff';
-  import { dauer, demnaechst, pool, tagesGruppen } from '$lib/ordnen';
+  import { dauer, demnaechst, pool, tagesGruppen, tagesLast } from '$lib/ordnen';
   import type { ActionData, PageData } from './$types';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -20,6 +20,11 @@
   const listenNach = $derived(new Map(data.listen.map((l) => [l.id, l])));
   const kapazitaet = $derived(data.tagesbild?.capacity ?? null);
   const frei = $derived(data.tagesbild?.free_minutes ?? 0);
+  const last = $derived(tagesLast(data.aufgaben, heute));
+  // Der Deckel des Planers greift nur mit Check-in und zaehlt schon Geplantes
+  // nicht mit; hier steht deshalb die ehrliche Summe gegen die Kapazitaet.
+  const deckel = $derived(kapazitaet?.has_checkin ? kapazitaet.cap_minutes : null);
+  const ueberplant = $derived(deckel !== null && last.minuten > deckel);
   const liegen = $derived(data.tagesbild?.backlog ?? []);
   const offeneAnzahl = $derived(gruppen.reduce((n, g) => n + g.aufgaben.length, 0));
 
@@ -96,6 +101,18 @@
       {#if frei > 0}
         <span class="inline-flex items-center gap-1.5 text-xs text-muted">
           <Icon name="clock" size={13} />{dauer(frei)} frei
+        </span>
+      {/if}
+      {#if last.minuten > 0}
+        <span
+          class="inline-flex items-center gap-1.5 text-xs {ueberplant ? 'font-medium text-warnung' : 'text-muted'}"
+          title={last.ohneDauer > 0
+            ? `${last.ohneDauer} ${last.ohneDauer === 1 ? 'Aufgabe' : 'Aufgaben'} ohne geschätzte Dauer zählen nicht mit`
+            : 'Summe der geschätzten Dauer aller Aufgaben für heute'}
+        >
+          <Icon name={ueberplant ? 'alert-triangle' : 'timer'} size={13} />{dauer(last.minuten)}{deckel !== null
+            ? ` von ${dauer(deckel)}`
+            : ''} verplant
         </span>
       {/if}
     </div>

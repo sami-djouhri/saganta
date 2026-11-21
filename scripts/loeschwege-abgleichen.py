@@ -8,7 +8,7 @@ Der Loeschweg liegt in zwei Bauarten im Haus, und das ist kein Versehen:
 
 * Die **sieben Saganta-Backends** teilen die Mechanik ueber das Paket
   ``saganta_dienst`` (ein Build-Kontext, eine Datei).
-* Die **vier nativen Dienste** (lager, mealprep, fitness, briefkasten) tragen
+* Die **fuenf nativen Dienste** (lager, mealprep, fitness, briefkasten, nachrichten) tragen
   sie als **Kopie** in ``app/konto_mechanik.py``, weil sie ohne das saganta-Repo
   baubar bleiben muessen. Dasselbe gilt dort schon fuer ``backend_auth.py`` und
   ``mandant_ableiten.py``.
@@ -18,7 +18,7 @@ Abgleich, und die drei Fassungen sind gemessen verschieden (teils begruendet,
 teils vermutlich nicht). Damit das beim Loeschweg nicht genauso endet, prueft
 dieses Werkzeug:
 
-1. **Sind die vier Kopien byte-identisch?** Die Mechanik darf keine
+1. **Sind die fuenf Kopien byte-identisch?** Die Mechanik darf keine
    dienstspezifischen Stellen haben; was je Dienst abweicht, gehoert in
    ``app/konto.py``.
 2. **Hat jeder Dienst einen Plan?** Ein Dienst ohne ``konto.py`` ist der Fall,
@@ -62,6 +62,7 @@ MIT_KOPIE = [
     ("mealprep", "mealprep"),
     ("fitness", "fitness"),
     ("postfach", "briefkasten"),
+    ("nachrichten", "nachrichten"),
 ]
 
 # Saganta-Backends: (Dienst-Ordner unter saganta/services, Container)
@@ -149,7 +150,7 @@ def main() -> int:
 
     ergebnis: dict = {"kopien": {}, "dienste": [], "befunde": []}
 
-    # --- 1. Sind die vier Kopien der Mechanik identisch? ---
+    # --- 1. Sind die fuenf Kopien der Mechanik identisch? ---
     summen: dict[str, str | None] = {}
     for ordner, _container in MIT_KOPIE:
         pfad = DOCKER_WURZEL / ordner / "app" / "konto_mechanik.py"

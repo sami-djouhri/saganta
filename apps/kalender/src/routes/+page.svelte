@@ -15,7 +15,11 @@
   import WeekGrid from '$lib/WeekGrid.svelte';
   import AgendaList from '$lib/AgendaList.svelte';
   import EventModal from '$lib/EventModal.svelte';
+  import TerminKarte from '$lib/TerminKarte.svelte';
+  import type { Schnellgriff } from '$lib/terminkarte';
+  import ProjektMarke from '$lib/ProjektMarke.svelte';
   import Tagesdecke from '$lib/Tagesdecke.svelte';
+  import { rueckwegLoeschen, rueckwegZeit, verschoben, type Rueckweg } from '$lib/terminzeit';
   import { invalidateAll, goto, replaceState } from '$app/navigation';
   import {
     buildCalMeta,
@@ -61,20 +65,41 @@
   let deckeLaeuft = $state(false);
   let deckeFehler = $state<string | null>(null);
 
+  // ── Rückgängig (seit 2026-11-21) ──
+  // Nach Verschieben, Länge ziehen, Schnellgriffen und Löschen steht unten acht
+  // Sekunden eine Leiste. Die Aktion ist da schon gespeichert; der Knopf führt
+  // den Rückweg aus (alte Zeiten bzw. neu anlegen). Reihen bekommen keinen.
+  let rueckweg = $state<Rueckweg | null>(null);
+  let rueckwegUhr: ReturnType<typeof setTimeout> | undefined;
+  function rueckwegAnbieten(r: Rueckweg | null): void {
+    clearTimeout(rueckwegUhr);
+    rueckweg = r;
+    if (r) rueckwegUhr = setTimeout(() => (rueckweg = null), 8000);
+  }
+  async function rueckgaengig(): Promise<void> {
+    const r = rueckweg;
+    if (!r) return;
+    clearTimeout(rueckwegUhr);
+    rueckweg = null;
+    await deckeAktion(r.action, r.felder);
+  }
+
   /** Termin per Ziehen verschieben: neue Zeiten an `eventVerschieben`, dann neu laden. */
-  async function terminVerschieben(ev: { id: string; start_at?: string; end_at?: string; start?: string; end?: string }, tage: number, minuten: number) {
-    const verschoben = (iso: string | undefined) => {
-      if (!iso) return null;
-      const d = new Date(iso.slice(0, 19));
-      d.setDate(d.getDate() + tage);
-      d.setMinutes(d.getMinutes() + minuten);
-      const z = (n: number) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}:00`;
-    };
-    const start = verschoben(ev.start_at ?? ev.start);
-    const end = verschoben(ev.end_at ?? ev.end);
+  async function terminVerschieben(ev: KalenderEvent, tage: number, minuten: number, text = 'Termin verschoben') {
+    const start = verschoben(ev.start_at ?? ev.start, tage, minuten);
+    const end = verschoben(ev.end_at ?? ev.end, tage, minuten);
     if (!start || !end) return;
     await deckeAktion('eventVerschieben', { id: ev.id, start, end });
+    if (!deckeFehler) rueckwegAnbieten(rueckwegZeit(ev, `„${ev.title}“ ${text.replace(/^Termin /, '')}`));
+  }
+
+  /** Länge an der Unterkante gezogen: nur das Ende rückt (Raster 15 min). */
+  async function terminDehnen(ev: KalenderEvent, minuten: number) {
+    const start = verschoben(ev.start_at ?? ev.start, 0, 0);
+    const end = verschoben(ev.end_at ?? ev.end, 0, minuten);
+    if (!start || !end || end <= start) return;
+    await deckeAktion('eventVerschieben', { id: ev.id, start, end });
+    if (!deckeFehler) rueckwegAnbieten(rueckwegZeit(ev, `„${ev.title}“ ${minuten > 0 ? 'verlängert' : 'gekürzt'}`));
   }
 
   async function deckeAktion(action: string, felder: Record<string, string>) {
@@ -119,6 +144,10 @@
   // ── Termin-Editor (Modal) ─────────────────────────────────────────────
   let modalOpen = $state(false);
   let editing = $state<KalenderEvent | null>(null);
+  // Termin-Karte (seit 2026-11-21): ein Klick zeigt zuerst sie, der Editor
+  // kommt ueber „Bearbeiten"; „Duplizieren" oeffnet einen neuen Termin mit Vorlage.
+  let karte = $state<KalenderEvent | null>(null);
+  let vorlage = $state<KalenderEvent | null>(null);
   let prefillDate = $state('');
   let prefillStart = $state('');
   let prefillEnd = $state('');
@@ -197,6 +226,7 @@
   }
   function openCreate(date = '', start = '', end = ''): void {
     editing = null;
+    vorlage = null;
     prefillDate = date;
     prefillStart = start;
     prefillEnd = end;
@@ -209,11 +239,36 @@
   function closeModal(): void {
     modalOpen = false;
     editing = null;
+    vorlage = null;
     prefillDate = prefillStart = prefillEnd = '';
   }
   function onSelectEvent(ev: KalenderEvent): void {
-    if (isEditable(ev)) openEdit(ev);
-    else selectedDay = dayKeyOf(ev); // Feiertag/Geburtstag/Serie → Tages-Detail
+    // Tagestypen (Arbeit, Schule, Urlaub, Krank) sind die Farbe des Tages, kein
+    // Termin: sie fuehren weiter ins Tages-Detail. Alles andere zeigt die Karte,
+    // die selbst weiss, was sich dort aendern laesst.
+    if (/^daytype-(arbeit|schule|urlaub|krank)/.test(ev.calendar_id ?? '')) selectedDay = dayKeyOf(ev);
+    else karte = ev;
+  }
+  async function schnellgriff(ev: KalenderEvent, g: Schnellgriff): Promise<void> {
+    if (g.schluessel === 'kopie') {
+      karte = null;
+      editing = null;
+      vorlage = ev;
+      prefillDate = prefillStart = prefillEnd = '';
+      modalOpen = true;
+      return;
+    }
+    await terminVerschieben(ev, g.tage, g.minuten, g.schluessel === 'plus15' ? 'um 15 min verschoben' : g.schluessel === 'morgen' ? 'auf morgen verschoben' : 'eine Woche später');
+    if (!deckeFehler) karte = null;
+  }
+  async function karteLoeschen(ev: KalenderEvent, modus: 'serie' | 'vorkommen' | 'ab_hier'): Promise<void> {
+    const felder: Record<string, string> = { id: ev.id, modus };
+    if (modus !== 'serie' && ev.id.includes('::')) felder.tag = ev.id.split('::')[1]!.slice(0, 10);
+    await deckeAktion('eventDelete', felder);
+    if (!deckeFehler) {
+      karte = null;
+      rueckwegAnbieten(modus === 'serie' ? rueckwegLoeschen(ev) : null);
+    }
   }
   // Aus der Suche: `?termin=<id>` oeffnet den Termin in der gezeigten Woche
   // (seit 2026-11-08). Eine Serie trifft ihr erstes Vorkommen, dessen Kennung
@@ -499,6 +554,7 @@
           {selectedDay}
           onSelectDay={selectDay}
           {onSelectEvent}
+          projektNamen={data.projektNamen}
         />
       {:else if data.view === 'week'}
         <div class="overflow-x-auto">
@@ -511,8 +567,10 @@
               {nowMs}
               {onSelectEvent}
               {onCreateAt}
-              onMoveEvent={terminVerschieben}
+              onMoveEvent={(ev, tage, minuten) => terminVerschieben(ev, tage, minuten)}
+              onResizeEvent={terminDehnen}
               {konfliktIds}
+              projektNamen={data.projektNamen}
             />
           </div>
         </div>
@@ -522,7 +580,8 @@
           selectedCalendar={data.selectedCalendar}
           {calMeta}
           {nowMs}
-          onEdit={openEdit}
+          onEdit={onSelectEvent}
+          projektNamen={data.projektNamen}
         />
         {#if capped && !failure}
           <p class="text-center text-xs text-muted">
@@ -575,6 +634,9 @@
                         {#if isBirthdayEvent(ev)}<Icon name="cake" size={13} />{/if}{ev.title}
                       </span>
                       <span class="block text-xs text-muted">{timeCol(ev)}</span>
+                      {#if ev.projekt}
+                        <span class="mt-1 block"><ProjektMarke slug={ev.projekt} name={data.projektNamen[ev.projekt]} /></span>
+                      {/if}
                     </span>
                   </button>
                 </li>
@@ -858,6 +920,47 @@
     konflikte={konflikteZumTermin}
     onVorschlag={konfliktVorschlag}
     onWeg={konfliktWeg}
+    projektZeilen={data.projektZeilen}
+    projektNamen={data.projektNamen}
+    {vorlage}
+    onGeloescht={(ev) => rueckwegAnbieten(rueckwegLoeschen(ev))}
     onClose={closeModal}
   />
+  {#if karte}
+    {@const k = karte}
+    <TerminKarte
+      ev={k}
+      heute={data.today}
+      kalenderName={calMeta.get(k.calendar_id ?? '')?.name ?? ''}
+      farbe={eventColor(k, calMeta)}
+      projektName={k.projekt ? (data.projektNamen?.[k.projekt] ?? k.projekt) : null}
+      notizen={data.notizenNach[k.id] ?? []}
+      {notizenBasis}
+      notizenStumm={data.notizenStumm}
+      {notizFehler}
+      laeuft={deckeLaeuft}
+      onSchnellgriff={(g) => schnellgriff(k, g)}
+      onBearbeiten={() => {
+        karte = null;
+        openEdit(k);
+      }}
+      onLoeschen={(modus) => karteLoeschen(k, modus)}
+      onClose={() => (karte = null)}
+    />
+  {/if}
+  {#if rueckweg}
+    <div
+      class="fixed inset-x-0 bottom-4 z-[60] mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-border-stark bg-surface-2 px-4 py-2.5 text-sm shadow-2xl"
+      role="status"
+    >
+      <span class="truncate text-text">{rueckweg.text}</span>
+      <button
+        type="button"
+        onclick={rueckgaengig}
+        disabled={deckeLaeuft}
+        class="min-h-9 shrink-0 rounded-lg px-3 font-medium text-akzent hover:bg-white/5 disabled:opacity-50"
+        >Rückgängig</button
+      >
+    </div>
+  {/if}
 </section>

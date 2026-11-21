@@ -3,6 +3,8 @@ import { notizDazuAusFormular, notizenZuEinem } from '@saganta/notizen-anschluss
 import { notizAnschluss } from '$lib/server/notizen';
 import { api } from '$lib/projectdeck-api';
 import type {
+  Akte,
+  KontaktAuswahl,
   AISuggest,
   Asset,
   Milestone,
@@ -47,8 +49,19 @@ export const load: PageServerLoad = async ({ locals, fetch, params }) => {
   ]);
   // Notizen zum Projekt. Fail-soft im Anschluss: faellt die notizen-api aus,
   // fehlt der Block, und die Projektansicht bleibt vollstaendig bedienbar.
-  const notizen = await notizenZuEinem('projekt', project.slug, notizAnschluss(locals, fetch));
+  // Die Akte (15.11.) sammelt, was zum Projekt und allen Unterprojekten
+  // gehoert. Faellt sie aus, bleibt die Seite mit den Einzelaufrufen oben
+  // bedienbar; die Reiter der Akte sagen dann, dass sie nichts wissen.
+  const [notizen, akte, alleProjekte, kontaktAuswahl] = await Promise.all([
+    notizenZuEinem('projekt', project.slug, notizAnschluss(locals, fetch)),
+    api<Akte>(u, `${base}/akte`, fetch).catch(() => null),
+    api<Project[]>(u, '/api/projects', fetch).catch(() => [] as Project[]),
+    api<KontaktAuswahl[]>(u, '/api/kontakte-auswahl', fetch).catch(() => null),
+  ]);
   return {
+    akte,
+    alleProjekte,
+    kontaktAuswahl,
     project,
     aufgaben,
     aufgabenFehlen,
@@ -110,9 +123,73 @@ export const actions: Actions = {
     return { ok: true };
   },
 
-  addTask: async ({ request, locals, fetch, params }) => {
+  /** Oberprojekte ersetzen (Mehrfachauswahl). Leer = steht oben. */
+  setEltern: async ({ request, locals, fetch, params }) => {
     const p = await resolve(locals, fetch, params.slug);
     const f = await request.formData();
+    const eltern_ids = f.getAll('eltern_id').map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    try {
+      await api(locals.user!, `/api/projects/${p.id}/eltern`, fetch, {
+        method: 'PUT',
+        body: JSON.stringify({ eltern_ids }),
+      });
+    } catch (err) {
+      return fail(422, { error: String(err).includes('Kreis') ? 'Das wäre ein Kreis: das gewählte Oberprojekt hängt schon unter diesem Projekt.' : String(err) });
+    }
+    return { ok: true };
+  },
+
+  kontaktAnheften: async ({ request, locals, fetch, params }) => {
+    const p = await resolve(locals, fetch, params.slug);
+    const f = await request.formData();
+    const kontakt_id = String(f.get('kontakt_id') ?? '').trim();
+    if (!kontakt_id) return fail(400, { error: 'Bitte einen Kontakt wählen.' });
+    try {
+      await api(locals.user!, `/api/projects/${p.id}/kontakte`, fetch, {
+        method: 'POST',
+        body: JSON.stringify({ kontakt_id, rolle: String(f.get('rolle') ?? '').trim() || null }),
+      });
+    } catch (err) {
+      return fail(String(err).includes('409') ? 409 : 502, {
+        error: String(err).includes('409') ? 'Der Kontakt steht schon am Projekt.' : String(err),
+      });
+    }
+    return { ok: true };
+  },
+
+  kontaktRolle: async ({ request, locals, fetch, params }) => {
+    const p = await resolve(locals, fetch, params.slug);
+    const f = await request.formData();
+    try {
+      await api(locals.user!, `/api/projects/${p.id}/kontakte/${f.get('verweis_id')}`, fetch, {
+        method: 'PATCH',
+        body: JSON.stringify({ rolle: String(f.get('rolle') ?? '').trim() || null }),
+      });
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+    return { ok: true };
+  },
+
+  kontaktLoesen: async ({ request, locals, fetch, params }) => {
+    const p = await resolve(locals, fetch, params.slug);
+    const f = await request.formData();
+    try {
+      await api(locals.user!, `/api/projects/${p.id}/kontakte/${f.get('verweis_id')}`, fetch, {
+        method: 'DELETE',
+      });
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+    return { ok: true };
+  },
+
+  addTask: async ({ request, locals, fetch, params }) => {
+    const eigenes = await resolve(locals, fetch, params.slug);
+    const f = await request.formData();
+    // In einem Oberprojekt darf die neue Aufgabe gleich in ein Unterprojekt.
+    const ziel = Number(f.get('projekt_id') ?? '');
+    const p = Number.isInteger(ziel) && ziel > 0 ? { id: ziel } : eigenes;
     const titel = String(f.get('titel') ?? '').trim();
     if (!titel) return fail(400, { error: 'Titel fehlt' });
     const prioritaet = String(f.get('prioritaet') ?? 'mittel');

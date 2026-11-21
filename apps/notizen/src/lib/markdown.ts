@@ -21,7 +21,27 @@
  *   Vertraulichkeit ist, wäre das ein Selbstwiderspruch. Eigene Anhänge zeigt
  *   die Oberfläche separat an.
  * - **Rohes HTML.** Wird als Text dargestellt, nicht ausgeführt.
+ *
+ * **`[[Titel]]` und `[[Titel|Anzeige]]`** (Verweise zwischen Notizen, seit
+ * 2026-11-20) werden nur zum Link, wenn der Aufrufer einen `VerweisAufloeser`
+ * mitgibt. Ohne ihn, also auf der öffentlichen Leseseite, bleibt die Anzeige
+ * reiner Text: dort gibt es keine anderen Notizen, auf die er zeigen dürfte.
  */
+
+/** Ziel eines `[[Titel]]`: Kennung der Notiz oder `null`, wenn es sie nicht gibt. */
+export type VerweisAufloeser = (titel: string) => number | null;
+
+/** Dieselbe Regel wie `TEXT_VERWEIS` in services/notizen-api/app/routes_netz.py. */
+export const TEXT_VERWEIS = /\[\[([^[\]|\n]{1,300})(?:\|([^[\]\n]{0,300}))?\]\]/;
+
+/** Schlüssel für den Titelvergleich: Leerraum zusammengezogen, ohne Groß/klein. */
+export function verweisSchluessel(titel: string): string {
+  return titel.split(/\s+/).filter(Boolean).join(' ').toLocaleLowerCase('de-DE');
+}
+
+interface Kontext {
+  verweise?: VerweisAufloeser;
+}
 
 const ERLAUBTE_SCHEMATA = new Set(['http:', 'https:', 'mailto:']);
 
@@ -41,7 +61,7 @@ function sichereAdresse(roh: string): string | null {
 
 interface InlineMuster {
   regex: RegExp;
-  bauen: (treffer: RegExpExecArray, doc: Document) => Node;
+  bauen: (treffer: RegExpExecArray, doc: Document, ctx: Kontext) => Node;
 }
 
 const INLINE: InlineMuster[] = [
@@ -53,6 +73,11 @@ const INLINE: InlineMuster[] = [
       el.textContent = t[1] ?? '';
       return el;
     },
+  },
+  // Vor den Links: `[[A]]` soll nie als `[`-Link gelesen werden.
+  {
+    regex: TEXT_VERWEIS,
+    bauen: (t, doc, ctx) => textVerweis(t[1] ?? '', t[2], doc, ctx),
   },
   {
     regex: /!\[([^\]]*)\]\(([^)\s]+)\)/,
@@ -69,30 +94,55 @@ const INLINE: InlineMuster[] = [
   },
   {
     regex: /\*\*([^*]+)\*\*/,
-    bauen: (t, doc) => umhuellen('strong', t[1] ?? '', doc),
+    bauen: (t, doc, ctx) => umhuellen('strong', t[1] ?? '', doc, ctx),
   },
   {
     regex: /__([^_]+)__/,
-    bauen: (t, doc) => umhuellen('strong', t[1] ?? '', doc),
+    bauen: (t, doc, ctx) => umhuellen('strong', t[1] ?? '', doc, ctx),
   },
   {
     regex: /~~([^~]+)~~/,
-    bauen: (t, doc) => umhuellen('del', t[1] ?? '', doc),
+    bauen: (t, doc, ctx) => umhuellen('del', t[1] ?? '', doc, ctx),
   },
   {
     regex: /\*([^*]+)\*/,
-    bauen: (t, doc) => umhuellen('em', t[1] ?? '', doc),
+    bauen: (t, doc, ctx) => umhuellen('em', t[1] ?? '', doc, ctx),
   },
   {
     regex: /(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])/,
-    bauen: (t, doc) => umhuellen('em', t[1] ?? '', doc),
+    bauen: (t, doc, ctx) => umhuellen('em', t[1] ?? '', doc, ctx),
   },
 ];
 
-function umhuellen(tag: string, inhalt: string, doc: Document): Node {
+function umhuellen(tag: string, inhalt: string, doc: Document, ctx: Kontext): Node {
   const el = doc.createElement(tag);
-  el.appendChild(inline(inhalt, doc));
+  el.appendChild(inline(inhalt, doc, ctx));
   return el;
+}
+
+/**
+ * `[[Titel]]` als Link auf die Notiz, oder als Knopf-Link zum Anlegen, wenn es
+ * sie nicht gibt. Die Adresse baut diese Funktion selbst aus einer Zahl, der
+ * Titel landet nur als Text und in `data-titel`, nie in einer Adresse.
+ */
+function textVerweis(roh: string, alias: string | undefined, doc: Document, ctx: Kontext): Node {
+  const titel = roh.split(/\s+/).filter(Boolean).join(' ');
+  const anzeige = alias?.trim() || titel;
+  if (!titel) return doc.createTextNode(`[[${roh}]]`);
+  if (!ctx.verweise) return doc.createTextNode(anzeige);
+  const a = doc.createElement('a');
+  a.textContent = anzeige;
+  a.className = 'verweis';
+  const id = ctx.verweise(titel);
+  if (id !== null && Number.isInteger(id) && id > 0) {
+    a.href = `/notiz/${id}`;
+  } else {
+    a.href = '#';
+    a.dataset.fehlt = 'true';
+    a.dataset.titel = titel;
+    a.title = `„${titel}“ gibt es noch nicht, antippen legt sie an`;
+  }
+  return a;
 }
 
 function link(text: string, ziel: string, doc: Document): Node {
@@ -115,7 +165,7 @@ function bildAlsLink(beschriftung: string, ziel: string, doc: Document): Node {
 }
 
 /** Eine Zeile Text in Knoten übersetzen (rekursiv für verschachtelte Auszeichnung). */
-function inline(text: string, doc: Document): DocumentFragment {
+function inline(text: string, doc: Document, ctx: Kontext = {}): DocumentFragment {
   const teil = doc.createDocumentFragment();
   let rest = text;
 
@@ -132,7 +182,7 @@ function inline(text: string, doc: Document): DocumentFragment {
     if (frühester.index > 0) {
       teil.appendChild(doc.createTextNode(rest.slice(0, frühester.index)));
     }
-    teil.appendChild(frühester.muster.bauen(frühester.treffer, doc));
+    teil.appendChild(frühester.muster.bauen(frühester.treffer, doc, ctx));
     rest = rest.slice(frühester.index + frühester.treffer[0].length);
   }
 
@@ -162,7 +212,15 @@ function zellen(zeile: string): string[] {
  * `doc` ist überschreibbar, damit derselbe Code in Tests gegen ein
  * Fremd-Dokument laufen kann.
  */
-export function rendern(quelle: string, doc: Document = document): DocumentFragment {
+export function rendern(
+  quelle: string,
+  doc: Document = document,
+  verweise?: VerweisAufloeser,
+): DocumentFragment {
+  return rendernMit(quelle, doc, { verweise });
+}
+
+function rendernMit(quelle: string, doc: Document, ctx: Kontext): DocumentFragment {
   const aus = doc.createDocumentFragment();
   const zeilen = (quelle ?? '').replace(/\r\n?/g, '\n').split('\n');
   let i = 0;
@@ -171,7 +229,7 @@ export function rendern(quelle: string, doc: Document = document): DocumentFragm
   function absatzAbschliessen() {
     if (!absatzPuffer.length) return;
     const p = doc.createElement('p');
-    p.appendChild(inline(absatzPuffer.join('\n'), doc));
+    p.appendChild(inline(absatzPuffer.join('\n'), doc, ctx));
     aus.appendChild(p);
     absatzPuffer.length = 0;
   }
@@ -218,7 +276,7 @@ export function rendern(quelle: string, doc: Document = document): DocumentFragm
       absatzAbschliessen();
       const stufe = (überschrift[1] ?? '#').length;
       const h = doc.createElement(`h${Math.min(stufe, 6)}`);
-      h.appendChild(inline(überschrift[2] ?? '', doc));
+      h.appendChild(inline(überschrift[2] ?? '', doc, ctx));
       aus.appendChild(h);
       i++;
       continue;
@@ -232,7 +290,7 @@ export function rendern(quelle: string, doc: Document = document): DocumentFragm
         i++;
       }
       const zitat = doc.createElement('blockquote');
-      zitat.appendChild(rendern(inhalt.join('\n'), doc));
+      zitat.appendChild(rendernMit(inhalt.join('\n'), doc, ctx));
       aus.appendChild(zitat);
       continue;
     }
@@ -245,7 +303,7 @@ export function rendern(quelle: string, doc: Document = document): DocumentFragm
       const kopfZeile = doc.createElement('tr');
       for (const z of zellen(zeile)) {
         const th = doc.createElement('th');
-        th.appendChild(inline(z, doc));
+        th.appendChild(inline(z, doc, ctx));
         kopfZeile.appendChild(th);
       }
       kopf.appendChild(kopfZeile);
@@ -256,7 +314,7 @@ export function rendern(quelle: string, doc: Document = document): DocumentFragm
         const tr = doc.createElement('tr');
         for (const z of zellen(zeilen[i] ?? '')) {
           const td = doc.createElement('td');
-          td.appendChild(inline(z, doc));
+          td.appendChild(inline(z, doc, ctx));
           tr.appendChild(td);
         }
         körper.appendChild(tr);
@@ -270,7 +328,7 @@ export function rendern(quelle: string, doc: Document = document): DocumentFragm
     const listenAnfang = /^(\s*)([-*+]|\d+[.)])\s+/.exec(zeile);
     if (listenAnfang) {
       absatzAbschliessen();
-      i = liste(zeilen, i, aus, doc, (listenAnfang[1] ?? '').length);
+      i = liste(zeilen, i, aus, doc, (listenAnfang[1] ?? '').length, ctx);
       continue;
     }
 
@@ -292,6 +350,7 @@ function liste(
   ziel: Node,
   doc: Document,
   einzug: number,
+  ctx: Kontext,
 ): number {
   const erste = /^(\s*)([-*+]|\d+[.)])\s+/.exec(zeilen[start] ?? '');
   const geordnet = /\d/.test(erste?.[2] ?? '');
@@ -305,7 +364,7 @@ function liste(
     if (eigenerEinzug < einzug) break;
     if (eigenerEinzug > einzug) {
       // Tiefere Ebene gehört unter den zuletzt begonnenen Punkt.
-      i = liste(zeilen, i, element.lastElementChild ?? element, doc, eigenerEinzug);
+      i = liste(zeilen, i, element.lastElementChild ?? element, doc, eigenerEinzug, ctx);
       continue;
     }
 
@@ -323,7 +382,7 @@ function liste(
       li.appendChild(box);
       text = kasten[2] ?? '';
     }
-    li.appendChild(inline(text, doc));
+    li.appendChild(inline(text, doc, ctx));
     element.appendChild(li);
     i++;
   }

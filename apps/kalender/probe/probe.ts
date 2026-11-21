@@ -17,6 +17,9 @@ import { mount } from 'svelte';
 import Tagesdecke from '../src/lib/Tagesdecke.svelte';
 import MonthGrid from '../src/lib/MonthGrid.svelte';
 import Gewohnheiten from '../src/lib/Gewohnheiten.svelte';
+import EventModal from '../src/lib/EventModal.svelte';
+import WeekGrid from '../src/lib/WeekGrid.svelte';
+import { projektBaum } from '@saganta/ui';
 import fixtures from './decke-fixtures.json';
 import './probe.css';
 
@@ -72,6 +75,74 @@ if (komponente === 'monat') {
     target: halter,
     props: { month: '2026-11', today: tag(14), events, calMeta: new Map(), selectedDay: null,
       onSelectDay: () => {}, onSelectEvent: () => {} },
+  });
+} else if (komponente === 'termin') {
+  kopf.textContent = 'Termin-Editor mit Projekt, erfundene Daten';
+  const p = (id: number, slug: string, name: string, eltern: number[], kinder: number[]) =>
+    ({ id, slug, name, status: 'active', eltern_ids: eltern, kinder_ids: kinder });
+  const zeilen = projektBaum([
+    p(1, 'spiele', 'Spiele', [], [2, 3]), p(2, 'spiele-dashboard', 'Spiele-Dashboard', [1], []),
+    p(3, 'spiele-bot', 'Spiele-Bot', [1, 4], []), p(4, 'discord-bots', 'Discord-Bots', [], [3]),
+    p(5, 'probe-webseite', 'Probe-Webseite', [], []),
+  ]);
+  mount(EventModal, {
+    target: halter,
+    props: {
+      open: true,
+      editing: { id: 'e1', title: 'Abend mit Testspielern', start: '2026-11-17T18:00:00', end: '2026-11-17T19:30:00',
+        calendar_id: 'system-termine-0000', location: 'Wohnzimmer', projekt: 'spiele-bot' } as never,
+      editableCalendars: [{ id: 'system-termine-0000', name: 'Termine' }],
+      defaultDate: '2026-11-15', projektZeilen: zeilen,
+      projektNamen: Object.fromEntries(zeilen.map((z) => [z.slug, z.name])),
+      notizen: [], notizenBasis: 'https://notizen.home.arpa', onClose: () => {},
+    } as never,
+  });
+} else if (komponente === 'termin-neu') {
+  // Seit 2026-11-21: neuer Termin mit Titel-Vorschlaegen, Dauer-Knoepfen und
+  // Erinnerung. Die Vorschlaege kommen aus einer Attrappe statt vom Dienst.
+  kopf.textContent = 'Neuer Termin mit Vorschlägen, erfundene Daten';
+  const echt = window.fetch.bind(window);
+  window.fetch = (async (eingabe: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(eingabe);
+    if (url.startsWith('/vorschlaege?art=titel')) {
+      return new Response(JSON.stringify({ titel: [
+        { title: 'Probetermin Arzt', dauer_min: 45, all_day: false, location: 'Musterpraxis', calendar_id: 'system-termine-0000', projekt: null, reminder_minutes: 60 },
+        { title: 'Probe Training', dauer_min: 90, all_day: false, location: 'Testhalle', calendar_id: 'system-termine-0000', projekt: null, reminder_minutes: null },
+      ] }));
+    }
+    if (url.startsWith('/vorschlaege?art=ort')) return new Response(JSON.stringify({ orte: ['Testhalle', 'Musterpraxis'] }));
+    return echt(eingabe, init);
+  }) as typeof fetch;
+  mount(EventModal, {
+    target: halter,
+    props: {
+      open: true, editing: null,
+      editableCalendars: [{ id: 'system-termine-0000', name: 'Termine' }],
+      defaultDate: '2026-11-15', prefillDate: '2026-11-17', prefillStart: '18:00', prefillEnd: '19:00',
+      projektZeilen: [], projektNamen: {}, notizen: [], onClose: () => {},
+    } as never,
+  });
+} else if (komponente === 'woche') {
+  kopf.textContent = 'Woche mit Projektmarke und Längengriff, erfundene Daten';
+  const tage = [16, 17, 18, 19, 20, 21, 22].map((d) => `2026-11-${d}`);
+  const t = (id: string, d: number, von: string, bis: string, titel: string, projekt?: string) => ({
+    id, calendar_id: 'system-termine-0000', title: titel, start: `2026-11-${d}T${von}:00`,
+    end: `2026-11-${d}T${bis}:00`, all_day: false, projekt,
+  });
+  mount(WeekGrid, {
+    target: halter,
+    props: {
+      days: tage, today: '2026-11-18', nowMs: null, calMeta: new Map(),
+      events: [
+        t('a', 16, '09:00', '10:30', 'Probe Planung', 'probe-webseite'),
+        t('b', 17, '14:00', '14:30', 'Kurzer Probetermin', 'probe-webseite'),
+        t('c', 18, '18:00', '20:00', 'Probe Training'),
+      ],
+      projektNamen: { 'probe-webseite': 'Probe-Webseite' },
+      onSelectEvent: () => {}, onCreateAt: () => {},
+      onMoveEvent: (_e: unknown, tg: number, m: number) => console.log('verschieben', tg, m),
+      onResizeEvent: (_e: unknown, m: number) => console.log('dehnen', m),
+    } as never,
   });
 } else if (komponente === 'gewohnheiten') {
   kopf.textContent = 'Gewohnheiten, erfundene Daten';

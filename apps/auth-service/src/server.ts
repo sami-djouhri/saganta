@@ -28,6 +28,9 @@ const MOBILE_AUDIENCES = new Set([
   // kontakte-api: die native Kontakte-App gegen den Kontakte-Dienst
   // (2026-11-07), dieselbe Kette (HS256, iss=saganta, aud fail-closed).
   'kontakte-api',
+  // assistent-api: der KI-Chat fuer alle Apps (2026-11-15). Er stempelt selbst
+  // die kurzen Token fuer die App dahinter, mit dem sub aus diesem Token.
+  'assistent-api',
 ]);
 // Fail-Fast: ohne echtes Shared-Secret kann der Mobile-Token-Stempel gefälscht
 // werden → Boot abbrechen statt still unsicher laufen. (2026-06-28)

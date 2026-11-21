@@ -18,6 +18,7 @@ import {
   nameAusSlug,
   tagePlus,
   tagesGruppen,
+  tagesLast,
   unterFortschritt,
   unteraufgabenNach,
 } from './ordnen';
@@ -154,6 +155,13 @@ describe('tagesGruppen', () => {
     expect(ids).toEqual(['x']);
   });
 
+  it('nennt eine ueberfaellige, eingeplante Aufgabe nur unter Ueberfaellig', () => {
+    const beides = [a({ id: 'x', due_date: '2026-09-01', planned_date: HEUTE })];
+    const g = tagesGruppen(beides, HEUTE);
+    expect(g.map((x) => x.schluessel)).toEqual(['ueberfaellig']);
+    expect(g.flatMap((x) => x.aufgaben.map((y) => y.id))).toEqual(['x']);
+  });
+
   it('laesst leere Gruppen weg', () => {
     expect(tagesGruppen([a({ id: 'pool' })], HEUTE)).toEqual([]);
   });
@@ -185,6 +193,28 @@ describe('demnaechst', () => {
       a({ id: 'in8', due_date: '2026-09-21' }),
     ];
     expect(demnaechst(alle, HEUTE).map((x) => x.id)).toEqual(['morgen', 'in7']);
+  });
+
+  it('zeigt auch Eingeplantes ohne Frist, aber nichts, was schon auf Heute steht', () => {
+    const alle = [
+      a({ id: 'plan-morgen', planned_date: '2026-09-14' }),
+      a({ id: 'plan-in8', planned_date: '2026-09-21' }),
+      a({ id: 'heute-geplant-frist-spaeter', planned_date: HEUTE, due_date: '2026-09-15' }),
+    ];
+    expect(demnaechst(alle, HEUTE).map((x) => x.id)).toEqual(['plan-morgen']);
+  });
+});
+
+describe('tagesLast', () => {
+  it('summiert die Dauer der Heute-Liste und nennt, was keine hat', () => {
+    const alle = [
+      a({ id: 'f', due_date: HEUTE, estimated_minutes: 30 }),
+      a({ id: 'g', planned_date: HEUTE, estimated_minutes: 45 }),
+      a({ id: 'ohne', planned_date: HEUTE }),
+      a({ id: 'spaeter', planned_date: '2026-09-20', estimated_minutes: 600 }),
+      a({ id: 'erledigt', due_date: HEUTE, estimated_minutes: 90, completed: true }),
+    ];
+    expect(tagesLast(alle, HEUTE)).toEqual({ minuten: 75, ohneDauer: 1 });
   });
 });
 

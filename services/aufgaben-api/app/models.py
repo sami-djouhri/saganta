@@ -80,6 +80,9 @@ class Aufgabe(Base):
     #: Slug des ProjectDeck-Projekts. Nicht zusammen mit ``liste_id``: eine
     #: Aufgabe steht an genau einem Ort (Entscheid 04.11.).
     projekt: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: Weitere Projekte (Liste von Slugs), an denen sie zusaetzlich steht
+    #: (Entscheid U3, 15.11.: ein Zuhause, anheftbar an weitere).
+    weitere_projekte: Mapped[list | None] = mapped_column(JSON, nullable=True)
     #: Kennung einer Liste dieses Dienstes. Kein Fremdschluessel: SQLite prueft
     #: hier keine (kein ``foreign_keys``-Pragma), das Aufloesen einer Liste
     #: leert die Spalte deshalb ausdruecklich in der Route.

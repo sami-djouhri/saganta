@@ -151,3 +151,46 @@ def widerrufen(
     freigabe.widerrufen_am = jetzt()
     freigabe.chiffrat = None
     db.commit()
+
+
+@router.post("/aufraeumen", response_model=dict[str, int])
+def aufraeumen(me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> dict[str, int]:
+    """Alle Freigaben entfernen, die nicht mehr abrufbar sind.
+
+    Zurueckgezogene, abgelaufene, aufgebrauchte, gesperrte und solche, deren
+    Notiz geloescht ist. Aktive bleiben unangetastet: die muss man erst
+    zurueckziehen, damit ein Link nicht aus Versehen still verschwindet.
+    """
+    weg = 0
+    for f in db.scalars(select(Freigabe).where(Freigabe.owner_sub == me.sub)).all():
+        if f.zustand() != "aktiv":
+            db.delete(f)
+            weg += 1
+    db.commit()
+    return {"entfernt": weg}
+
+
+@router.delete("/{freigabe_id}/eintrag", status_code=status.HTTP_204_NO_CONTENT)
+def eintrag_entfernen(
+    freigabe_id: int,
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> None:
+    """Eine nicht mehr abrufbare Freigabe ganz aus der Liste nehmen.
+
+    Bis 2026-11-21 gab es nur das Zurueckziehen, und der Eintrag blieb fuer
+    immer stehen. Danach meldet ein alter Link „gibt es nicht" statt
+    „zurueckgezogen"; das ist der Preis, und er ist gewollt, wenn man aufraeumt.
+    Eine aktive Freigabe lehnt die Route ab (409), sie wird zuerst
+    zurueckgezogen. Sonst waere „Entfernen" ein zweites Zurueckziehen ohne
+    dessen Wortlaut.
+    """
+    freigabe = db.scalar(
+        select(Freigabe).where(Freigabe.id == freigabe_id, Freigabe.owner_sub == me.sub)
+    )
+    if freigabe is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Freigabe nicht gefunden")
+    if freigabe.zustand() == "aktiv":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Die Freigabe ist noch aktiv, erst zurückziehen")
+    db.delete(freigabe)
+    db.commit()

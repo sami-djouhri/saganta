@@ -105,3 +105,42 @@ export async function termineSuchen(
     .filter((t) => t.ref && (!nadel || t.label.toLowerCase().includes(nadel)))
     .slice(0, 15);
 }
+
+/** Ein Projekt, an dem der Kontakt steht (ProjectDeck, seit 2026-11-15). */
+export interface ProjektVerweis {
+  id: number;
+  slug: string;
+  name: string;
+  status: string;
+  rolle: string | null;
+}
+
+/**
+ * Rueckverweis: an welchen Projekten steht dieser Kontakt, mit Rolle.
+ * Angelegt wird der Verweis im ProjectDeck am Projekt, hier wird er nur
+ * gezeigt. `stumm`, wenn das ProjectDeck nicht antwortet: dann sagt die Seite
+ * das, statt „an keinem Projekt" zu behaupten.
+ */
+export async function projekteDesKontakts(
+  user: SagantaUser,
+  kontaktId: string,
+  fetcher: typeof fetch,
+): Promise<{ liste: ProjektVerweis[]; stumm: boolean }> {
+  const basis = env.PROJECTDECK_API_BASE_URL;
+  if (!basis) return { liste: [], stumm: true };
+  try {
+    const res = await fetcher(
+      `${basis.replace(/\/$/, '')}/api/kontakte/${encodeURIComponent(kontaktId)}/projekte`,
+      { headers: { Accept: 'application/json', Authorization: `Bearer ${token(user, 'projectdeck-api')}` } },
+    );
+    if (!res.ok) {
+      console.warn(`Projekte zum Kontakt nicht abrufbar: ProjectDeck antwortet ${res.status}`);
+      return { liste: [], stumm: true };
+    }
+    const daten: unknown = await res.json();
+    return { liste: Array.isArray(daten) ? (daten as ProjektVerweis[]) : [], stumm: false };
+  } catch (err) {
+    console.warn(`Projekte zum Kontakt nicht abrufbar: ${String(err)}`);
+    return { liste: [], stumm: true };
+  }
+}

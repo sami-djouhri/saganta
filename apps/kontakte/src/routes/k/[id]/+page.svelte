@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { page } from '$app/stores';
-  import { Button, Icon, NotizenBlock, appUrlById } from '@saganta/ui';
+  import { Button, Icon, NotizenBlock, appUrlById, projektUrl } from '@saganta/ui';
   import KontaktFormular from '$lib/components/KontaktFormular.svelte';
   import { datumLang, gruppenStil, kuerzel, telAdresse } from '$lib/anzeige';
   import type { ActionData, PageData } from './$types';
@@ -21,6 +21,15 @@
     const uhr = /T(\d{2}:\d{2})/.exec(start)?.[1];
     return uhr && uhr !== '00:00' ? `${datum}, ${uhr}` : datum;
   }
+
+  const STATUS_TEXT: Record<string, string> = {
+    idea: 'Idee',
+    planned: 'geplant',
+    frozen: 'eingefroren',
+    shutdown_candidate: 'vor dem Ende',
+    shutdown: 'beendet',
+    archived: 'archiviert',
+  };
 
   const fehlermeldung = $derived(form && 'fehler' in form ? String(form.fehler) : null);
   const notizFehler = $derived(form && 'notizFehler' in form ? String(form.notizFehler) : null);
@@ -76,7 +85,7 @@
     {:else}
       <ul class="divide-y divide-border rounded-lg border border-border">
         {#each k.termine as t (t.ref)}
-          <li class="flex items-center gap-3 px-3 py-2">
+          <li class="flex min-h-11 items-center gap-3 px-3 py-2">
             <a
               href="{kalenderBasis}/?view=week{wocheVon(t.start) ? `&week=${wocheVon(t.start)}` : ''}"
               class="min-w-0 flex-1 hover:underline"
@@ -86,7 +95,7 @@
             </a>
             <form method="POST" action="?/terminLoesen" use:enhance>
               <input type="hidden" name="ref" value={t.ref} />
-              <button type="submit" class="text-muted hover:text-text" aria-label="Verknüpfung lösen"><Icon name="x" size={14} /></button>
+              <button type="submit" class="grid size-9 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-text" aria-label="Verknüpfung lösen"><Icon name="x" size={14} /></button>
             </form>
           </li>
         {/each}
@@ -99,7 +108,7 @@
         value={data.terminsuche ?? ''}
         placeholder="Termin suchen…"
         aria-label="Termin suchen"
-        class="min-w-0 flex-1 rounded-md border border-border-stark bg-surface-2 px-3 py-1.5 text-sm"
+        class="min-h-11 min-w-0 flex-1 rounded-md border border-border-stark bg-surface-2 px-3 text-sm outline-none focus:border-accent-500 sm:min-h-9"
       />
       <Button type="submit" variant="ghost" size="sm"><Icon name="search" size={15} /> Suchen</Button>
     </form>
@@ -123,6 +132,36 @@
           {/each}
         </ul>
       {/if}
+    {/if}
+  </section>
+
+  <section class="space-y-3" aria-labelledby="projekte">
+    <h2 id="projekte" class="flex items-center gap-2 font-medium"><Icon name="folder" size={16} /> Projekte</h2>
+    {#if data.projekte.stumm}
+      <p class="text-sm text-warnung">Das ProjectDeck antwortet gerade nicht.</p>
+    {:else if data.projekte.liste.length === 0}
+      <p class="text-sm text-muted">An keinem Projekt. Beteiligte trägst du im ProjectDeck am Projekt ein.</p>
+    {:else}
+      <ul class="divide-y divide-border rounded-lg border border-border">
+        {#each data.projekte.liste as p (p.id)}
+          <li>
+            <a
+              href={projektUrl(p.slug, $page.url.host)}
+              class="flex min-h-11 items-center gap-3 px-3 py-2 hover:bg-surface-2"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate">{p.name}</span>
+                {#if p.rolle || STATUS_TEXT[p.status]}
+                  <span class="block truncate text-xs text-muted"
+                    >{[p.rolle, STATUS_TEXT[p.status]].filter(Boolean).join(' · ')}</span
+                  >
+                {/if}
+              </span>
+              <span class="shrink-0 text-muted"><Icon name="arrow-right" size={14} /></span>
+            </a>
+          </li>
+        {/each}
+      </ul>
     {/if}
   </section>
 

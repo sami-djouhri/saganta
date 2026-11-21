@@ -38,6 +38,11 @@ export interface Aufgabe {
   /** hoch | mittel | niedrig */
   energy_required?: string | null;
   project_id?: string | null;
+  /**
+   * Weitere Projekte (Slugs), an denen die Aufgabe zusaetzlich steht, neben
+   * ihrem Zuhause `project_id` (seit 2026-11-15, hoechstens zehn).
+   */
+  weitere_projekte?: string[] | null;
   /** Liste des Aufgaben-Dienstes; schliesst `project_id` aus. */
   liste_id?: string | null;
   goal_id?: string | null;
@@ -88,6 +93,10 @@ export interface Projekt {
   icon?: string | null;
   status?: string;
   slug?: string | null;
+  /** Gliederung aus dem ProjectDeck (Zahl-Kennungen); fehlt bei Slugs ohne Deck-Eintrag. */
+  deck_id?: number | null;
+  eltern_ids?: number[];
+  kinder_ids?: number[];
 }
 
 /** Eine Liste des Aufgaben-Dienstes (Bereich wie „Wohnung & Haushalt"). */

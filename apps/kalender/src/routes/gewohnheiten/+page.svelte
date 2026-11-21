@@ -16,6 +16,14 @@
     hobby: 'Hobby',
     sonstige: 'Sonstiges',
   };
+  // Dort sucht der Planer zuerst (seit 2026-11-21), Schluessel wie im Dienst.
+  const WUNSCHZEITEN: Record<string, string> = {
+    '': 'Egal',
+    morgens: 'Morgens',
+    mittags: 'Mittags',
+    nachmittags: 'Nachmittags',
+    abends: 'Abends',
+  };
 
   // Vorgaben wie im Dienst (HabitCreate), damit eine hier angelegte Gewohnheit
   // genauso arbeitet wie eine aus der App.
@@ -33,6 +41,7 @@
     learning_mode: false,
     focus_block_minutes: 25,
     break_minutes: 5,
+    wunschzeit: null,
   };
 
   let lernmodus = $state<Record<string, boolean>>({});
@@ -75,18 +84,20 @@
       <span class="text-muted">Länge einer Sitzung (Minuten)</span>
       <input name="session_duration_minutes" type="number" min="15" max="480" step="5" required value={g.session_duration_minutes} class={feld} />
     </label>
-    <fieldset class="flex flex-wrap items-end gap-2 text-sm">
-      <legend class="mb-1 text-muted">Mo bis Fr zwischen</legend>
-      <input type="time" name="weekday_start" required value={g.weekday_start} class={feld} />
-      <span class="pb-3 text-muted">und</span>
-      <input type="time" name="weekday_end" required value={g.weekday_end} class={feld} />
-    </fieldset>
-    <fieldset class="flex flex-wrap items-end gap-2 text-sm">
-      <legend class="mb-1 text-muted">Sa und So zwischen</legend>
-      <input type="time" name="weekend_start" required value={g.weekend_start} class={feld} />
-      <span class="pb-3 text-muted">und</span>
-      <input type="time" name="weekend_end" required value={g.weekend_end} class={feld} />
-    </fieldset>
+    <!-- Die Fenster je Wochentag wertet der Planer seit 2026-11-08 nicht mehr
+         aus; sie gehen unveraendert mit. Die Lage steuert die Wunschzeit. -->
+    <input type="hidden" name="weekday_start" value={g.weekday_start} />
+    <input type="hidden" name="weekday_end" value={g.weekday_end} />
+    <input type="hidden" name="weekend_start" value={g.weekend_start} />
+    <input type="hidden" name="weekend_end" value={g.weekend_end} />
+    <label class="flex flex-col gap-1 text-sm">
+      <span class="text-muted">Wunschzeit</span>
+      <select name="wunschzeit" class={feld}>
+        {#each Object.entries(WUNSCHZEITEN) as [wert, text] (wert)}
+          <option value={wert} selected={(g.wunschzeit ?? '') === wert}>{text}</option>
+        {/each}
+      </select>
+    </label>
     <label class="flex min-h-11 items-center gap-2 text-sm text-muted sm:col-span-2">
       <input
         type="checkbox"
@@ -127,7 +138,7 @@
   </header>
 
   <p class="text-sm text-muted">
-    Der Kalender legt die Sitzungen selbst in freie Zeit innerhalb der Fenster und meldet sie per Push.
+    Der Kalender legt die Sitzungen selbst in freie Zeit, zuerst in die Wunschzeit.
     Jede Änderung plant die nächsten Wochen neu.
   </p>
 

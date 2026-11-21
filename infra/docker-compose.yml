@@ -44,6 +44,10 @@ x-app-umgebung: &app-umgebung
   # Variable zu viel und sonst nichts; die notizen-api prueft weiterhin Token
   # und Mandanten.
   NOTIZEN_API_BASE_URL: http://saganta-notizen-api:8000
+  # Projektliste mit Gliederung (Auswahl „Projekt" in Aufgaben, Notizen,
+  # Kalender; Rueckverweis in Kontakte). Aus demselben Grund hier im Anker
+  # statt je Dienst; ohne sie fehlt die Auswahl, die Apps bleiben bedienbar.
+  PROJECTDECK_API_BASE_URL: http://saganta-projectdeck-api:8000
 
 x-hardening: &hardening
   read_only: true
@@ -629,9 +633,7 @@ services:
       # Die Aufgaben selbst liegen seit dem 2026-11-03 im eigenen Dienst; der
       # Kalender liefert weiter Tagesziele und Tagesbild.
       AUFGABEN_API_BASE_URL: http://saganta-aufgaben-api:8000
-      # Nur Projektnamen fuer „Nach Projekt" und die Auswahl; den Slug traegt
-      # jede Aufgabe selbst. Faellt der Abruf, steht ein Name aus dem Slug da.
-      PROJECTDECK_API_BASE_URL: http://saganta-projectdeck-api:8000
+      # (`PROJECTDECK_API_BASE_URL` kommt seit dem 2026-11-15 aus dem Anker oben.)
     networks: [eingang-net, kern-net]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
@@ -766,6 +768,37 @@ services:
     volumes:
       - kontakte-data:/data
     networks: [kern-net]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    <<: *hardening
+
+  # Saganta Assistent (KI-Chat Stufe 3, 2026-11-15): ein Chat fuer alle Apps,
+  # zuerst MealPrep. Liest im Namen des Aufrufers (eigenes 60-s-Token je App)
+  # und fragt das Modell am llm-gateway; schreibt nichts, speichert nichts.
+  # app-net, weil dort die nativen Dienste haengen (mealprep), kern-net fuer
+  # den Tardis-Weg. `required: false` wie bei aufgaben-api.
+  assistent-api:
+    build:
+      context: ../services/assistent-api
+      additional_contexts:
+        geteilt: ../services/_geteilt
+    container_name: saganta-assistent-api
+    mem_limit: 192m
+    memswap_limit: 192m
+    env_file:
+      - path: ../services/assistent-api/.env
+        required: false
+    # homelab-fast statt homelab-smart (gewinnt gegen die .env). gpt-oss auf
+    # .17 liest den Prompt mit ~15 Tok/s, und sein Prompt-Cache (512 MiB) wird
+    # von marktwatch/herb laufend verdraengt: die erste Frage des Tages las
+    # 1132 Tokens kalt ein, 95 s, ueber WARTEZEIT 90 s, App sah 502 (17.11.).
+    # Qwen3.5-4B: gemessen 8/8 Art+Titel+Kennung, ~25 s je Frage, kalt 54 s.
+    environment:
+      LLM_MODEL: homelab-fast
+    networks: [kern-net, app-net]
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()\" || exit 1"]
       interval: 30s

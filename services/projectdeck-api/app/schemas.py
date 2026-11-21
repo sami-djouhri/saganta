@@ -4,6 +4,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from saganta_dienst.eingang import Eingang
 
+from .enums import ProjectStatus
+
 
 # ---------- Project ----------
 class ProjectIn(Eingang):
@@ -11,7 +13,8 @@ class ProjectIn(Eingang):
     slug: str | None = Field(None, max_length=120)  # auto aus name, wenn leer
     description: str | None = None
     type: str = "private"
-    status: str = "idea"
+    # Als Enum: ein Tippfehler wie „plannd“ landete vorher in der DB und stand roh in der Oberflaeche.
+    status: ProjectStatus = ProjectStatus.IDEA
     visibility: str = "private"
     target_visibility: str | None = None
     scheduling_mode: str = "none"
@@ -46,12 +49,15 @@ class ProjectIn(Eingang):
     maintenance_mode: str | None = None
     handover_status: str | None = None
 
+    #: Gleich beim Anlegen unter diese Projekte haengen (Unterprojekt anlegen).
+    eltern_ids: list[int] = Field(default_factory=list, max_length=20)
+
 
 class ProjectPatch(Eingang):
     name: str | None = Field(None, max_length=200)
     description: str | None = None
     type: str | None = None
-    status: str | None = None
+    status: ProjectStatus | None = None
     visibility: str | None = None
     target_visibility: str | None = None
     scheduling_mode: str | None = None
@@ -134,6 +140,9 @@ class ProjectOut(BaseModel):
     overdue_tasks: int = 0
     #: In den letzten sieben Tagen erledigt: lebt das Projekt oder liegt es?
     done_7d: int = 0
+    #: Gliederung (2026-11-15): direkte Eltern und Kinder als Projekt-Kennungen.
+    eltern_ids: list[int] = []
+    kinder_ids: list[int] = []
 
 
 # ---------- Asset ----------
@@ -197,7 +206,7 @@ class ReviewIn(Eingang):
     decision: str = Field(..., max_length=60)
     notes: str | None = None
     next_action: str | None = Field(None, max_length=500)
-    new_status: str | None = None
+    new_status: ProjectStatus | None = None
     new_priority: int | None = Field(None, ge=1, le=5)
     new_weekly_budget_minutes: int | None = Field(None, ge=0)
 
@@ -306,3 +315,17 @@ class AISuggestOut(BaseModel):
     summary: str
     reasoning: list[str]  # immer die Regel-Begründung
     data: dict = Field(default_factory=dict)
+
+
+# ---------- Gliederung, Kontakte, Akte (2026-11-15) ----------
+class ElternIn(Eingang):
+    eltern_ids: list[int] = Field(default_factory=list, max_length=20)
+
+
+class KontaktVerweisIn(Eingang):
+    kontakt_id: str = Field(..., min_length=1, max_length=36)
+    rolle: str | None = Field(None, max_length=80)
+
+
+class KontaktVerweisPatch(Eingang):
+    rolle: str | None = Field(None, max_length=80)

@@ -107,6 +107,9 @@ class Project(Base):
     shutdown_checklist: Mapped["ShutdownChecklist | None"] = relationship(
         back_populates="project", cascade="all, delete-orphan", uselist=False
     )
+    kontakte: Mapped[list["ProjectKontakt"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class ProjectTask(Base):
@@ -161,6 +164,49 @@ class ProjectAsset(Base):
     )
 
     project: Mapped[Project] = relationship(back_populates="assets")
+
+
+class ProjectEltern(Base):
+    """Ein Projekt haengt unter einem anderen (2026-11-15, Entscheide U1/U2).
+
+    Ein Projekt kann mehrere Eltern haben: der Gartiko-Bot steht unter
+    Discord-Bots UND unter Gartiko und ist trotzdem nur einmal vorhanden.
+    Beliebig tief, aber ohne Kreis (geprueft in ``gliederung.eltern_setzen``).
+    Beide Seiten gehoeren demselben Mandanten; die Mandantenspalte steht am
+    Projekt, diese Zeile faellt per CASCADE mit jedem der beiden.
+    """
+
+    __tablename__ = "project_eltern"
+
+    kind_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    eltern_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ProjectKontakt(Base):
+    """Ein beteiligter Kontakt aus Saganta Kontakte, mit Rolle (2026-11-15).
+
+    Haelt nur die Kennung des Kontakts, keine Kopie von Name oder Nummer: die
+    liest die Projektakte bei jedem Aufruf aus ``kontakte-api``. Ein geloeschter
+    Kontakt bleibt hier stehen und wird dort als fehlend angezeigt.
+    """
+
+    __tablename__ = "project_kontakte"
+    __table_args__ = (UniqueConstraint("project_id", "kontakt_id", name="uq_project_kontakt"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    kontakt_id: Mapped[str] = mapped_column(String(36), index=True)
+    rolle: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    project: Mapped[Project] = relationship(back_populates="kontakte")
 
 
 class ProjectMilestone(Base):

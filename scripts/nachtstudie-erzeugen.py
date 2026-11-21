@@ -121,6 +121,12 @@ ZIELE: dict[str, tuple[Path, Path, str]] = {
         DOCKER / "launchpad/static/style.css",
         r"@import\s+url\(['\"]?(\./)?nachtstudie\.css['\"]?\)",
     ),
+    # walle: Ueberarbeitung 2026-11-21, vorher eigenes "Terminal"-Bild aus marktwatch.
+    "walle": (
+        DOCKER / "walle/frontend/src/styles/nachtstudie.css",
+        DOCKER / "walle/frontend/src/styles/global.css",
+        r"@import\s+['\"](\./)?nachtstudie\.css['\"]",
+    ),
 }
 
 BAUSTEIN_QUELLE = WURZEL / "packages/design-tokens/src/bausteine.css"
@@ -147,6 +153,12 @@ BAUSTEIN_ZIELE: dict[str, tuple[Path, Path, str]] = {
         DOCKER / "tresor-verwaltung/app/static/saganta-bausteine.css",
         DOCKER / "tresor-verwaltung/app/static/styles.css",
         r"@import\s+url\(['\"]?(\./)?saganta-bausteine\.css['\"]?\)",
+    ),
+    # walle: Ueberarbeitung 2026-11-21, vorher eigenes "Terminal"-Bild aus marktwatch.
+    "walle": (
+        DOCKER / "walle/frontend/src/styles/saganta-bausteine.css",
+        DOCKER / "walle/frontend/src/styles/global.css",
+        r"@import\s+['\"](\./)?saganta-bausteine\.css['\"]",
     ),
 }
 

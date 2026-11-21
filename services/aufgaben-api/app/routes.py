@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from . import belegung, kalender
+from . import belegung, kalender, notizen
 from .auth import Me, verify_jwt
 from .db import get_db
 from .models import Aufgabe, Liste, ListenAngelegt, neue_id
@@ -74,6 +74,10 @@ def _bezug_pruefen(db: Session, me: Me, aufgabe: Aufgabe) -> None:
     """
     if aufgabe.projekt and aufgabe.liste_id:
         raise _unzulaessig("Eine Aufgabe gehoert zu einem Projekt oder einer Liste, nicht zu beiden")
+    if aufgabe.weitere_projekte:
+        # Doppelte und das Zuhause selbst fallen weg, die Reihenfolge bleibt.
+        weitere = [s for s in dict.fromkeys(aufgabe.weitere_projekte) if s != aufgabe.projekt]
+        aufgabe.weitere_projekte = weitere or None
     if aufgabe.liste_id and db.execute(
         select(Liste.id).where(Liste.id == aufgabe.liste_id, Liste.owner_sub == me.sub)
     ).first() is None:
@@ -91,6 +95,24 @@ def _bezug_pruefen(db: Session, me: Me, aufgabe: Aufgabe) -> None:
         raise _unzulaessig("Ein bestimmter Ort braucht einen Namen")
     if aufgabe.start and aufgabe.ende and aufgabe.ende <= aufgabe.start:
         raise _unzulaessig("Ende liegt nicht nach dem Start")
+
+
+def _tag_zur_zeit(aufgabe: Aufgabe, gesetzt: set[str]) -> None:
+    """Plantag und Uhrzeit sagen dasselbe, sonst wertet jeder Leser anders.
+
+    Die Oberflaeche nahm ``tag`` oder ``start``, der Planer nur ``start.date()``;
+    ein PUT, der beides verschieden setzte, ergab zwei Wahrheiten. Wer eine Zeit
+    setzt, setzt damit den Tag. Wer allein einen anderen Tag setzt, meint
+    verschieben: die Zeit galt fuer den alten Tag und faellt weg (wie
+    ``/verschieben`` und die Web-App).
+    """
+    if aufgabe.start is None:
+        return
+    if "tag" in gesetzt and "start" not in gesetzt and aufgabe.tag != aufgabe.start.date():
+        aufgabe.start = None
+        aufgabe.ende = None
+    else:
+        aufgabe.tag = aufgabe.start.date()
 
 
 def _wartende(db: Session, me: Me, aufgaben: list[Aufgabe], stichtag: date) -> set[str]:
@@ -142,7 +164,9 @@ def _hole(db: Session, me: Me, aufgabe_id: str) -> Aufgabe:
 @router.get("/aufgaben", response_model=list[AufgabeAus])
 def liste(
     erledigte: bool = Query(False, description="statt der offenen die zuletzt erledigten"),
-    projekt: str | None = Query(None, max_length=120, description="nur die eines Projekts (Slug)"),
+    projekt: str | None = Query(
+        None, max_length=4000,
+        description="nur die dieser Projekte (Slug, mehrere mit Komma); trifft Zuhause und weitere Projekte"),
     liste_id: str | None = Query(None, max_length=36, description="nur die einer Liste"),
     herkunft: str | None = Query(
         None, max_length=64, description="genau diese Herkunft, offen oder erledigt (fuer den Umzug)"),
@@ -154,15 +178,26 @@ def liste(
         abfrage = abfrage.where(Aufgabe.herkunft == herkunft)
         return _mit_wartet(db, me, list(db.execute(abfrage).scalars()))
     abfrage = abfrage.where(Aufgabe.erledigt == erledigte)
-    if projekt is not None:
-        abfrage = abfrage.where(Aufgabe.projekt == projekt)
+    slugs = {s for s in (projekt or "").split(",") if s} if projekt is not None else None
+    if slugs is not None:
+        # Weitere Projekte liegen als JSON-Liste: die Vorauswahl nimmt alle mit
+        # einer solchen Liste mit, der genaue Abgleich folgt unten in Python.
+        abfrage = abfrage.where(Aufgabe.projekt.in_(slugs) | Aufgabe.weitere_projekte.is_not(None))
     if liste_id is not None:
         abfrage = abfrage.where(Aufgabe.liste_id == liste_id)
     if erledigte:
-        abfrage = abfrage.order_by(Aufgabe.erledigt_am.desc()).limit(MAX_ERLEDIGTE)
+        abfrage = abfrage.order_by(Aufgabe.erledigt_am.desc())
+        if slugs is None:
+            abfrage = abfrage.limit(MAX_ERLEDIGTE)
     else:
         abfrage = abfrage.order_by(Aufgabe.erstellt_am)
-    return _mit_wartet(db, me, list(db.execute(abfrage).scalars()))
+    treffer = list(db.execute(abfrage).scalars())
+    if slugs is not None:
+        treffer = [a for a in treffer
+                   if a.projekt in slugs or slugs.intersection(a.weitere_projekte or [])]
+    if erledigte:
+        treffer = treffer[:MAX_ERLEDIGTE]
+    return _mit_wartet(db, me, treffer)
 
 
 #: So viele Tage umfasst eine Zeitraum-Abfrage hoechstens: das Bootstrap-Fenster der
@@ -198,6 +233,45 @@ def zeitraum(
     return _mit_wartet(db, me, list(db.execute(abfrage).scalars()))
 
 
+_ZAEHLFELDER = ("offen", "erledigt", "hoch", "ueberfaellig", "erledigt_7")
+
+
+def _zaehlzeilen(db: Session, me: Me) -> list[tuple]:
+    return db.execute(
+        select(Aufgabe.projekt, Aufgabe.weitere_projekte, Aufgabe.erledigt, Aufgabe.prioritaet,
+               Aufgabe.faellig, Aufgabe.erledigt_am)
+        .where(Aufgabe.owner_sub == me.sub,
+               Aufgabe.projekt.is_not(None) | Aufgabe.weitere_projekte.is_not(None))
+    ).all()
+
+
+def _zaehlen(zeilen: list[tuple], gruppen_von) -> dict[str, dict[str, int]]:
+    """Zaehlt jede Aufgabe einmal je Gruppe, in der eines ihrer Projekte liegt.
+
+    ``gruppen_von(slugs)`` nennt zu den Projekten einer Aufgabe (Zuhause plus
+    ``weitere_projekte``) die Gruppen, in die sie faellt. Als Menge, damit eine
+    Aufgabe in Eltern und Kind derselben Gruppe nicht doppelt zaehlt.
+    """
+    heute = _berlin_jetzt().date()
+    seit = _berlin_jetzt() - timedelta(days=7)
+    ergebnis: dict[str, dict[str, int]] = {}
+    for projekt, weitere, erledigt, prioritaet, faellig, erledigt_am in zeilen:
+        slugs = ({projekt} if projekt else set()) | set(weitere or [])
+        for gruppe in gruppen_von(slugs):
+            eintrag = ergebnis.setdefault(gruppe, dict.fromkeys(_ZAEHLFELDER, 0))
+            if erledigt:
+                eintrag["erledigt"] += 1
+                if erledigt_am is not None and erledigt_am >= seit:
+                    eintrag["erledigt_7"] += 1
+                continue
+            eintrag["offen"] += 1
+            if prioritaet == "hoch":
+                eintrag["hoch"] += 1
+            if faellig is not None and faellig < heute:
+                eintrag["ueberfaellig"] += 1
+    return ergebnis
+
+
 @router.get("/projekte/zaehlung")
 def projekte_zaehlung(me: Me = Depends(verify_jwt), db: Session = Depends(get_db)) -> dict[str, dict[str, int]]:
     """Stand je Projekt-Slug, fuer die Uebersicht im ProjectDeck.
@@ -206,28 +280,31 @@ def projekte_zaehlung(me: Me = Depends(verify_jwt), db: Session = Depends(get_db
     hoch (die Projektliste sortiert danach), ``ueberfaellig`` die offenen mit
     Frist vor heute, ``erledigt_7`` die in den letzten sieben Tagen erledigten.
     Die beiden letzten sagen, ob ein Projekt lebt oder liegt (ZIELBILD 108).
+    Eine Aufgabe zaehlt bei ihrem Zuhause und bei jedem ihrer
+    ``weitere_projekte``, wie in der Akte. Summen ueber mehrere Slugs bitte
+    ueber ``POST /projekte/zaehlung/gruppen``, sonst zaehlt sie doppelt.
     """
-    heute = _berlin_jetzt().date()
-    seit = _berlin_jetzt() - timedelta(days=7)
-    zeilen = db.execute(
-        select(Aufgabe.projekt, Aufgabe.erledigt, Aufgabe.prioritaet, Aufgabe.faellig, Aufgabe.erledigt_am)
-        .where(Aufgabe.owner_sub == me.sub, Aufgabe.projekt.is_not(None))
-    ).all()
-    ergebnis: dict[str, dict[str, int]] = {}
-    for slug, erledigt, prioritaet, faellig, erledigt_am in zeilen:
-        eintrag = ergebnis.setdefault(
-            slug, {"offen": 0, "erledigt": 0, "hoch": 0, "ueberfaellig": 0, "erledigt_7": 0})
-        if erledigt:
-            eintrag["erledigt"] += 1
-            if erledigt_am is not None and erledigt_am >= seit:
-                eintrag["erledigt_7"] += 1
-            continue
-        eintrag["offen"] += 1
-        if prioritaet == "hoch":
-            eintrag["hoch"] += 1
-        if faellig is not None and faellig < heute:
-            eintrag["ueberfaellig"] += 1
-    return ergebnis
+    return _zaehlen(_zaehlzeilen(db, me), lambda slugs: slugs)
+
+
+@router.post("/projekte/zaehlung/gruppen")
+def projekte_zaehlung_gruppen(
+    gruppen: dict[str, list[str]], me: Me = Depends(verify_jwt), db: Session = Depends(get_db),
+) -> dict[str, dict[str, int]]:
+    """Stand je Gruppe von Slugs (etwa ein Teilbaum), jede Aufgabe einmal je Gruppe.
+
+    Rumpf ``{"<name>": ["slug", ...]}``. Gruppen ohne Aufgabe stehen mit
+    Nullen in der Antwort, damit der Aufrufer „keine“ von „fehlt“ trennen kann.
+    """
+    if len(gruppen) > 500 or any(len(v) > 500 for v in gruppen.values()):
+        raise _unzulaessig("hoechstens 500 Gruppen mit je 500 Slugs")
+    je_slug: dict[str, set[str]] = {}
+    for name, slugs in gruppen.items():
+        for slug in slugs:
+            je_slug.setdefault(slug, set()).add(name)
+    ergebnis = _zaehlen(_zaehlzeilen(db, me),
+                        lambda slugs: set().union(*(je_slug.get(s, set()) for s in slugs)))
+    return {name: ergebnis.get(name, dict.fromkeys(_ZAEHLFELDER, 0)) for name in gruppen}
 
 
 @router.post("/projekte/{slug}/loesen")
@@ -243,8 +320,14 @@ def projekt_loesen(slug: str, me: Me = Depends(verify_jwt), db: Session = Depend
         .where(Aufgabe.owner_sub == me.sub, Aufgabe.projekt == slug)
         .values(projekt=None)
     )
+    geloest = ergebnis.rowcount
+    for aufgabe in db.execute(select(Aufgabe).where(
+            Aufgabe.owner_sub == me.sub, Aufgabe.weitere_projekte.is_not(None))).scalars():
+        if slug in (aufgabe.weitere_projekte or []):
+            aufgabe.weitere_projekte = [s for s in aufgabe.weitere_projekte if s != slug] or None
+            geloest += 1
     db.commit()
-    return {"geloest": ergebnis.rowcount}
+    return {"geloest": geloest}
 
 
 @router.post("/aufgaben", response_model=AufgabeAus, status_code=status.HTTP_201_CREATED)
@@ -259,6 +342,8 @@ def anlegen(
         felder["zeitfenster"] = [f.model_dump() for f in daten.zeitfenster]
     if daten.unteraufgaben is not None:
         felder["unteraufgaben"] = [u.model_dump() for u in daten.unteraufgaben]
+    felder["start"] = berlin_naiv(felder["start"])
+    felder["ende"] = berlin_naiv(felder["ende"])
     if felder["erledigt_am"] is not None:
         felder["erledigt"] = True
         felder["erledigt_am"] = berlin_naiv(felder["erledigt_am"])
@@ -268,6 +353,7 @@ def anlegen(
         raise HTTPException(status.HTTP_409_CONFLICT, "Aufgabe mit dieser Herkunft gibt es schon")
     aufgabe = Aufgabe(owner_sub=me.sub, **felder)
     aufgabe.id = aufgabe.id or neue_id()
+    _tag_zur_zeit(aufgabe, daten.model_fields_set)
     _bezug_pruefen(db, me, aufgabe)
     db.add(aufgabe)
     db.commit()
@@ -315,6 +401,7 @@ def aendern(
         aufgabe.liste_id = None
     if aufgabe.liste_id and "liste_id" in gesetzt and "projekt" not in gesetzt:
         aufgabe.projekt = None
+    _tag_zur_zeit(aufgabe, gesetzt)
     _bezug_pruefen(db, me, aufgabe)
     db.commit()
     db.refresh(aufgabe)
@@ -470,6 +557,7 @@ def loeschen(
     db.commit()
     if hatte_zeit:
         belegung.vormerken(hintergrund, db, me)
+    notizen.vormerken(hintergrund, me, aufgabe_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -646,7 +734,12 @@ def planen(
     fenster: dict[str, list[dict] | None] = {}
     nicht_an_dem_tag: list[PlanZurueck] = []
     for a in offen:
-        if a.start is not None or a.termin_id is not None:
+        if a.termin_id is not None:
+            continue
+        # Eine Zeit vor dem Plantag ist verpasst und sperrt nicht mehr: sonst
+        # nahm „Tag planen“ eine gestern liegengebliebene Aufgabe nie wieder auf,
+        # und sie stand ohne Uhrzeit und ohne Weg zurueck auf heute.
+        if a.start is not None and a.start.date() >= daten.datum:
             continue
         if a.tag is not None and a.tag > daten.datum:
             continue
@@ -666,10 +759,13 @@ def planen(
             nicht_an_dem_tag.append(PlanZurueck(aufgabe_id=a.id, titel=a.titel, grund=grund))
             continue
         kandidaten.append(a)
+    # Ende wie in der Meldung an den Kalender (``belegung.ende_von``): eine
+    # Aufgabe mit Start und Dauer, aber ohne Ende, fehlte hier und wurde ueberplant.
     belegt = [
-        {"start": a.start.isoformat(), "end": a.ende.isoformat()}
+        {"start": a.start.isoformat(), "end": ende.isoformat()}
         for a in offen
-        if a.start and a.ende and a.start.date() == daten.datum
+        if a.start and a.start.date() == daten.datum
+        and (ende := belegung.ende_von(a)) is not None and ende > a.start
     ]
     anfrage = {
         "date": daten.datum.isoformat(),

@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from saganta_dienst.suchmuster import ESCAPE, enthaelt
+
 from .auth import CurrentUser, Me
 from .config import PROVIDER_PRESETS, settings
 from .crypto import encrypt
@@ -233,13 +235,13 @@ def list_messages(
         # "MÜNCHEN" findet "münchen" nicht. Dieselbe Grenze hat die Suche im
         # briefkasten; sie hier anders zu loesen hiesse, zwei Verhalten unter
         # einem Suchfeld zu haben.
-        muster = f"%{suche.strip()}%"
+        muster = enthaelt(suche.strip())
         q = q.filter(
             or_(
-                MailMessage.subject.ilike(muster),
-                MailMessage.from_addr.ilike(muster),
-                MailMessage.from_name.ilike(muster),
-                MailMessage.to_addr.ilike(muster),
+                MailMessage.subject.ilike(muster, escape=ESCAPE),
+                MailMessage.from_addr.ilike(muster, escape=ESCAPE),
+                MailMessage.from_name.ilike(muster, escape=ESCAPE),
+                MailMessage.to_addr.ilike(muster, escape=ESCAPE),
             )
         )
 

@@ -57,6 +57,7 @@ PLAN = loeschen.Plan(
         loeschen.eigene("freigaben", warum="Freigabe-Chiffrat und Merkmal"),
         loeschen.eigene("anhaenge", warum="Metadaten der Anhaenge"),
         loeschen.eigene("verknuepfungen", warum="Bezuege auf Termine, Aufgaben, Briefe"),
+        loeschen.eigene("notiz_verweise", warum="Verbindungen zwischen eigenen Notizen"),
         loeschen.eigene("notizen", warum="die Notizen selbst, samt FTS-Index ueber Trigger"),
         loeschen.eigene("notizbuecher", warum="die Notizbuecher"),
     ),

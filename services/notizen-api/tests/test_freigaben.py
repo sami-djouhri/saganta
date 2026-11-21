@@ -306,3 +306,38 @@ def test_liste_gibt_den_schluessel_selbst_niemals_heraus(client, kopf, notiz):
     assert "nicht-lesbar-fuer-den-server" not in client.get(
         "/api/freigaben", headers=kopf
     ).text
+
+
+def test_erledigte_freigabe_laesst_sich_entfernen_aktive_nicht(client, kopf, notiz):
+    aktiv = freigeben(client, kopf, notiz["id"])
+    weg = freigeben(client, kopf, notiz["id"])
+    client.delete(f"/api/freigaben/{weg['id']}", headers=kopf)
+
+    # Aktiv: erst zurueckziehen, nicht still entfernen.
+    assert client.delete(f"/api/freigaben/{aktiv['id']}/eintrag", headers=kopf).status_code == 409
+    assert client.delete(f"/api/freigaben/{weg['id']}/eintrag", headers=kopf).status_code == 204
+
+    ids = [f["id"] for f in client.get("/api/freigaben", headers=kopf).json()]
+    assert ids == [aktiv["id"]]
+    assert client.get(f"/oeffentlich/{weg['merkmal']}").status_code == 404
+
+
+def test_aufraeumen_nimmt_nur_nicht_mehr_abrufbare(client, kopf, kopf_zwei, notiz):
+    aktiv = freigeben(client, kopf, notiz["id"])
+    for _ in range(2):
+        f = freigeben(client, kopf, notiz["id"])
+        client.delete(f"/api/freigaben/{f['id']}", headers=kopf)
+    fremde_notiz = client.post("/api/notizen", json={"titel": "x"}, headers=kopf_zwei).json()
+    fremd = freigeben(client, kopf_zwei, fremde_notiz["id"])
+    client.delete(f"/api/freigaben/{fremd['id']}", headers=kopf_zwei)
+
+    assert client.post("/api/freigaben/aufraeumen", headers=kopf).json() == {"entfernt": 2}
+    assert [f["id"] for f in client.get("/api/freigaben", headers=kopf).json()] == [aktiv["id"]]
+    # Das fremde Konto behaelt seinen Eintrag.
+    assert len(client.get("/api/freigaben", headers=kopf_zwei).json()) == 1
+
+
+def test_fremden_eintrag_kann_man_nicht_entfernen(client, kopf, kopf_zwei, notiz):
+    f = freigeben(client, kopf, notiz["id"])
+    client.delete(f"/api/freigaben/{f['id']}", headers=kopf)
+    assert client.delete(f"/api/freigaben/{f['id']}/eintrag", headers=kopf_zwei).status_code == 404

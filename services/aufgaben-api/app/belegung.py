@@ -28,7 +28,8 @@ log = structlog.get_logger()
 PFAD = "/api/planung/belegungen/aufgaben"
 
 
-def _ende(a: Aufgabe) -> datetime | None:
+def ende_von(a: Aufgabe) -> datetime | None:
+    """Ende einer geplanten Aufgabe; ohne ``ende`` aus der Dauer. Eine Regel fuer alle Leser."""
     if a.ende is not None:
         return a.ende
     if a.dauer_min:
@@ -48,7 +49,7 @@ def liste(db: Session, me: Me) -> list[dict]:
     ).scalars()
     eintraege = []
     for a in zeilen:
-        ende = _ende(a)
+        ende = ende_von(a)
         if ende is None or ende <= a.start or ende <= jetzt:
             continue
         eintraege.append({

@@ -99,6 +99,20 @@ def zaehlung(me: Me) -> dict[str, dict[str, int]] | None:
         return None
 
 
+def zaehlung_gruppen(me: Me, gruppen: dict[str, list[str]]) -> dict[str, dict[str, int]] | None:
+    """Stand je Gruppe von Slugs, jede Aufgabe einmal je Gruppe.
+
+    Fuer Summen ueber einen Teilbaum. Die Summe ueber ``zaehlung()`` je Slug
+    zaehlte eine Aufgabe, die in Eltern und Kind haengt, doppelt.
+    """
+    if not gruppen:
+        return {}
+    try:
+        return aufruf(me, "POST", "/api/projekte/zaehlung/gruppen", json=gruppen) or {}
+    except (AufgabenNichtErreichbar, httpx.HTTPStatusError):
+        return None
+
+
 # --- Was Risiko, Befunde und KI-Begruendung lesen --------------------------
 #
 # Beide liefern ``(aufgaben, unbekannt)``. ``project_tasks`` liest seit dem

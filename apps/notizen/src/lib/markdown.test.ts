@@ -9,7 +9,7 @@
 
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { rendern } from './markdown';
+import { rendern, verweisSchluessel } from './markdown';
 
 const doc = document;
 
@@ -153,5 +153,57 @@ describe('Formatierung', () => {
 
   it('behandelt Windows-Zeilenenden wie Unix-Zeilenenden', () => {
     expect(knoten('# Titel\r\n\r\nText').querySelector('h1')?.textContent).toBe('Titel');
+  });
+});
+
+describe('Verweise zwischen Notizen ([[Titel]])', () => {
+  const ziele = new Map([['garten', 7]]);
+  const aufloeser = (t: string) => ziele.get(verweisSchluessel(t)) ?? null;
+  function mit(quelle: string): HTMLDivElement {
+    const halter = doc.createElement('div');
+    halter.appendChild(rendern(quelle, doc, aufloeser));
+    return halter;
+  }
+
+  it('ohne Auflöser bleibt nur die Anzeige als Text (öffentliche Leseseite)', () => {
+    const k = knoten('Siehe [[Garten]] und [[Keller|den Keller]].');
+    expect(k.querySelector('a')).toBeNull();
+    expect(k.textContent).toBe('Siehe Garten und den Keller.');
+  });
+
+  it('löst auf die Notiz auf, ohne Groß/klein und Leerraum zu beachten', () => {
+    const a = mit('[[  GARTEN ]]').querySelector('a.verweis') as HTMLAnchorElement;
+    expect(a.getAttribute('href')).toBe('/notiz/7');
+    expect(a.textContent).toBe('GARTEN');
+    expect(a.dataset.fehlt).toBeUndefined();
+  });
+
+  it('ein fehlendes Ziel wird ein Anlege-Link ohne Adresse aus dem Titel', () => {
+    const a = mit('[[Dach|oben]]').querySelector('a.verweis') as HTMLAnchorElement;
+    expect(a.getAttribute('href')).toBe('#');
+    expect(a.dataset.fehlt).toBe('true');
+    expect(a.dataset.titel).toBe('Dach');
+    expect(a.textContent).toBe('oben');
+  });
+
+  it('macht aus einem Titel weder Markup noch eine Adresse', () => {
+    const k = mit('[[<img src=x onerror=alert(1)>]] [[javascript:alert(1)]]');
+    expect(k.querySelector('img')).toBeNull();
+    for (const a of Array.from(k.querySelectorAll('a'))) {
+      expect(a.getAttribute('href')).toBe('#');
+    }
+  });
+
+  it('gilt in Listen, Zitaten und Fettdruck, nicht in Code', () => {
+    const k = mit('- [[Garten]]\n> **[[Garten]]**\n\n`[[Garten]]`');
+    expect(k.querySelectorAll('a.verweis')).toHaveLength(2);
+    expect(k.querySelector('code')?.textContent).toBe('[[Garten]]');
+  });
+
+  it('ein normaler Link daneben bleibt ein Link nach draußen', () => {
+    const k = mit('[[Garten]] [Doku](https://example.invalid/x)');
+    const links = Array.from(k.querySelectorAll('a'));
+    expect(links.map((a) => a.className)).toEqual(['verweis', '']);
+    expect(links[1]?.getAttribute('href')).toBe('https://example.invalid/x');
   });
 });

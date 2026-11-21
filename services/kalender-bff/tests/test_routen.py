@@ -19,6 +19,7 @@ Lauf: ``python -m pytest tests/ -q`` (oder ``python -m unittest discover -s test
 import json
 import os
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -45,6 +46,9 @@ MANDANTEN: list[tuple[str, str | None, bool]] = []
 #: Laesst die Gateway-Attrappe eine leere Antwort geben. Ein Thinking-Modell
 #: tut das bei knappem Token-Budget, und zwar mit HTTP 200.
 LEERE_LLM_ANTWORT = False
+#: Laesst den Nachbau bei Termin-Aufrufen so lange warten, bevor er antwortet.
+#: Damit laesst sich pruefen, dass Schreiben laenger warten darf als Lesen.
+BREMSE_SEKUNDEN = 0.0
 
 
 class NachbauHandler(BaseHTTPRequestHandler):
@@ -80,6 +84,8 @@ class NachbauHandler(BaseHTTPRequestHandler):
         zerlegt = urlparse(self.path)
         abfrage = {k: v[0] for k, v in parse_qs(zerlegt.query).items()}
         GESEHEN.append(("GET", zerlegt.path, abfrage))
+        if BREMSE_SEKUNDEN and zerlegt.path.startswith("/api/events"):
+            time.sleep(BREMSE_SEKUNDEN)
         MANDANTEN.append((
             zerlegt.path,
             self.headers.get("X-Saganta-Sub"),
@@ -140,6 +146,8 @@ class NachbauHandler(BaseHTTPRequestHandler):
                                       "start": "2026-08-25T09:00:00",
                                       "end": "2026-08-25T10:00:00",
                                       "recurrence_rule": None})
+        if zerlegt.path == "/api/events/vorschlaege":
+            return self._senden(200, {"titel": [{"title": "Zahnarzt", "dauer_min": 45}]})
         if zerlegt.path == "/api/mobile/konflikte":
             if not self._pflicht(abfrage, ("von", "bis")):
                 return
@@ -233,6 +241,8 @@ class NachbauHandler(BaseHTTPRequestHandler):
         laenge = int(self.headers.get("Content-Length", 0))
         rumpf = json.loads(self.rfile.read(laenge) or b"{}")
         GESEHEN.append(("PUT", zerlegt.path, rumpf))
+        if BREMSE_SEKUNDEN and zerlegt.path.startswith("/api/events"):
+            time.sleep(BREMSE_SEKUNDEN)
         return self._senden(200, {"id": zerlegt.path.rsplit("/", 1)[-1], **rumpf})
 
     #: Pfad -> Pflicht-QUERY-Parameter des nativen Dienstes bei POST.
@@ -437,6 +447,17 @@ class BffRoutenTest(unittest.TestCase):
         r = self.klient.get("/api/places", headers=self.kopf)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()[0]["kind"], "zuhause")
+
+    def test_termin_vorschlaege_reichen_art_und_q_durch(self):
+        r = self.klient.get("/api/events/vorschlaege?art=titel&q=Zahn", headers=self.kopf)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["titel"][0]["dauer_min"], 45)
+        self.assertEqual(self._abfrage_an("/api/events/vorschlaege"), {"art": "titel", "q": "Zahn", "limit": "8"})
+
+    def test_termin_vorschlaege_unbekannte_art_erreicht_den_kalender_nicht(self):
+        r = self.klient.get("/api/events/vorschlaege?art=alles", headers=self.kopf)
+        self.assertEqual(r.status_code, 422)
+        self.assertFalse([p for _, p, _ in GESEHEN if p == "/api/events/vorschlaege"])
 
     def test_adresssuche_reicht_q_durch(self):
         r = self.klient.get("/api/places/adressen/suche?q=Hauptstr", headers=self.kopf)
@@ -731,6 +752,27 @@ class BffRoutenTest(unittest.TestCase):
         self.assertIn("recurrence_rule", rumpf)
         self.assertIsNone(rumpf["recurrence_rule"])
 
+    def test_schreiben_darf_laenger_warten_als_lesen(self):
+        """Gemessen 2026-11-19: ein PUT der App lief in die 5 s des Lese-Timeouts
+        (502), waehrend mealprep den Kalender mit Einzelabfragen beschaeftigte.
+        Nach einem Schreibzugriff plant der Kalender ausserdem die Woche neu
+        (rund 2,5 s bei 0,25 CPU). Schreiben bekommt deshalb ein eigenes,
+        laengeres Zeitfenster; Lesen bleibt knapp, damit die Ansicht nicht haengt."""
+        global BREMSE_SEKUNDEN
+        from app.config import settings
+        alt = (settings.kalender_timeout_seconds, settings.kalender_schreib_timeout_seconds)
+        settings.kalender_timeout_seconds = 0.3
+        settings.kalender_schreib_timeout_seconds = 3.0
+        BREMSE_SEKUNDEN = 0.8
+        try:
+            r = self.klient.put("/api/events/e-1", json={"title": "Chor"}, headers=self.kopf)
+            self.assertEqual(r.status_code, 200, r.text)
+            r = self.klient.get("/api/events/range?start=2026-11-16&end=2026-11-22", headers=self.kopf)
+            self.assertEqual(r.status_code, 502, r.text)
+        finally:
+            BREMSE_SEKUNDEN = 0.0
+            settings.kalender_timeout_seconds, settings.kalender_schreib_timeout_seconds = alt
+
     def test_aendern_ohne_schalter_laesst_die_regel_stehen(self):
         """Die App bis 0.8.4 schickt bei jedem Speichern eine Vorlage
         („FREQ=WEEKLY") und wuerde damit Wochentage und Ende einer eigenen
@@ -740,6 +782,34 @@ class BffRoutenTest(unittest.TestCase):
                         headers=self.kopf)
         rumpf = [d for m, p, d in GESEHEN if m == "PUT"][0]
         self.assertEqual(rumpf, {"title": "Chor"})
+
+    def test_anlegen_reicht_projekt_und_aktivitaet_durch(self):
+        """Beide Felder fielen bis 2026-11-15 still weg (Pydantic verwirft Unbekanntes)."""
+        self.klient.post("/api/events", json={
+            "calendar_id": "k", "title": "Abnahme", "start": "2026-12-03T10:00:00",
+            "end": "2026-12-03T11:00:00", "projekt": "gartiko", "activity_type": "hobby"},
+            headers=self.kopf)
+        rumpf = [d for m, p, d in GESEHEN if m == "POST" and p == "/api/events"][0]
+        self.assertEqual(rumpf["projekt"], "gartiko")
+        self.assertEqual(rumpf["activity_type"], "hobby")
+
+    def test_leeres_projekt_loest_den_bezug(self):
+        self.klient.put("/api/events/serie-1", json={"projekt": ""}, headers=self.kopf)
+        rumpf = [d for m, p, d in GESEHEN if m == "PUT"][0]
+        self.assertIn("projekt", rumpf)
+        self.assertIsNone(rumpf["projekt"])
+
+    def test_erinnerung_minus_eins_entfernt_sie(self):
+        self.klient.put("/api/events/einzel-1", json={"reminder_minutes": -1}, headers=self.kopf)
+        rumpf = [d for m, p, d in GESEHEN if m == "PUT"][0]
+        self.assertIn("reminder_minutes", rumpf)
+        self.assertIsNone(rumpf["reminder_minutes"])
+
+    def test_erinnerung_wird_gesetzt_und_unter_minus_eins_abgelehnt(self):
+        self.klient.put("/api/events/einzel-1", json={"reminder_minutes": 30}, headers=self.kopf)
+        self.assertEqual([d for m, p, d in GESEHEN if m == "PUT"][0]["reminder_minutes"], 30)
+        r = self.klient.put("/api/events/einzel-1", json={"reminder_minutes": -5}, headers=self.kopf)
+        self.assertEqual(r.status_code, 422)
 
     def test_aendern_mit_schalter_setzt_die_regel(self):
         self.klient.put("/api/events/serie-1",

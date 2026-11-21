@@ -25,8 +25,10 @@
     selectedDay: string | null;
     onSelectDay: (day: string) => void;
     onSelectEvent: (ev: KalenderEvent) => void;
+    /** Projektnamen je Slug für die Marke am Termin (seit 2026-11-21). */
+    projektNamen?: Record<string, string>;
   }
-  let { month, today, events, calMeta, selectedDay, onSelectDay, onSelectEvent }: Props = $props();
+  let { month, today, events, calMeta, selectedDay, onSelectDay, onSelectEvent, projektNamen = {} }: Props = $props();
 
   const gridDays = $derived(monthGridDays(month));
 
@@ -216,6 +218,9 @@
               {:else}
                 <span class="h-1.5 w-1.5 shrink-0 rounded-full" style="background-color:{c}"></span>
                 <span class="truncate"><span class="text-muted">{fmtTime(ev.start_at ?? ev.start ?? '')}</span> {ev.title}</span>
+              {/if}
+              {#if ev.projekt}
+                <span class="ml-auto shrink-0 text-muted" title="Projekt „{projektNamen[ev.projekt] ?? ev.projekt}“"><Icon name="folder" size={10} /></span>
               {/if}
             </button>
           {/each}

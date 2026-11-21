@@ -14,6 +14,8 @@ import re
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from saganta_dienst.suchmuster import enthaelt
+
 from . import db
 
 # Ausschnitt-Laenge in Tokens fuer die Trefferzeile.
@@ -91,10 +93,10 @@ def suchen(
     like_bedingungen = []
     for i, w in enumerate(woerter):
         schluessel = f"w{i}"
-        parameter[schluessel] = f"%{w.lower()}%"
+        parameter[schluessel] = enthaelt(w.lower())
         like_bedingungen.append(
-            f"(lower(n.titel) LIKE :{schluessel} OR lower(n.inhalt) LIKE :{schluessel}"
-            f" OR lower(n.tags) LIKE :{schluessel})"
+            f"(lower(n.titel) LIKE :{schluessel} ESCAPE '\\' OR lower(n.inhalt) LIKE :{schluessel} ESCAPE '\\'"
+            f" OR lower(n.tags) LIKE :{schluessel} ESCAPE '\\')"
         )
     parameter.pop("q", None)
     sql = text(

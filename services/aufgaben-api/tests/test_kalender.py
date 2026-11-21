@@ -215,3 +215,43 @@ def test_kalender_weg_speichern_klappt_trotzdem(kal, client, kopf):
     r = client.put(f"/api/aufgaben/{a['id']}", headers=kopf,
                    json={"start": "2099-11-14T13:00:00", "ende": "2099-11-14T14:00:00"})
     assert r.status_code == 200
+
+
+def test_verpasste_zeit_wird_wieder_kandidat(kal, client, kopf):
+    """Gestern um 16 Uhr eingeplant und liegen geblieben: heute wieder planbar."""
+    gesehen, antworten = kal
+    alt = _neu(client, kopf, titel="Liegengeblieben", tag="2026-11-03",
+               start="2026-11-03T16:00:00", ende="2026-11-03T16:30:00")
+    heute_fest = _neu(client, kopf, titel="Heute fest", tag="2026-11-04",
+                      start="2026-11-04T09:00:00", ende="2026-11-04T10:00:00")
+    antworten[("POST", "/api/assistant/vorschlag")] = {"suggestions": [], "deferred": []}
+    client.post("/api/planen", json={"datum": "2026-11-04"}, headers=kopf)
+    ids = {a["id"] for a in gesehen[-1][2]["json"]["aufgaben"]}
+    assert alt["id"] in ids, "eine verpasste Zeit darf nicht dauerhaft sperren"
+    assert heute_fest["id"] not in ids, "eine Zeit am Plantag bleibt fest"
+
+
+def test_belegt_nimmt_die_dauer_wenn_das_ende_fehlt(kal, client, kopf):
+    gesehen, antworten = kal
+    _neu(client, kopf, titel="Ohne Ende", tag="2026-11-04", start="2026-11-04T10:00:00", dauer_min=45)
+    antworten[("POST", "/api/assistant/vorschlag")] = {"suggestions": [], "deferred": []}
+    client.post("/api/planen", json={"datum": "2026-11-04"}, headers=kopf)
+    assert gesehen[-1][2]["json"]["belegt"] == [{"start": "2026-11-04T10:00:00", "end": "2026-11-04T10:45:00"}]
+
+
+def test_tag_folgt_der_zeit(kal, client, kopf):
+    # Beim Anlegen gewinnt die Zeit gegen einen widersprechenden Tag.
+    a = _neu(client, kopf, titel="A", tag="2026-11-01", start="2026-11-05T09:00:00", ende="2026-11-05T10:00:00")
+    assert a["tag"] == "2026-11-05"
+    # Nur eine Zeit gesetzt: der Tag zieht mit.
+    b = client.put(f"/api/aufgaben/{a['id']}", headers=kopf,
+                   json={"start": "2026-11-07T09:00:00", "ende": "2026-11-07T10:00:00"}).json()
+    assert b["tag"] == "2026-11-07"
+    # Nur ein anderer Tag gesetzt: verschieben, die alte Zeit faellt weg.
+    c = client.put(f"/api/aufgaben/{a['id']}", headers=kopf, json={"tag": "2026-11-09"}).json()
+    assert c["tag"] == "2026-11-09" and c["start"] is None and c["ende"] is None
+    # Derselbe Tag noch einmal geschickt aendert an einer passenden Zeit nichts.
+    client.put(f"/api/aufgaben/{a['id']}", headers=kopf,
+               json={"start": "2026-11-09T08:00:00", "ende": "2026-11-09T08:30:00"})
+    d = client.put(f"/api/aufgaben/{a['id']}", headers=kopf, json={"tag": "2026-11-09", "titel": "A2"}).json()
+    assert d["start"].startswith("2026-11-09T08:00")

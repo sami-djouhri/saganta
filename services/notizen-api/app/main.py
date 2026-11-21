@@ -17,6 +17,7 @@ from .db import Base, engine, get_db, init_db
 from .konto import PLAN as LOESCHPLAN
 from .routes_freigaben import router as freigaben_router
 from .routes_notizbuecher import router as notizbuecher_router
+from .routes_netz import router as netz_router
 from .routes_notizen import router as notizen_router
 from .routes_oeffentlich import router as oeffentlich_router
 
@@ -103,6 +104,10 @@ def health_ready() -> JSONResponse:
 
 
 app.include_router(notizbuecher_router, prefix="/api/notizbuecher", tags=["notizbuecher"])
+# Verweise zwischen Notizen: verbunden und [[Titel]], unter demselben Vorsatz.
+# VOR dem Notizen-Router: dessen GET /{notiz_id} faengt sonst /netz und
+# /titel ab und antwortet mit 422, weil "netz" keine Zahl ist.
+app.include_router(netz_router, prefix="/api/notizen", tags=["notizen"])
 app.include_router(notizen_router, prefix="/api/notizen", tags=["notizen"])
 app.include_router(freigaben_router, prefix="/api/freigaben", tags=["freigaben"])
 # Auskunft und Loeschung des eigenen Bestands. Der Loeschweg steht in konto.py,

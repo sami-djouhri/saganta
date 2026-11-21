@@ -8,6 +8,7 @@
    * eigene Flaeche im ProjectDeck.
    */
   import type { Liste, Projekt } from '$lib/aufgaben-bff';
+  import ProjektOptionen from './ProjektOptionen.svelte';
 
   interface Props {
     listen: Liste[];
@@ -31,9 +32,7 @@
   {/if}
   {#if projekte.length > 0}
     <optgroup label="Projekte">
-      {#each projekte as p (p.id)}
-        <option value="projekt:{p.id}" selected={wert === `projekt:${p.id}`}>{p.name}</option>
-      {/each}
+      <ProjektOptionen {projekte} {wert} praefix="projekt:" />
     </optgroup>
   {/if}
 </select>

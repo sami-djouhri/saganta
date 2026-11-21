@@ -254,6 +254,15 @@ VORLAGEN: list[AppVorlage] = [
         tags=("productivity",),
         nur_heim=True,
     ),
+    AppVorlage(
+        id="walle",
+        name="Wall-E",
+        description="Suchziele, Funde und Preise fuer Hardware, eBay-Beobachtungsliste.",
+        sub="walle",
+        icon="target",
+        tags=("productivity",),
+        nur_heim=True,
+    ),
 ]
 
 

@@ -1,0 +1,5 @@
+@import 'tailwindcss';
+@import '@saganta/design-tokens/theme.css';
+
+@source '../src';
+@source '../../../packages/ui/src';

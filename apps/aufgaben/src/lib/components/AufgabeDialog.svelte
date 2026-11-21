@@ -13,6 +13,7 @@
   import { ENERGIEN, ENERGIE_STIL, PRIORITAETEN, PRIO_STIL, tagePlus } from '$lib/ordnen';
   import { zuordnungVon } from '$lib/zuordnung';
   import ZuordnungAuswahl from './ZuordnungAuswahl.svelte';
+  import ProjektOptionen from './ProjektOptionen.svelte';
 
   interface Props {
     offen: boolean;
@@ -75,10 +76,34 @@
     { wert: 'abends', label: 'abends (18 bis 23 Uhr)' },
   ];
   const WOCHENTAGE = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+
+  // „Auch in Projekten" (seit 2026-11-15): weitere Projekte neben dem Zuhause.
+  // Der Stand lebt im Dialog und geht als versteckte Felder mit „Speichern";
+  // ohne JavaScript bleiben die Felder unveraendert und damit auch die Liste.
+  const HOECHSTENS_WEITERE = 10;
+  let weitere = $state<string[]>([]);
+  let gezeigteId = '';
+  $effect.pre(() => {
+    if (aufgabe && aufgabe.id !== gezeigteId) {
+      gezeigteId = aufgabe.id;
+      weitere = [...(aufgabe.weitere_projekte ?? [])];
+    }
+  });
+  const projektName = $derived(new Map(projekte.map((p) => [p.slug ?? p.id, p.name])));
+  function anheften(e: Event) {
+    const feld = e.currentTarget as HTMLSelectElement;
+    const slug = feld.value;
+    feld.value = '';
+    if (!slug || weitere.includes(slug) || slug === aufgabe?.project_id) return;
+    if (weitere.length >= HOECHSTENS_WEITERE) return;
+    weitere = [...weitere, slug];
+  }
   const fenster = $derived(aufgabe?.zeitfenster?.[0] ?? null);
 
   // Die drei Griffe, die im Alltag zaehlen. „Verschieben" laeuft ueber den
   // defer-Weg der Engine, der mitzaehlt, wie oft etwas geschoben wurde.
+  // Gerechnet ab heute, nicht ab der Frist: verschoben wird der Plantag, und
+  // bei einer ueberfaelligen Aufgabe landete „Morgen“ sonst in der Vergangenheit.
   const VERSCHIEBEN = [
     { tage: 1, label: 'Morgen' },
     { tage: 7, label: 'Nächste Woche' },
@@ -291,6 +316,45 @@
           />
         </label>
 
+        <fieldset class="space-y-2">
+          <legend class="text-xs uppercase tracking-wider text-muted">Auch in Projekten</legend>
+          <input type="hidden" name="weitere_alt" value={(aufgabe.weitere_projekte ?? []).join(',')} />
+          {#each weitere as slug (slug)}
+            <input type="hidden" name="weitere_projekt" value={slug} />
+          {/each}
+          {#if weitere.length > 0}
+            <ul class="flex flex-wrap gap-1.5">
+              {#each weitere as slug (slug)}
+                <li
+                  class="inline-flex min-h-9 items-center gap-1 rounded-full border border-border-stark bg-surface-2 py-0.5 pl-3 pr-1 text-sm"
+                >
+                  <Icon name="folder" size={13} />
+                  <span>{projektName.get(slug) ?? slug}</span>
+                  <button
+                    type="button"
+                    onclick={() => (weitere = weitere.filter((s) => s !== slug))}
+                    class="grid size-7 place-items-center rounded-full text-muted hover:bg-surface hover:text-text"
+                    aria-label="Von {projektName.get(slug) ?? slug} lösen"><Icon name="x" size={13} /></button
+                  >
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if weitere.length < HOECHSTENS_WEITERE && projekte.length > 0}
+            <select
+              onchange={anheften}
+              aria-label="Weiteres Projekt anheften"
+              class="w-full rounded-md border border-border-stark bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent-500"
+            >
+              <option value="">Weiteres Projekt anheften …</option>
+              <ProjektOptionen {projekte} ohne={[...weitere, ...(aufgabe.project_id ? [aufgabe.project_id] : [])]} />
+            </select>
+          {/if}
+          <span class="block text-xs text-muted"
+            >Die Aufgabe bleibt in ihrem Projekt und erscheint zusätzlich bei diesen.</span
+          >
+        </fieldset>
+
         <div class="flex flex-wrap items-center gap-2 pt-1">
           <Button type="submit" variant="primary">Speichern</Button>
           <span class="flex-1"></span>
@@ -356,7 +420,7 @@
         {#each VERSCHIEBEN as v (v.tage)}
           <form method="POST" action="?/verschieben" use:enhance>
             <input type="hidden" name="id" value={aufgabe.id} />
-            <input type="hidden" name="datum" value={tagePlus(aufgabe.due_date ?? heute, v.tage)} />
+            <input type="hidden" name="datum" value={tagePlus(heute, v.tage)} />
             <Button type="submit" variant="ghost" size="sm">
               <Icon name="chevrons-right" size={14} />
               {v.label}
@@ -407,7 +471,7 @@
             oder eine vorhandene Notiz anhängen
           </p>
           <div
-            class="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2"
+            class="flex items-center gap-2 rounded-md border border-border-stark bg-surface-2 px-3 py-2 focus-within:border-accent-500"
           >
             <Icon name="search" size={14} />
             <input

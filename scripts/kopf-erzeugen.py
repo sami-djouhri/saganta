@@ -110,6 +110,12 @@ ZIELE: dict[str, tuple[Path, Path, str, bool]] = {
         r"<script[^>]+src=['\"][^'\"]*saganta-kopf\.js['\"]",
         False,
     ),
+    "walle": (
+        DOCKER / "walle/frontend/src",
+        DOCKER / "walle/frontend/src/main.tsx",
+        r"import\s+['\"]\./saganta-kopf(\.js)?['\"]",
+        True,
+    ),
 }
 
 #: Wert von `SIGNATUR_DURCHGEHEND` in apps.ts.

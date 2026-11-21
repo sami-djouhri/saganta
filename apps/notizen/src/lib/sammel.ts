@@ -68,3 +68,13 @@ export function sammelMeldung(aktion: SammelAktion, gelungen: number, fehler: nu
   const teil = `${wort(gelungen)} ${VERB[aktion]}`;
   return fehler ? `${teil}, ${wort(fehler)} nicht (neu laden und nachsehen).` : `${teil}.`;
 }
+
+/** So viele Notizen lassen sich auf einmal verbinden (jede mit jeder, also bis 190 Paare). */
+export const VERBINDEN_HOECHSTENS = 20;
+
+export function verbindenMeldung(anzahl: number, neu: number): string {
+  const paare = neu === 1 ? '1 neue Verbindung' : `${neu} neue Verbindungen`;
+  return neu
+    ? `${anzahl} Notizen miteinander verbunden, ${paare}.`
+    : `Die ${anzahl} Notizen waren schon miteinander verbunden.`;
+}

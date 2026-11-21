@@ -22,7 +22,7 @@
   import { enhance } from '$app/forms';
   import { Button, Icon } from '@saganta/ui';
   import type { Planung } from '$lib/aufgaben-bff';
-  import { dauer } from '$lib/ordnen';
+  import { dauer, tagePlus } from '$lib/ordnen';
 
   interface Props {
     plan: Planung | null;
@@ -32,6 +32,10 @@
   }
   let { plan, festgelegt, heute, poolGroesse }: Props = $props();
 
+  const morgen = $derived(tagePlus(heute, 1));
+  // Fuer welchen Tag der Vorschlag gilt: der Dienst nennt ihn, sonst heute.
+  const planTag = $derived(plan?.date ?? heute);
+  const fuerMorgen = $derived(planTag === morgen);
   const geplant = $derived(plan?.suggestions ?? []);
   const zurueckgestellt = $derived(plan?.deferred ?? []);
 
@@ -47,7 +51,7 @@
       <Icon name="circle-check" size={16} />
       {#if geplant.length > 0}
         {geplant.length}
-        {geplant.length === 1 ? 'Aufgabe' : 'Aufgaben'} in den Tag gelegt.
+        {geplant.length === 1 ? 'Aufgabe' : 'Aufgaben'} in {fuerMorgen ? 'den morgigen Tag' : 'den Tag'} gelegt.
       {:else}
         Nichts einzuplanen.
       {/if}
@@ -76,8 +80,13 @@
       </p>
     {:else}
       <h2 class="flex items-center gap-2 text-sm font-medium">
-        <Icon name="sparkles" size={16} /> Vorschlag für heute
+        <Icon name="sparkles" size={16} /> Vorschlag für {fuerMorgen ? 'morgen' : 'heute'}
       </h2>
+      {#if fuerMorgen}
+        <p class="mt-1 text-xs text-muted">
+          Ohne Kapazitätsdeckel: der gilt nur mit dem Check-in des Tages.
+        </p>
+      {/if}
       <ul class="mt-2 space-y-1.5">
         {#each geplant as s (s.todo_id)}
           <li class="text-sm">
@@ -110,7 +119,7 @@
     <div class="mt-3 flex flex-wrap gap-2">
       {#if geplant.length > 0}
         <form method="POST" action="?/planen" use:enhance>
-          <input type="hidden" name="datum" value={heute} />
+          <input type="hidden" name="datum" value={planTag} />
           <input type="hidden" name="festlegen" value="true" />
           <Button type="submit" variant="primary">So einplanen</Button>
         </form>
@@ -125,15 +134,27 @@
     </div>
   </section>
 {:else}
-  <form method="POST" action="?/planen" use:enhance>
-    <input type="hidden" name="datum" value={heute} />
-    <input type="hidden" name="festlegen" value="false" />
-    <button
-      type="submit"
-      class="flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-0.5 rounded-xl border border-border bg-surface-2/40 px-4 py-3 text-sm text-muted transition-colors duration-fast ease-saganta hover:border-accent-500/60 hover:text-text"
-    >
-      <span class="inline-flex items-center gap-2"><Icon name="sparkles" size={16} /> Tag planen</span>
-      <span class="text-xs">(Vorschlag ansehen, dann entscheiden)</span>
-    </button>
-  </form>
+  <div class="flex gap-2">
+    <form method="POST" action="?/planen" use:enhance class="flex-1">
+      <input type="hidden" name="datum" value={heute} />
+      <input type="hidden" name="festlegen" value="false" />
+      <button
+        type="submit"
+        class="flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-0.5 rounded-xl border border-border bg-surface-2/40 px-4 py-3 text-sm text-muted transition-colors duration-fast ease-saganta hover:border-accent-500/60 hover:text-text"
+      >
+        <span class="inline-flex items-center gap-2"><Icon name="sparkles" size={16} /> Tag planen</span>
+        <span class="text-xs">(Vorschlag ansehen, dann entscheiden)</span>
+      </button>
+    </form>
+    <!-- Abends den naechsten Tag vorbereiten; derselbe Weg, anderes Datum. -->
+    <form method="POST" action="?/planen" use:enhance>
+      <input type="hidden" name="datum" value={morgen} />
+      <input type="hidden" name="festlegen" value="false" />
+      <button
+        type="submit"
+        class="flex h-full items-center rounded-xl border border-border bg-surface-2/40 px-4 py-3 text-sm text-muted transition-colors duration-fast ease-saganta hover:border-accent-500/60 hover:text-text"
+        >Morgen</button
+      >
+    </form>
+  </div>
 {/if}

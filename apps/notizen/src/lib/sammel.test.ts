@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ausgewaehlteIds, sammelAufrufe, sammelMeldung } from './sammel';
+import { ausgewaehlteIds, sammelAufrufe, sammelMeldung, verbindenMeldung } from './sammel';
 
 describe('sammelAufrufe', () => {
   it('verschiebt in ein Notizbuch oder löst daraus', () => {
@@ -35,5 +35,13 @@ describe('sammelMeldung', () => {
     expect(sammelMeldung('archivieren', 3, 1)).toBe(
       '3 Notizen archiviert, 1 Notiz nicht (neu laden und nachsehen).',
     );
+  });
+});
+
+describe('verbindenMeldung', () => {
+  it('nennt neue Verbindungen und sagt, wenn es keine gab', () => {
+    expect(verbindenMeldung(3, 3)).toBe('3 Notizen miteinander verbunden, 3 neue Verbindungen.');
+    expect(verbindenMeldung(2, 1)).toBe('2 Notizen miteinander verbunden, 1 neue Verbindung.');
+    expect(verbindenMeldung(2, 0)).toBe('Die 2 Notizen waren schon miteinander verbunden.');
   });
 });

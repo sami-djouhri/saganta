@@ -9,7 +9,7 @@ import { fail, type Actions } from '@sveltejs/kit';
 import { notizDazuAusFormular } from '@saganta/notizen-anschluss';
 import { bffCtx, bffFetch, type Planung } from '$lib/aufgaben-bff';
 import { unteraufgabenNach } from '$lib/ordnen';
-import { zuordnungAus } from '$lib/zuordnung';
+import { weitereAus, zuordnungAus } from '$lib/zuordnung';
 import {
   alsPlanung,
   dienstCtx,
@@ -155,6 +155,12 @@ export const aufgabenAktionen: Actions = {
     const zuordnung = zuordnungAus(wert);
     if (!zuordnung) return fail(400, { fehler: 'Unbekannte Zuordnung.' });
     const zuordnungFelder = wert !== optional(fd, 'zuordnung_alt') ? zuordnung : {};
+    const weitere = weitereAus(
+      fd.getAll('weitere_projekt').map(String),
+      optional(fd, 'weitere_alt'),
+      zuordnung.projekt,
+    );
+    if ('fehler' in weitere) return fail(400, { fehler: weitere.fehler });
     try {
       await dienstFetch(ctx, `/api/aufgaben/${encodeURIComponent(id)}`, fetch, {
         method: 'PUT',
@@ -171,6 +177,7 @@ export const aufgabenAktionen: Actions = {
           ...wann,
           ...tagFelder,
           ...zuordnungFelder,
+          ...weitere,
         },
       });
       return { gespeichert: true };

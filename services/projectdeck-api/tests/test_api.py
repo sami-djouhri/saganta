@@ -92,6 +92,14 @@ class TestProjectLifecycle(unittest.TestCase):
         self.assertEqual(updated["priority"], 4)
         self.assertIsNotNone(updated["last_reviewed_at"])
 
+    def test_unbekannter_status_wird_abgelehnt(self):
+        self.assertEqual(client.post("/api/projects", json={"name": "Tippfehler", "status": "plannd"}).status_code, 422)
+        p = client.post("/api/projects", json={"name": "Status-Test"}).json()
+        self.assertEqual(client.patch(f"/api/projects/{p['id']}", json={"status": "aktiv"}).status_code, 422)
+        r = client.post(f"/api/projects/{p['id']}/reviews", json={"decision": "x", "new_status": "eingefroren"})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(client.patch(f"/api/projects/{p['id']}", json={"status": "planned"}).json()["status"], "planned")
+
     def test_assets_roundtrip(self):
         p = client.post("/api/projects", json={"name": "Assets-Test"}).json()
         a = client.post(

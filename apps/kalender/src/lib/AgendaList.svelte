@@ -1,6 +1,8 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
-  import { Icon } from '@saganta/ui';
+  import { Icon, projektUrl } from '@saganta/ui';
+  import { page } from '$app/stores';
+  import ProjektMarke from './ProjektMarke.svelte';
   import type { KalenderEvent } from '$lib/kalender-bff';
   import {
     type CalMeta,
@@ -23,8 +25,10 @@
     calMeta: Map<string, CalMeta>;
     nowMs: number | null;
     onEdit: (ev: KalenderEvent) => void;
+    /** Projektnamen je Slug fuer die Marke am Termin. */
+    projektNamen?: Record<string, string>;
   }
-  let { items, selectedCalendar, calMeta, nowMs, onEdit }: Props = $props();
+  let { items, selectedCalendar, calMeta, nowMs, onEdit, projektNamen = {} }: Props = $props();
 
   const grouped = $derived.by(() => {
     const filtered = items.filter(
@@ -132,6 +136,15 @@
                 {/if}
                 {#if endNote(ev)}
                   <div class="truncate text-xs text-muted">{endNote(ev)}</div>
+                {/if}
+                {#if ev.projekt}
+                  <div class="mt-1">
+                    <ProjektMarke
+                      slug={ev.projekt}
+                      name={projektNamen[ev.projekt]}
+                      href={projektUrl(ev.projekt, $page.url.host)}
+                    />
+                  </div>
                 {/if}
               </div>
               {#if isEditable(ev) || istLoeschbar(ev)}

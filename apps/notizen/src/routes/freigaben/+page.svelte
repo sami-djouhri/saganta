@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { Icon } from '@saganta/ui';
-  import type { PageData } from './$types';
+  import type { ActionData, PageData } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data, form }: { data: PageData; form: ActionData } = $props();
 
   const ZUSTAND_TEXT: Record<string, string> = {
     aktiv: 'aktiv',
@@ -69,8 +69,15 @@
                   {#if f.zustand === 'aktiv'}
                     <form method="POST" action="?/widerrufen" use:enhance class="ml-auto">
                       <input type="hidden" name="id" value={f.id} />
-                      <button type="submit" class="text-xs text-muted underline hover:text-text">
+                      <button type="submit" class="min-h-11 text-xs text-muted underline hover:text-text md:min-h-0">
                         zurückziehen
+                      </button>
+                    </form>
+                  {:else}
+                    <form method="POST" action="?/entfernen" use:enhance class="ml-auto">
+                      <input type="hidden" name="id" value={f.id} />
+                      <button type="submit" class="flex min-h-11 items-center gap-1 text-xs text-muted hover:text-text md:min-h-0" title="Aus der Liste nehmen">
+                        <Icon name="trash" size={12} /> entfernen
                       </button>
                     </form>
                   {/if}
@@ -101,7 +108,19 @@
       {/if}
     {/snippet}
 
+    {#if form && 'fehler' in form}
+      <p class="rounded-md border border-fehler/60 bg-fehler/10 px-3 py-2 text-sm text-fehler">{form.fehler}</p>
+    {:else if form && 'hinweis' in form}
+      <p class="text-sm text-muted" role="status">{form.hinweis}</p>
+    {/if}
     {@render tabelle(aktive, 'Aktiv')}
+    {#if erledigte.length}
+      <form method="POST" action="?/aufraeumen" use:enhance class="-mb-4 flex justify-end">
+        <button type="submit" class="flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm text-muted hover:bg-surface-2 hover:text-text md:min-h-9">
+          <Icon name="trash" size={14} /> Alle nicht mehr abrufbaren entfernen ({erledigte.length})
+        </button>
+      </form>
+    {/if}
     {@render tabelle(erledigte, 'Nicht mehr abrufbar')}
   {/if}
 </div>

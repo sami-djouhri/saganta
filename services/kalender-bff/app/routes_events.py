@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Path, Query
 import httpx
 from pydantic import BaseModel, Field
 
+from .config import settings
 from .auth import CurrentUser, Me
 from .upstream import authed_kalender_client
 
@@ -27,6 +28,11 @@ class EventIn(BaseModel):
     #: waehlt, kam nie beim Kalender an. Der Termin entstand als Einzeltermin,
     #: mit Erfolgsmeldung.
     recurrence_rule: str | None = Field(default=None, max_length=500)
+    #: Fehlte hier bis zum 2026-11-15 wie ``recurrence_rule`` davor: die Web-App
+    #: schickte die Aktivitaetsart mit, und sie fiel still weg.
+    activity_type: str | None = Field(default=None, pattern=r"^(lernen|sport|lesen|hobby|sonstige)$")
+    #: Slug eines ProjectDeck-Projekts (2026-11-15).
+    projekt: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]{0,119}$")
 
 
 class EventPatch(BaseModel):
@@ -37,7 +43,9 @@ class EventPatch(BaseModel):
     start: str | None = Field(default=None, min_length=10, max_length=32)
     end: str | None = Field(default=None, min_length=10, max_length=32)
     all_day: bool | None = None
-    reminder_minutes: int | None = Field(default=None, ge=0, le=10080)
+    #: ``-1`` heisst „keine Erinnerung mehr" (2026-11-21, Editor in Web und App).
+    #: ``null`` taugt dafuer nicht, ``exclude_none`` macht daraus „unveraendert".
+    reminder_minutes: int | None = Field(default=None, ge=-1, le=10080)
     #: Leerer Text heisst „keine Wiederholung mehr". Ein ``null`` taugt dafuer
     #: nicht: ``exclude_none`` unten macht daraus „unveraendert", und Gson in
     #: der App laesst Nullwerte ohnehin weg.
@@ -49,6 +57,10 @@ class EventPatch(BaseModel):
     #: fiel das still weg; ohne den Schalter loeschte jetzt jedes Speichern
     #: Wochentage und Enddatum der Serie.
     wiederholung_aendern: bool = False
+    #: Leerer Text heisst „keine Aktivitaet" bzw. „kein Projekt" (wie oben bei
+    #: der Regel: ``null`` waere wegen ``exclude_none`` „unveraendert").
+    activity_type: str | None = Field(default=None, pattern=r"^(|lernen|sport|lesen|hobby|sonstige)$")
+    projekt: str | None = Field(default=None, pattern=r"^(|[a-z0-9][a-z0-9-]{0,119})$")
 
 
 def _start_epoch(ev: dict) -> float:
@@ -108,14 +120,18 @@ async def range_events(
     start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     limit: int = Query(1000, ge=1, le=2000),
+    projekt: str | None = Query(
+        None, max_length=4000, pattern=r"^[a-z0-9][a-z0-9-]{0,119}(,[a-z0-9][a-z0-9-]{0,119})*$"),
 ) -> dict[str, object]:
     """Events in einem beliebigen Datumsbereich (für Wochen-/Monatsansicht).
-    Gleiche native Fenster-Semantik wie upcoming (start/end → Recurrence-Expand)."""
+    Gleiche native Fenster-Semantik wie upcoming (start/end → Recurrence-Expand).
+    Mit ``projekt`` nur die Termine dieser ProjectDeck-Projekte (Slugs, Komma; Projektakte)."""
+    params = {"start": start, "end": end + "T23:59:59"}
+    if projekt:
+        params["projekt"] = projekt
     async with authed_kalender_client() as client:
         try:
-            r = await client.get(
-                "/api/events", params={"start": start, "end": end + "T23:59:59"}
-            )
+            r = await client.get("/api/events", params=params)
         except httpx.HTTPError as e:
             raise HTTPException(502, f"kalender upstream unreachable: {e}") from e
     if r.status_code >= 400:
@@ -139,12 +155,32 @@ async def calendars(me: Me = CurrentUser) -> list[dict]:
     return r.json() if r.content else []
 
 
+@router.get("/vorschlaege")
+async def vorschlaege(
+    me: Me = CurrentUser,
+    art: str = Query("titel", pattern=r"^(titel|ort)$"),
+    q: str = Query("", max_length=100),
+    limit: int = Query(8, ge=1, le=20),
+) -> dict:
+    """Fruehere Titel bzw. Orte fuer den Termin-Editor (Web und App)."""
+    async with authed_kalender_client() as client:
+        try:
+            r = await client.get("/api/events/vorschlaege", params={"art": art, "q": q, "limit": limit})
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"kalender upstream unreachable: {e}") from e
+    if r.status_code >= 400:
+        raise HTTPException(r.status_code, f"kalender error: {r.text[:200]}")
+    return r.json() if r.content else {}
+
+
 async def _events_upstream(
     method: str, path: str, *, json: dict | None = None
 ) -> httpx.Response:
     async with authed_kalender_client() as client:
         try:
-            r = await client.request(method, path, json=json)
+            r = await client.request(
+                method, path, json=json, timeout=settings.kalender_schreib_timeout_seconds,
+            )
         except httpx.HTTPError as e:
             raise HTTPException(502, f"kalender upstream unreachable: {e}") from e
     if r.status_code >= 400:
@@ -217,6 +253,11 @@ async def update_event(event_id: str, data: EventPatch, me: Me = CurrentUser) ->
         if basis.get("recurrence_rule"):
             rumpf = _auf_anker_umrechnen(basis, vorkommen, rumpf)
         event_id = basis_id
+    for feld in ("activity_type", "projekt"):
+        if rumpf.get(feld) == "":
+            rumpf[feld] = None
+    if rumpf.get("reminder_minutes") == -1:
+        rumpf["reminder_minutes"] = None
     r = await _events_upstream("PUT", f"/api/events/{event_id}", json=rumpf)
     return r.json() if r.content else {}
 

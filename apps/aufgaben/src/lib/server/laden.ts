@@ -18,6 +18,7 @@ import {
   type Ziel,
 } from '$lib/aufgaben-bff';
 import { notizenZu } from '@saganta/notizen-anschluss';
+import { ausDeck, teilbaeume } from '@saganta/ui';
 import { alsAufgabe, dienstCtx, dienstFetch, ladeDeckProjekte, type DienstAufgabe } from '$lib/server/aufgaben-dienst';
 import { projekteAus } from '$lib/ordnen';
 import { listenAus } from '$lib/zuordnung';
@@ -38,6 +39,12 @@ export interface Bestand {
   aufgaben: Aufgabe[];
   ziele: Ziel[];
   projekte: Projekt[];
+  /**
+   * Slug und alle Nachfahren je Projekt mit Unterprojekten (Projektfilter, U7).
+   * Gerechnet aus der VOLLEN Deck-Liste, archivierte Unterprojekte eingeschlossen,
+   * so wie `GET /api/projects/by-slug/{slug}/teilbaum` es liefert.
+   */
+  teilbaum: Record<string, string[]>;
   /** Die Listen des Dienstes (Bereiche), in seiner Reihenfolge. */
   listen: Liste[];
   tagesbild: Tagesbild | null;
@@ -56,6 +63,7 @@ export async function ladeBestand(
     aufgaben: [],
     ziele: [],
     projekte: [],
+    teilbaum: {},
     listen: [],
     tagesbild: null,
     notizenNach: {},
@@ -108,6 +116,7 @@ export async function ladeBestand(
   // trotzdem seine Gruppe, sonst faellt er unter „Ohne Projekt".
   const deck = projekteRes.status === 'fulfilled' ? projekteRes.value : [];
   bestand.projekte = projekteAus(bestand.aufgaben, deck) as Projekt[];
+  bestand.teilbaum = teilbaeume(deck.map(ausDeck));
   if (listenRes.status === 'rejected') console.warn(`Listen nicht abrufbar: ${String(listenRes.reason)}`);
   const listen = listenRes.status === 'fulfilled' && Array.isArray(listenRes.value) ? listenRes.value : [];
   bestand.listen = listenAus(bestand.aufgaben, listen);

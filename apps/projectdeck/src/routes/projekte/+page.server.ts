@@ -33,6 +33,10 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
     // Vorgabe "offen": wo am meisten liegt, steht oben (Entscheid 08.11.).
     // "prioritaet" ist die alte Reihenfolge des Dienstes (Projekt-Prioritaet 1-5).
     sortierung: url.searchParams.get('sort') === 'prioritaet' ? 'prioritaet' : 'offen',
+    // Gliederung ist die Vorgabe (15.11.); ein Filter zeigt Treffer flach,
+    // weil ein Baum mit Luecken mehr verwirrt als hilft.
+    ansicht: url.searchParams.get('ansicht') === 'kacheln' || gefiltert ? 'kacheln' : 'gliederung',
+    oben: url.searchParams.get('oben') ?? '',
   };
 };
 
@@ -51,6 +55,8 @@ export const actions: Actions = {
     };
     const na = String(form.get('next_action') ?? '').trim();
     if (na) body.next_action = na;
+    const oben = form.getAll('eltern_id').map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (oben.length) body.eltern_ids = oben;
     let created: Project;
     try {
       created = await api<Project>(locals.user, '/api/projects', fetch, {

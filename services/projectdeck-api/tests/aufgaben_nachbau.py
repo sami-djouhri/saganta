@@ -35,18 +35,26 @@ class Nachbau:
             if "herkunft" in p:
                 return [a for a in self.aufgaben.values() if a.get("herkunft") == p["herkunft"]]
             erledigte = bool(p.get("erledigte"))
+            slugs = set(p["projekt"].split(",")) if "projekt" in p else None
             return [a for a in self.aufgaben.values()
-                    if a["erledigt"] == erledigte and ("projekt" not in p or a["projekt"] == p["projekt"])]
+                    if a["erledigt"] == erledigte and (
+                        slugs is None or a["projekt"] in slugs
+                        or slugs.intersection(a.get("weitere_projekte") or []))]
         if teile == ["aufgaben"] and methode == "POST":
             a = {"id": str(uuid.uuid4()), "erledigt": False, "wartet": False, "dauer_min": None,
                  "faellig": None, "projekt": None, **kw["json"]}
             self.aufgaben[a["id"]] = a
             return a
-        if teile == ["projekte", "zaehlung"]:
+        if teile[:2] == ["projekte", "zaehlung"]:
+            # Wie der Dienst: eine Aufgabe zaehlt bei Zuhause und weitere_projekte,
+            # in einer Gruppe hoechstens einmal.
+            gruppen = kw["json"] if teile[2:] == ["gruppen"] else None
             je: dict[str, dict[str, int]] = {}
             for a in self.aufgaben.values():
-                if a["projekt"]:
-                    z = je.setdefault(a["projekt"], {"offen": 0, "erledigt": 0, "hoch": 0, "ueberfaellig": 0, "erledigt_7": 0})
+                slugs = ({a["projekt"]} if a["projekt"] else set()) | set(a.get("weitere_projekte") or [])
+                ziele = slugs if gruppen is None else {n for n, g in gruppen.items() if slugs & set(g)}
+                for ziel in ziele:
+                    z = je.setdefault(ziel, {"offen": 0, "erledigt": 0, "hoch": 0, "ueberfaellig": 0, "erledigt_7": 0})
                     z["erledigt" if a["erledigt"] else "offen"] += 1
                     if not a["erledigt"] and a.get("prioritaet") == "hoch":
                         z["hoch"] += 1

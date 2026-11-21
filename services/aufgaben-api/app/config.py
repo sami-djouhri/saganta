@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Schluessel, mit dem die BFFs ihre Token stempeln (`jwt_secret`).
     kalender_bff_url: str = "http://saganta-kalender-bff:8000"
 
+    # Beim Loeschen einer Aufgabe raeumt der Dienst ihre Verknuepfungen in den
+    # Notizen ab (app/notizen.py). Leer schaltet das ab.
+    notizen_api_url: str = "http://saganta-notizen-api:8000"
+
     @field_validator("cors_origins", "allowed_subs", mode="before")
     @classmethod
     def _split_liste(cls, v: object) -> object:

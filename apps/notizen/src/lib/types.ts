@@ -109,6 +109,37 @@ export interface Notiz {
   freigaben: Freigabe[];
 }
 
+/** Eine andere Notiz im Netz der angesehenen (Verweise seit 2026-11-20). */
+export interface NotizVerweis {
+  id: number;
+  titel: string;
+  ausschnitt: string;
+  notizbuch_id: number | null;
+  archiviert: boolean;
+}
+
+/** Verbunden von Hand, erwähnt per [[Titel]] in anderen, und die [[ ]] im eigenen Text. */
+export interface Netz {
+  verbunden: NotizVerweis[];
+  erwaehnt_in: NotizVerweis[];
+  verweist_auf: { text: string; id: number | null }[];
+}
+
+/** Alle Notizen und ihre Verweise, für die Netzansicht. */
+export interface GesamtNetz {
+  knoten: {
+    id: number;
+    titel: string;
+    notizbuch_id: number | null;
+    archiviert: boolean;
+    angeheftet: boolean;
+    grad: number;
+    offene_verweise: number;
+  }[];
+  /** Bei `art` "text" verweist `a` per [[ ]] auf `b`. */
+  kanten: { a: number; b: number; art: 'verbunden' | 'text' }[];
+}
+
 /** Ein verknüpfbares Gegenstück, wie es die Suche im BFF zurückgibt. */
 export interface Fundstueck {
   typ: VerknuepfungsTyp;

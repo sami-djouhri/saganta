@@ -78,7 +78,7 @@
     >
 
     <!-- Die Beiwerk-Zeile. Jedes Stueck erscheint nur, wenn es einen Wert hat. -->
-    {#if zeit || aufgabe.estimated_minutes || aufgabe.turnus_tage || projekt || liste || notizen.length || unter || (zeigeDatum && aufgabe.due_date) || aufgabe.energy_required || (aufgabe.defer_count ?? 0) >= 3}
+    {#if zeit || aufgabe.estimated_minutes || aufgabe.turnus_tage || projekt || aufgabe.weitere_projekte?.length || liste || notizen.length || unter || (zeigeDatum && aufgabe.due_date) || aufgabe.energy_required || (aufgabe.defer_count ?? 0) >= 3}
       <span class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         {#if zeit}
           <span class="inline-flex items-center gap-1 text-akzent">
@@ -91,6 +91,11 @@
               aufgabe.due_date,
               heute,
             )}
+          </span>
+        {/if}
+        {#if zeigeDatum && aufgabe.planned_date && aufgabe.planned_date > heute}
+          <span class="inline-flex items-center gap-1" title="Eingeplant">
+            <Icon name="calendar-clock" size={12} />{datumsEtikett(aufgabe.planned_date, heute)}
           </span>
         {/if}
         {#if aufgabe.estimated_minutes}
@@ -114,6 +119,14 @@
               class="size-2 shrink-0 rounded-full"
               style="background-color:{projekt.color ?? '#8a8aa0'}"
             ></span>{projekt.name}
+          </span>
+        {/if}
+        {#if aufgabe.weitere_projekte?.length}
+          <span
+            class="inline-flex items-center gap-1"
+            title="Auch in {aufgabe.weitere_projekte.length === 1 ? 'einem weiteren Projekt' : `${aufgabe.weitere_projekte.length} weiteren Projekten`}"
+          >
+            <Icon name="folder" size={12} />+{aufgabe.weitere_projekte.length}
           </span>
         {/if}
         {#if liste}

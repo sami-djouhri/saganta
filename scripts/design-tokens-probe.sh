@@ -43,7 +43,9 @@ if [ ${#APPS[@]} -eq 0 ]; then
   #     alt, das noch den alten kollidierenden Warnwert trug.
   # Eine geloeschte App als bestanden zu melden ist schlimmer als sie nicht zu
   # pruefen, weil die Zahl 10 nach Deckung aussieht.
-  APPS=(assets aufgaben kalender news notizen post projectdeck shell tagebuch)
+  # `assets` ist seit dem 2026-11-01 im Lager aufgegangen (Baum in _retired),
+  # `kontakte` fehlte seit seinem Bau am 2026-11-07 (nachgetragen 2026-11-15).
+  APPS=(aufgaben kalender kontakte news notizen post projectdeck shell tagebuch)
 fi
 
 # Marken-Namensraeume: das sind die, die es ohne Definition nicht gibt. Tailwinds

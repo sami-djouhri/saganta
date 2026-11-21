@@ -484,3 +484,44 @@ def test_verknuepft_route_wird_nicht_als_notiz_id_gelesen(client, kopf):
         "/api/notizen/verknuepft", params={"typ": "aufgabe", "refs": "x"}, headers=kopf
     )
     assert antwort.status_code == 200, antwort.text
+
+
+# --- Gegenstueck geloescht (seit 2026-11-21) ------------------------------
+
+
+def test_geloeschtes_gegenstueck_nimmt_alle_verknuepfungen_mit(client, kopf, kopf_zwei):
+    eine = neue_notiz(client, kopf, titel="Eins")
+    zwei = neue_notiz(client, kopf, titel="Zwei")
+    _verknuepfen(client, kopf, eine["id"], "aufgabe", "a-1")
+    _verknuepfen(client, kopf, zwei["id"], "aufgabe", "a-1")
+    _verknuepfen(client, kopf, zwei["id"], "aufgabe", "a-2")
+    fremd = neue_notiz(client, kopf_zwei, titel="Fremd")
+    _verknuepfen(client, kopf_zwei, fremd["id"], "aufgabe", "a-1")
+
+    antwort = client.delete("/api/notizen/verknuepft?typ=aufgabe&ref=a-1", headers=kopf)
+    assert antwort.status_code == 200, antwort.text
+    assert antwort.json() == {"entfernt": 2}
+
+    rest = client.get(f"/api/notizen/{zwei['id']}", headers=kopf).json()["verknuepfungen"]
+    assert [v["ref"] for v in rest] == ["a-2"]
+    assert client.get(f"/api/notizen/{eine['id']}", headers=kopf).json()["verknuepfungen"] == []
+    # Das andere Konto behaelt seine.
+    assert len(client.get(f"/api/notizen/{fremd['id']}", headers=kopf_zwei).json()["verknuepfungen"]) == 1
+    # Ein zweiter Aufruf findet nichts mehr und ist trotzdem kein Fehler.
+    assert client.delete("/api/notizen/verknuepft?typ=aufgabe&ref=a-1", headers=kopf).json() == {"entfernt": 0}
+
+
+def test_geloeschtes_gegenstueck_kommt_nicht_aus_dem_papierkorb_zurueck(client, kopf):
+    n = neue_notiz(client, kopf, titel="Weg")
+    _verknuepfen(client, kopf, n["id"], "aufgabe", "a-9")
+    _verknuepfen(client, kopf, n["id"], "termin", "t-1")
+    client.delete(f"/api/notizen/{n['id']}", headers=kopf)
+
+    assert client.delete("/api/notizen/verknuepft?typ=aufgabe&ref=a-9", headers=kopf).json() == {"entfernt": 1}
+    korb = client.get("/api/notizen/papierkorb/liste", headers=kopf).json()
+    zurueck = client.post(f"/api/notizen/papierkorb/{korb[0]['id']}/wiederherstellen", headers=kopf).json()
+    assert [(v["typ"], v["ref"]) for v in zurueck["verknuepfungen"]] == [("termin", "t-1")]
+
+
+def test_entfernen_mit_unbekanntem_typ_wird_abgelehnt(client, kopf):
+    assert client.delete("/api/notizen/verknuepft?typ=quatsch&ref=x", headers=kopf).status_code == 400

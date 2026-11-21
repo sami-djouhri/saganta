@@ -53,6 +53,7 @@ _NACHZUZIEHEN: dict[str, list[tuple[str, str]]] = {
         ("herkunft", "VARCHAR(64)"),
         ("unteraufgaben", "JSON"),
         ("turnus_tage", "INTEGER"),
+        ("weitere_projekte", "JSON"),
     ],
     "listen": [
         ("vertraulich", "BOOLEAN NOT NULL DEFAULT 0"),

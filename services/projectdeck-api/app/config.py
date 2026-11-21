@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     aufgaben_api_url: str = "http://saganta-aufgaben-api:8000"
     aufgaben_timeout_seconds: float = 8.0
 
+    # Die Projektakte (2026-11-15) liest Termine, Kontakte, Notizen und Budget
+    # bei den Diensten, denen sie gehoeren; dieser Dienst haelt keine Kopie.
+    # Saganta-Dienste mit einem 60-s-Token je Zielgruppe (wie oben), Finanzen
+    # mit seinem Nur-Lese-Schluessel fuer /api/projekte (leer = kein Budget).
+    kalender_bff_url: str = "http://saganta-kalender-bff:8000"
+    kontakte_api_url: str = "http://saganta-kontakte-api:8000"
+    notizen_api_url: str = "http://saganta-notizen-api:8000"
+    finanzen_url: str = "http://finanzen:8000"
+    finanzen_leseschluessel: str = ""
+    nachbar_timeout_seconds: float = 6.0
+
     # Optionaler KI-Layer, aus per Vorgabe. Erwartet ein OpenAI-kompatibles
     # /v1/chat/completions (llama.cpp, vLLM, Ollama und dergleichen).
     #

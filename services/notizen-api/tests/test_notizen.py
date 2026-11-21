@@ -209,3 +209,85 @@ def test_speichern_ohne_stand_bleibt_letzter_gewinnt(client, kopf):
     antwort = client.patch(f"/api/notizen/{notiz['id']}", json={"inhalt": "c"}, headers=kopf)
     assert antwort.status_code == 200
     assert antwort.json()["inhalt"] == "c"
+
+
+def test_like_weg_nimmt_platzhalter_woertlich(client, kopf, monkeypatch):
+    """Ohne FTS sucht der LIKE-Weg; ``_`` und ``%`` aus der Eingabe sind dort Zeichen."""
+    from app import db
+
+    monkeypatch.setattr(db, "FTS_AKTIV", False)
+    client.post("/api/notizen", json={"titel": "Rabatt", "inhalt": "100% sicher"}, headers=kopf)
+    client.post("/api/notizen", json={"titel": "Ohne", "inhalt": "1000 Stueck"}, headers=kopf)
+    client.post("/api/notizen", json={"titel": "Zeichen", "inhalt": "a_b"}, headers=kopf)
+    titel = lambda q: sorted(  # noqa: E731
+        n["titel"] for n in client.get("/api/notizen", params={"q": q}, headers=kopf).json()
+    )
+    assert titel("100%") == ["Rabatt"]
+    assert titel("_") == ["Zeichen"]
+
+
+# --- Filter (seit 2026-11-21) -------------------------------------------
+
+
+def _titel(client, kopf, **params):
+    return [n["titel"] for n in client.get("/api/notizen", params=params, headers=kopf).json()]
+
+
+def test_suche_haelt_den_tag_filter(client, kopf):
+    """Bis 2026-11-21 fiel der Tag weg, sobald ein Suchwort dastand."""
+    client.post("/api/notizen", json={"titel": "A", "inhalt": "Kiwi", "tags": ["obst"]}, headers=kopf)
+    client.post("/api/notizen", json={"titel": "B", "inhalt": "Kiwi", "tags": ["vogel"]}, headers=kopf)
+    assert _titel(client, kopf, q="kiwi", tag="obst") == ["A"]
+
+
+def test_mehrere_tags_muessen_alle_passen(client, kopf):
+    client.post("/api/notizen", json={"titel": "A", "tags": ["haus", "garten"]}, headers=kopf)
+    client.post("/api/notizen", json={"titel": "B", "tags": ["haus"]}, headers=kopf)
+    assert _titel(client, kopf, tag="haus,garten") == ["A"]
+    assert sorted(_titel(client, kopf, tag="haus")) == ["A", "B"]
+
+
+def test_tag_mit_platzhalter_zaehlt_woertlich(client, kopf):
+    client.post("/api/notizen", json={"titel": "A", "tags": ["a_b"]}, headers=kopf)
+    client.post("/api/notizen", json={"titel": "B", "tags": ["axb"]}, headers=kopf)
+    assert _titel(client, kopf, tag="a_b") == ["A"]
+
+
+def test_ohne_notizbuch(client, kopf):
+    buch = client.post("/api/notizbuecher", json={"name": "Arbeit"}, headers=kopf).json()
+    client.post("/api/notizen", json={"titel": "Drin", "notizbuch_id": buch["id"]}, headers=kopf)
+    client.post("/api/notizen", json={"titel": "Lose"}, headers=kopf)
+    assert _titel(client, kopf, ohne_notizbuch="true") == ["Lose"]
+
+
+def test_hat_filter(client, kopf):
+    mit_aufgabe = client.post(
+        "/api/notizen",
+        json={"titel": "Aufgabe", "verknuepfung": {"typ": "aufgabe", "ref": "a-1", "label": "x"}},
+        headers=kopf,
+    ).json()
+    client.post("/api/notizen", json={"titel": "Verweis", "inhalt": "siehe [[Aufgabe]]"}, headers=kopf)
+    angeheftet = client.post("/api/notizen", json={"titel": "Oben"}, headers=kopf).json()
+    client.patch(f"/api/notizen/{angeheftet['id']}", json={"angeheftet": True}, headers=kopf)
+    client.post("/api/notizen", json={"titel": "Nichts"}, headers=kopf)
+
+    assert _titel(client, kopf, hat="aufgabe") == ["Aufgabe"]
+    # Die Notiz mit [[ ]] und die, auf die er zeigt? Nur die Quelle: das Ziel
+    # hat selbst keinen Verweis.
+    assert _titel(client, kopf, hat="verweis") == ["Verweis"]
+    assert _titel(client, kopf, hat="angeheftet") == ["Oben"]
+    assert _titel(client, kopf, hat="aufgabe,angeheftet") == []
+    client.post(f"/api/freigaben/notizen/{mit_aufgabe['id']}", json={}, headers=kopf)
+    assert _titel(client, kopf, hat="freigabe") == ["Aufgabe"]
+
+
+def test_unbekannter_filter_und_sortierung_werden_abgelehnt(client, kopf):
+    assert client.get("/api/notizen", params={"hat": "quatsch"}, headers=kopf).status_code == 400
+    assert client.get("/api/notizen", params={"sortierung": "quatsch"}, headers=kopf).status_code == 400
+
+
+def test_sortierung_nach_titel_und_erstellt(client, kopf):
+    for t in ["banane", "Apfel", "", "citrus"]:
+        client.post("/api/notizen", json={"titel": t}, headers=kopf)
+    assert _titel(client, kopf, sortierung="titel") == ["Apfel", "banane", "citrus", ""]
+    assert _titel(client, kopf, sortierung="erstellt") == ["citrus", "", "Apfel", "banane"]

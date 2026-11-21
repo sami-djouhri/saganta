@@ -73,3 +73,27 @@ export function nachListe(alle: Aufgabe[], listen: Liste[]): Gruppe[] {
     aufgaben: offen.filter((a) => a.liste_id === l.id).sort(nachDringlichkeit),
   }));
 }
+
+const SLUG = /^[a-z0-9][a-z0-9-]{0,119}$/;
+
+/**
+ * „Auch in Projekten" aus dem Formular (seit 2026-11-15).
+ *
+ * Geschickt wird nur bei einer Aenderung gegenueber `weitere_alt`, aus
+ * demselben Grund wie bei der Zuordnung: fehlte die Projektliste, sollen
+ * vorhandene Anheftungen nicht still verschwinden. Eine leere Liste geht als
+ * `null` (der Dienst leert damit), das Zuhause selbst faellt heraus.
+ */
+export function weitereAus(
+  neu: string[],
+  alt: string | null | undefined,
+  zuhause: string | null,
+): { weitere_projekte: string[] | null } | Record<string, never> | { fehler: string } {
+  const liste = [...new Set(neu.map((s) => s.trim()).filter(Boolean))].filter((s) => s !== zuhause);
+  if (liste.some((s) => !SLUG.test(s))) return { fehler: 'Unbekanntes Projekt bei „Auch in Projekten".' };
+  if (liste.length > 10) return { fehler: 'Höchstens zehn weitere Projekte.' };
+  const vorher = (alt ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const gleich = vorher.length === liste.length && vorher.every((s, i) => s === liste[i]);
+  if (gleich) return {};
+  return { weitere_projekte: liste.length ? liste : null };
+}

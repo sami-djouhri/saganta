@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 import { issueBackendToken } from '@saganta/auth';
 import { freigabeBasis } from '$lib/meta';
 import { ApiFehler, api, backendSecret } from '$lib/notizen-api';
-import type { Notiz, Notizbuch, Stand, StandKurz } from '$lib/types';
+import type { Netz, Notiz, Notizbuch, Stand, StandKurz } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params, url, fetch }) => {
@@ -14,7 +14,7 @@ export const load: PageServerLoad = async ({ locals, params, url, fetch }) => {
     // Ein angesehener früherer Stand steht in der Adresse (?stand=<id>), damit
     // die Ansicht ohne eigene Datenroute auskommt und Zurück im Browser wirkt.
     const standId = Number(url.searchParams.get('stand')) || null;
-    const [notiz, notizbuecher, staende, stand] = await Promise.all([
+    const [notiz, notizbuecher, staende, stand, netz] = await Promise.all([
       api<Notiz>(user, `/api/notizen/${params.id}`, fetch),
       api<Notizbuch[]>(user, '/api/notizbuecher', fetch).catch(() => [] as Notizbuch[]),
       // Fehlt die Liste, fehlt nur dieser Abschnitt, nicht die Notiz.
@@ -22,6 +22,8 @@ export const load: PageServerLoad = async ({ locals, params, url, fetch }) => {
       standId
         ? api<Stand>(user, `/api/notizen/${params.id}/staende/${standId}`, fetch).catch(() => null)
         : Promise.resolve(null),
+      // Fehlt das Netz, fehlen die Verweise, nicht die Notiz.
+      api<Netz>(user, `/api/notizen/${params.id}/netz`, fetch).catch(() => null),
     ]);
     // Die Basis der Kurzadressen kommt vom Server: `location` gibt es beim
     // ersten Rendern noch nicht, und ein Feld, das erst nach dem Laden seinen
@@ -31,6 +33,7 @@ export const load: PageServerLoad = async ({ locals, params, url, fetch }) => {
       notizbuecher,
       staende,
       stand,
+      netz,
       freigabeBasis: freigabeBasis(url.origin),
       // Ohne Adresse des Aufgaben-Dienstes kein Knopf, statt eines Knopfes, der scheitert.
       kannAufgabe: Boolean(env.AUFGABEN_API_BASE_URL),
@@ -137,6 +140,83 @@ export const actions: Actions = {
     );
   },
 
+  /**
+   * Die Aufgabe selbst löschen, gefragt am X einer Aufgaben-Verknüpfung. Der
+   * Aufgaben-Dienst räumt danach die Verknüpfungen in allen Notizen ab; die
+   * hier wird zusätzlich direkt entfernt, damit die Seite nicht auf dessen
+   * Hintergrundlauf wartet.
+   */
+  aufgabeLoeschen: async ({ locals, params, request, fetch }) => {
+    const user = locals.user;
+    if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
+    const basis = (env.AUFGABEN_API_BASE_URL ?? '').replace(/\/$/, '');
+    if (!basis) return fail(503, { fehler: 'Aufgaben-Dienst nicht eingerichtet' });
+    const felder = await request.formData();
+    const id = Number(felder.get('id'));
+    const ref = String(felder.get('ref') ?? '');
+    if (!ref) return fail(400, { fehler: 'Keine Aufgabe genannt' });
+    const token = issueBackendToken({ user, secret: backendSecret(), audience: 'aufgaben-api', ttlSeconds: 60 });
+    const res = await fetch(`${basis}/api/aufgaben/${encodeURIComponent(ref)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    // 404: die Aufgabe ist schon weg, dann bleibt nur die Verknüpfung zu lösen.
+    if (!res.ok && res.status !== 404) {
+      return fail(502, { fehler: `Aufgabe nicht gelöscht (Aufgaben-Dienst ${res.status})` });
+    }
+    try {
+      await api(user, `/api/notizen/${params.id}/verknuepfungen/${id}`, fetch, { method: 'DELETE' });
+    } catch (e) {
+      if (!(e instanceof ApiFehler && e.status === 404)) throw e;
+    }
+    return { ok: true, hinweis: res.ok ? 'Aufgabe gelöscht.' : 'Die Aufgabe gab es schon nicht mehr, die Verknüpfung ist entfernt.' };
+  },
+
+  /** Diese Notiz mit einer weiteren verbinden (beidseitig). */
+  verbinden: async ({ locals, params, request, fetch }) => {
+    const user = locals.user;
+    if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
+    const mit = Number((await request.formData()).get('mit'));
+    if (!Number.isInteger(mit) || mit <= 0) return fail(400, { fehler: 'Keine Notiz gewählt' });
+    return mitApi(() =>
+      api(user, `/api/notizen/${params.id}/verbunden`, fetch, {
+        method: 'POST',
+        body: JSON.stringify({ mit }),
+      }),
+    );
+  },
+
+  entbinden: async ({ locals, params, request, fetch }) => {
+    const user = locals.user;
+    if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
+    const mit = Number((await request.formData()).get('mit'));
+    return mitApi(() =>
+      api(user, `/api/notizen/${params.id}/verbunden/${mit}`, fetch, { method: 'DELETE' }),
+    );
+  },
+
+  /**
+   * Ein `[[Titel]]` zeigt auf eine Notiz, die es nicht gibt: anlegen und hin.
+   * Eine Verbindung braucht es nicht, der Verweis im Text ist die Verbindung.
+   */
+  neuAusVerweis: async ({ locals, request, fetch }) => {
+    const user = locals.user;
+    if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
+    const titel = String((await request.formData()).get('titel') ?? '').trim().slice(0, 300);
+    if (!titel) return fail(400, { fehler: 'Kein Titel' });
+    let neu: Notiz;
+    try {
+      neu = await api<Notiz>(user, '/api/notizen', fetch, {
+        method: 'POST',
+        body: JSON.stringify({ titel, inhalt: '' }),
+      });
+    } catch (e) {
+      if (e instanceof ApiFehler) return fail(e.status, { fehler: e.detail });
+      throw e;
+    }
+    redirect(303, `/notiz/${neu.id}`);
+  },
+
   anhangHochladen: async ({ locals, params, request, fetch }) => {
     const user = locals.user;
     if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
@@ -224,5 +304,13 @@ export const actions: Actions = {
     const felder = await request.formData();
     const id = Number(felder.get('id'));
     return mitApi(() => api(user, `/api/freigaben/${id}`, fetch, { method: 'DELETE' }));
+  },
+
+  /** Eine nicht mehr abrufbare Freigabe aus der Liste nehmen. */
+  freigabeEntfernen: async ({ locals, request, fetch }) => {
+    const user = locals.user;
+    if (!user) return fail(401, { fehler: 'Nicht angemeldet' });
+    const id = Number((await request.formData()).get('id'));
+    return mitApi(() => api(user, `/api/freigaben/${id}/eintrag`, fetch, { method: 'DELETE' }));
   },
 };

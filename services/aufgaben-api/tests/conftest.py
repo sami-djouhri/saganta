@@ -6,6 +6,8 @@ import pytest
 _tmp = tempfile.mkdtemp(prefix="aufgaben-test-")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp}/test.db")
 os.environ.setdefault("JWT_SECRET", "test-geheimnis-nur-fuer-die-testsuite")
+# Kein Aufruf an den Notizen-Dienst aus der Testsuite; test_notizen.py setzt ihn gezielt.
+os.environ.setdefault("NOTIZEN_API_URL", "")
 
 from fastapi.testclient import TestClient  # noqa: E402
 from jose import jwt  # noqa: E402

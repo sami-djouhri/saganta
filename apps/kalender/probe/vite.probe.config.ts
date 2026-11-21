@@ -24,6 +24,7 @@ export default defineConfig({
       // `$app/forms` als Attrappe, die Formulare werden hier nicht abgeschickt.
       $lib: fileURLToPath(new URL('../src/lib', import.meta.url)),
       '$app/forms': fileURLToPath(new URL('./app-forms-attrappe.ts', import.meta.url)),
+      '$app/stores': fileURLToPath(new URL('./app-forms-attrappe.ts', import.meta.url)),
     },
   },
   server: {

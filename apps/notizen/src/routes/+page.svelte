@@ -3,8 +3,10 @@
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { Button, Icon } from '@saganta/ui';
+  import { Button, Icon, eingerueckt } from '@saganta/ui';
   import Hervorhebung from '$lib/components/Hervorhebung.svelte';
+  import { VERBINDEN_HOECHSTENS } from '$lib/sammel';
+  import { HAT_BESCHRIFTUNG, HAT_FILTER, OHNE_BUCH, SORTIERUNGEN, umschalten as inListe } from '$lib/filter';
   import type { ActionData, PageData } from './$types';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -51,11 +53,34 @@
     }, 250);
   }
 
+  // Irgendein Filter außer der Suche gesetzt? Dann gibt es „Filter zurücksetzen“.
+  let filterAktiv = $derived(
+    Boolean(data.notizbuch || data.gewaehlteTags.length || data.hat.length || data.sortierung || data.projekt || data.archivierte),
+  );
+  function ohneFilter(): string {
+    const ziel = new URL($page.url);
+    for (const feld of ['buch', 'tag', 'hat', 'sort', 'projekt', 'nur', 'archiv']) ziel.searchParams.delete(feld);
+    return `${ziel.pathname}${ziel.search}` || '/';
+  }
+  function sortieren(wert: string) {
+    goto(filterAdresse('sort', wert || null), { noScroll: true });
+  }
+
   function filterAdresse(feld: string, wert: string | null): string {
     const ziel = new URL($page.url);
     if (wert === null) ziel.searchParams.delete(feld);
     else ziel.searchParams.set(feld, wert);
     return `${ziel.pathname}${ziel.search}` || '/';
+  }
+
+  // Projektfilter: ein anderes Projekt setzt „nur dieses" zurueck, sonst
+  // stuende der Schalter an einem Projekt, fuer das er nie gewaehlt wurde.
+  function projektWaehlen(wert: string) {
+    const ziel = new URL($page.url);
+    if (wert) ziel.searchParams.set('projekt', wert);
+    else ziel.searchParams.delete('projekt');
+    ziel.searchParams.delete('nur');
+    goto(`${ziel.pathname}${ziel.search}`, { noScroll: true });
   }
 
   function datum(roh: string): string {
@@ -144,6 +169,12 @@
           class="flex shrink-0 items-center rounded-full border border-border-stark px-3 py-1.5 max-lg:min-h-11 lg:rounded-md lg:border-0 lg:px-2 {!data.notizbuch
             ? 'bg-surface-2 text-text'
             : 'text-muted hover:text-text'}">Alle</a
+        >
+        <a
+          href={filterAdresse('buch', data.notizbuch === OHNE_BUCH ? null : OHNE_BUCH)}
+          class="flex shrink-0 items-center rounded-full border border-border-stark px-3 py-1.5 max-lg:min-h-11 lg:rounded-md lg:border-0 lg:px-2 {data.notizbuch === OHNE_BUCH
+            ? 'bg-surface-2 text-text'
+            : 'text-muted hover:text-text'}">Ohne Notizbuch</a
         >
         {#each data.notizbuecher as buch (buch.id)}
           <div class="group flex shrink-0 items-center gap-1 lg:shrink">
@@ -246,18 +277,86 @@
         {/if}
       {/if}
 
+      {#if data.projekte.length}
+        <h2 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted lg:mt-6">Projekt</h2>
+        <select
+          aria-label="Nach Projekt filtern"
+          value={data.projekt}
+          onchange={(e) => projektWaehlen(e.currentTarget.value)}
+          class="mt-2 min-h-11 w-full rounded-md border border-border-stark bg-surface-2 px-2 text-sm outline-none focus:border-accent-500 lg:min-h-9"
+        >
+          <option value="">Alle Projekte</option>
+          {#each data.projekte as z (z.schluessel)}
+            <option value={z.slug} selected={z.erstes && z.slug === data.projekt}>{eingerueckt(z)}</option>
+          {/each}
+        </select>
+        {#if data.projekt && (data.unterprojekte > 0 || data.nurDieses)}
+          <a
+            href={filterAdresse('nur', data.nurDieses ? null : '1')}
+            aria-current={data.nurDieses ? "true" : undefined}
+            class="mt-2 flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm lg:min-h-9 {data.nurDieses
+              ? 'border-accent-500 bg-accent-500/10 text-akzent'
+              : 'border-border-stark text-muted hover:text-text'}"
+          >
+            <Icon name="folder" size={14} /> Nur dieses Projekt
+          </a>
+          {#if !data.nurDieses}
+            <p class="mt-1 text-xs text-muted">
+              Mit {data.unterprojekte === 1 ? 'einem Unterprojekt' : `${data.unterprojekte} Unterprojekten`}.
+            </p>
+          {/if}
+        {/if}
+      {/if}
+
       {#if data.tags.length}
-        <h2 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted lg:mt-6">Tags</h2>
+        <h2 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted lg:mt-6">
+          Tags{#if data.gewaehlteTags.length > 1}<span class="ml-1 normal-case tracking-normal">· alle gewählten</span>{/if}
+        </h2>
         <div class="-mx-1 mt-2 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
           {#each data.tags as tag (tag)}
             <a
-              href={filterAdresse('tag', data.tag === tag ? null : tag)}
-              class="flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs max-lg:min-h-11 max-lg:px-3 {data.tag === tag
+              href={filterAdresse('tag', inListe(data.gewaehlteTags, tag))}
+              aria-current={data.gewaehlteTags.includes(tag) ? "true" : undefined}
+              class="flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs max-lg:min-h-11 max-lg:px-3 {data.gewaehlteTags.includes(tag)
                 ? 'border-accent-500 bg-accent-500/10 text-akzent'
                 : 'border-border-stark text-muted hover:text-text'}">{tag}</a
             >
           {/each}
         </div>
+      {/if}
+
+      <h2 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted lg:mt-6">Hat</h2>
+      <div class="-mx-1 mt-2 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
+        {#each HAT_FILTER as h (h)}
+          <a
+            href={filterAdresse('hat', inListe(data.hat, h))}
+            aria-current={data.hat.includes(h) ? "true" : undefined}
+            class="flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs max-lg:min-h-11 max-lg:px-3 {data.hat.includes(h)
+              ? 'border-accent-500 bg-accent-500/10 text-akzent'
+              : 'border-border-stark text-muted hover:text-text'}">{HAT_BESCHRIFTUNG[h]}</a
+          >
+        {/each}
+      </div>
+
+      <h2 class="mt-4 text-xs font-semibold uppercase tracking-wide text-muted lg:mt-6">Sortierung</h2>
+      <select
+        aria-label="Sortierung"
+        value={data.sortierung}
+        onchange={(e) => sortieren(e.currentTarget.value)}
+        class="mt-2 min-h-11 w-full rounded-md border border-border-stark bg-surface-2 px-2 text-sm outline-none focus:border-accent-500 lg:min-h-9"
+      >
+        {#each SORTIERUNGEN as o (o.wert)}
+          <option value={o.wert}>{o.name}</option>
+        {/each}
+      </select>
+      {#if data.suche && !data.sortierung}
+        <p class="mt-1 text-xs text-muted">Bei einer Suche zuerst die besten Treffer.</p>
+      {/if}
+
+      {#if filterAktiv}
+        <a href={ohneFilter()} class="mt-4 flex min-h-11 items-center gap-2 text-sm text-akzent hover:underline lg:min-h-9">
+          <Icon name="x" size={14} /> Filter zurücksetzen
+        </a>
       {/if}
 
       <a
@@ -321,6 +420,21 @@
                 {gewaehlt.length === data.notizen.length ? 'keine' : 'alle'}
               </button>
               {#if gewaehlt.length}
+                {#if gewaehlt.length >= 2}
+                  <!-- Eigene Aktion: verbindet jede gewählte Notiz mit jeder anderen. -->
+                  <Button
+                    type="submit"
+                    formaction="?/verbinden"
+                    size="sm"
+                    variant="ghost"
+                    disabled={gewaehlt.length > VERBINDEN_HOECHSTENS}
+                    title={gewaehlt.length > VERBINDEN_HOECHSTENS
+                      ? `Höchstens ${VERBINDEN_HOECHSTENS} auf einmal`
+                      : 'Jede gewählte Notiz mit jeder anderen verbinden'}
+                  >
+                    <Icon name="link" size={14} /> Verbinden
+                  </Button>
+                {/if}
                 <Button type="submit" name="aktion" value="anheften" size="sm" variant="ghost">Anheften</Button>
                 <Button type="submit" name="aktion" value="loesen" size="sm" variant="ghost">Lösen</Button>
                 <Button
@@ -354,6 +468,9 @@
           {#if data.suche}
             <p>Keine Notiz enthält „{data.suche}".</p>
             <a href={filterAdresse('q', null)} class="mt-4 inline-flex min-h-11 items-center rounded-md border border-border-stark px-4 text-sm text-text hover:bg-surface-2">Suche zurücksetzen</a>
+          {:else if data.projekt}
+            <p>Keine Notiz an „{data.projektName}"{data.nurDieses ? '' : ' oder seinen Unterprojekten'}.</p>
+            <a href={filterAdresse('projekt', null)} class="mt-4 inline-flex min-h-11 items-center rounded-md border border-border-stark px-4 text-sm text-text hover:bg-surface-2">Alle Notizen</a>
           {:else if data.archivierte}
             <p>Nichts im Archiv.</p>
             <a href={filterAdresse('archiv', null)} class="mt-4 inline-flex min-h-11 items-center rounded-md border border-border-stark px-4 text-sm text-text hover:bg-surface-2">Alle Notizen</a>

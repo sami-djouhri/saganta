@@ -173,7 +173,11 @@ export function tagesGruppen(alle: Aufgabe[], heute: string): Gruppe[] {
       schluessel: 'geplant',
       titel: 'Heute eingeplant',
       symbol: 'calendar-clock',
-      aufgaben: offen.filter((a) => istHeuteGeplant(a, heute) && a.due_date !== heute),
+      // Ueberfaellig UND eingeplant stand bis 2026-11-20 zweimal da: der Filter
+      // schloss nur „heute faellig“ aus. Jetzt: was eine fruehere Gruppe hat, fehlt hier.
+      aufgaben: offen.filter(
+        (a) => istHeuteGeplant(a, heute) && a.due_date !== heute && !istUeberfaellig(a, heute),
+      ),
     },
   ];
   const schonDrin = new Set(gruppen.flatMap((g) => g.aufgaben.map((a) => a.id)));
@@ -217,18 +221,47 @@ export function nameAusSlug(slug: string): string {
  */
 export function projekteAus(
   aufgaben: Aufgabe[],
-  deck: { slug: string; name: string; status?: string }[],
-): { id: string; slug: string; name: string; status?: string }[] {
-  const nach = new Map<string, { id: string; slug: string; name: string; status?: string }>();
+  deck: { id?: number; slug: string; name: string; status?: string; eltern_ids?: number[]; kinder_ids?: number[] }[],
+): {
+  id: string;
+  slug: string;
+  name: string;
+  status?: string;
+  deck_id?: number | null;
+  eltern_ids?: number[];
+  kinder_ids?: number[];
+}[] {
+  type Zeile = ReturnType<typeof projekteAus>[number];
+  const nach = new Map<string, Zeile>();
   for (const p of deck) {
     if (p.status === 'archived' || p.status === 'shutdown') continue;
-    nach.set(p.slug, { id: p.slug, slug: p.slug, name: p.name, status: p.status });
+    nach.set(p.slug, {
+      id: p.slug,
+      slug: p.slug,
+      name: p.name,
+      status: p.status,
+      deck_id: p.id ?? null,
+      eltern_ids: p.eltern_ids ?? [],
+      kinder_ids: p.kinder_ids ?? [],
+    });
   }
+  // Auch die weiteren Projekte einer Aufgabe: sonst fehlte ein angeheftetes,
+  // inzwischen archiviertes Projekt in der Auswahl, und der Dialog liesse es
+  // beim Speichern still fallen.
   for (const a of aufgaben) {
-    const slug = a.project_id;
-    if (!slug || nach.has(slug)) continue;
-    const bekannt = deck.find((p) => p.slug === slug);
-    nach.set(slug, { id: slug, slug, name: bekannt?.name ?? nameAusSlug(slug), status: bekannt?.status });
+    for (const slug of [a.project_id, ...(a.weitere_projekte ?? [])]) {
+      if (!slug || nach.has(slug)) continue;
+      const bekannt = deck.find((p) => p.slug === slug);
+      nach.set(slug, {
+        id: slug,
+        slug,
+        name: bekannt?.name ?? nameAusSlug(slug),
+        status: bekannt?.status,
+        deck_id: bekannt?.id ?? null,
+        eltern_ids: bekannt?.eltern_ids ?? [],
+        kinder_ids: bekannt?.kinder_ids ?? [],
+      });
+    }
   }
   return [...nach.values()].sort((x, y) => x.name.localeCompare(y.name, 'de'));
 }
@@ -247,12 +280,44 @@ export function pool(alle: Aufgabe[], heute: string): Aufgabe[] {
     .sort(nachDringlichkeit);
 }
 
-/** Offen, datiert, aber noch nicht heute. Der Blick nach vorn. */
+/**
+ * Offen, datiert oder eingeplant, aber noch nicht heute. Der Blick nach vorn.
+ *
+ * Bis 2026-11-20 nur nach Frist: eine auf naechste Woche geplante Aufgabe ohne
+ * Frist stand weder hier noch im Vorrat noch auf Heute, war also bis zu ihrem
+ * Tag unsichtbar.
+ */
 export function demnaechst(alle: Aufgabe[], heute: string, tage = 7): Aufgabe[] {
   const grenze = tagePlus(heute, tage);
+  const imFenster = (d?: string | null) => !!d && d > heute && d <= grenze;
   return alle
-    .filter((a) => istOffen(a) && !istProjektaufgabe(a) && !!a.due_date && a.due_date > heute && a.due_date <= grenze)
+    .filter(
+      (a) =>
+        istOffen(a) &&
+        !istProjektaufgabe(a) &&
+        !gehoertZuHeute(a, heute) &&
+        (imFenster(a.due_date) || imFenster(a.planned_date)),
+    )
     .sort(nachDringlichkeit);
+}
+
+/**
+ * Was heute auf dem Tisch liegt, in Minuten, gegen die Kapazitaet zu halten.
+ *
+ * Gezaehlt werden genau die Aufgaben der Heute-Liste (`tagesGruppen`). Ohne
+ * geschaetzte Dauer zaehlt eine Aufgabe nicht mit, wird aber genannt: sonst
+ * saehe ein Tag voller unbezifferter Aufgaben leicht aus.
+ */
+export function tagesLast(alle: Aufgabe[], heute: string): { minuten: number; ohneDauer: number } {
+  let minuten = 0;
+  let ohneDauer = 0;
+  for (const g of tagesGruppen(alle, heute)) {
+    for (const a of g.aufgaben) {
+      if (a.estimated_minutes) minuten += a.estimated_minutes;
+      else ohneDauer += 1;
+    }
+  }
+  return { minuten, ohneDauer };
 }
 
 /**

@@ -299,6 +299,19 @@ export const SAGANTA_APPS: SagantaApp[] = [
     signatur: 'repeating-linear-gradient(90deg, currentColor 0 12px, transparent 12px 16px, currentColor 16px 17px, transparent 17px 21px)',
     tags: ['productivity'],
   },
+  {
+    id: 'walle',
+    name: 'Wall-E',
+    // Eigener Dienst (docker/walle, node1) mit eigener Anmeldung hinter Authelia,
+    // nur im Heimnetz. Kopf und Nachtstudie seit der Ueberarbeitung 2026-11-21.
+    description: 'Suchziele, Funde und Preise für Hardware, eBay-Beobachtungsliste.',
+    sub: 'walle',
+    nurHeim: true,
+    icon: 'target',
+    // Kurze Zacken in festem Takt, wie die Ausschlaege einer Preiskurve.
+    signatur: 'repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px, currentColor 5px 11px, transparent 11px 14px)',
+    tags: ['productivity'],
+  },
 ];
 
 /**

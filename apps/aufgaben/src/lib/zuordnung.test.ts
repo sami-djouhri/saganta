@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Aufgabe, Liste } from './aufgaben-bff';
-import { listenAus, nachListe, zuordnungAus, zuordnungVon } from './zuordnung';
+import { listenAus, nachListe, weitereAus, zuordnungAus, zuordnungVon } from './zuordnung';
 
 function a(teil: Partial<Aufgabe> & { id: string }): Aufgabe {
   return { title: teil.id, priority: 'mittel', completed: false, ...teil } as Aufgabe;
@@ -67,5 +67,22 @@ describe('nachListe', () => {
     expect(gruppen.map((g) => g.titel)).toEqual(['Wohnung & Haushalt', 'Gesundheit & Körper']);
     expect(gruppen[0]?.aufgaben.map((x) => x.id)).toEqual(['putzen']);
     expect(gruppen[1]?.aufgaben).toEqual([]);
+  });
+});
+
+describe('weitereAus', () => {
+  it('schickt nichts ohne Aenderung', () => {
+    expect(weitereAus(['a', 'b'], 'a,b', null)).toEqual({});
+    expect(weitereAus([], '', null)).toEqual({});
+  });
+  it('schickt die neue Liste, ohne Doppel und ohne das Zuhause', () => {
+    expect(weitereAus(['a', 'b', 'a', 'heim'], 'a', 'heim')).toEqual({ weitere_projekte: ['a', 'b'] });
+  });
+  it('leert mit null', () => {
+    expect(weitereAus([], 'a', null)).toEqual({ weitere_projekte: null });
+  });
+  it('lehnt fremde Werte und mehr als zehn ab', () => {
+    expect(weitereAus(['Nicht Gueltig'], '', null)).toHaveProperty('fehler');
+    expect(weitereAus(Array.from({ length: 11 }, (_, i) => `p${i}`), '', null)).toHaveProperty('fehler');
   });
 });

@@ -4,7 +4,8 @@ import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from . import aufgaben_dienst
+from . import aufgaben_dienst, gliederung
+from .routes_akte import mit_gliederung
 from .auth import CurrentUser, Me
 from .db import get_db
 from .enums import PUBLIC_READINESS_ITEMS, SHUTDOWN_CHECKLIST_ITEMS
@@ -75,8 +76,10 @@ def list_projects(
     # Fehlt die Antwort, bleibt der Zaehler 0. Das ist hier vertretbar:
     # er ist eine Anzeige an der Kachel, kein Urteil wie ein Befund.
     je_slug = (aufgaben_dienst.zaehlung(me) or {}) if projekte else {}
+    gl = mit_gliederung(db, me, projekte)
     return [
         ProjectOut.model_validate(p).model_copy(update={
+            **gl[p.id],
             "open_tasks": je_slug.get(p.slug, {}).get("offen", 0),
             "open_high": je_slug.get(p.slug, {}).get("hoch", 0),
             "overdue_tasks": je_slug.get(p.slug, {}).get("ueberfaellig", 0),
@@ -89,27 +92,35 @@ def list_projects(
 @router.post("", response_model=ProjectOut, status_code=201)
 def create_project(
     payload: ProjectIn, me: Me = CurrentUser, db: Session = Depends(get_db)
-) -> Project:
+) -> ProjectOut:
     data = payload.model_dump()
+    eltern_ids = data.pop("eltern_ids")
     base_slug = slugify(data.pop("slug") or data["name"])
     p = Project(owner=me.sub, slug=_unique_slug(db, base_slug), **data)
     db.add(p)
+    db.flush()
+    if eltern_ids:
+        gliederung.eltern_setzen(db, p, eltern_ids)
     db.commit()
     db.refresh(p)
-    return p
+    return _mit_gl(db, me, p)
+
+
+def _mit_gl(db: Session, me: Me, p: Project) -> ProjectOut:
+    return ProjectOut.model_validate(p).model_copy(update=mit_gliederung(db, me, [p])[p.id])
 
 
 @router.get("/by-slug/{slug}", response_model=ProjectOut)
-def get_by_slug(slug: str, me: Me = CurrentUser, db: Session = Depends(get_db)) -> Project:
+def get_by_slug(slug: str, me: Me = CurrentUser, db: Session = Depends(get_db)) -> ProjectOut:
     p = db.query(Project).filter(Project.owner == me.sub, Project.slug == slug).one_or_none()
     if not p:
         raise HTTPException(404, "project not found")
-    return p
+    return _mit_gl(db, me, p)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-def get_project(project_id: int, me: Me = CurrentUser, db: Session = Depends(get_db)) -> Project:
-    return _owned_project(db, me, project_id)
+def get_project(project_id: int, me: Me = CurrentUser, db: Session = Depends(get_db)) -> ProjectOut:
+    return _mit_gl(db, me, _owned_project(db, me, project_id))
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

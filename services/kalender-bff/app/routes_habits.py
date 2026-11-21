@@ -30,6 +30,8 @@ _UHRZEIT = r"^\d{2}:\d{2}$"
 # `sport` und `hobby` seit dem 2026-10-25, hier fehlten sie bis zum 2026-11-08:
 # die Gewohnheit mit `hobby` liess sich ueber die App nicht mehr aendern (422).
 _KATEGORIE = r"^(lernen|lesen|sport|hobby|sonstige)$"
+# Wunschzeit (seit 2026-11-21), leer = egal; gleiches Muster wie im Dienst.
+_WUNSCHZEIT = r"^(|morgens|mittags|nachmittags|abends)$"
 
 
 class HabitIn(BaseModel):
@@ -49,6 +51,7 @@ class HabitIn(BaseModel):
     weekday_target_ratio: float = Field(default=0.3, ge=0.1, le=0.5)
     max_consecutive_days: int = Field(default=3, ge=1, le=7)
     max_session_minutes: int = Field(default=120, ge=15, le=480)
+    wunschzeit: str | None = Field(default=None, pattern=_WUNSCHZEIT)
 
 
 class HabitPatch(BaseModel):
@@ -69,6 +72,7 @@ class HabitPatch(BaseModel):
     weekday_target_ratio: float | None = Field(default=None, ge=0.1, le=0.5)
     max_consecutive_days: int | None = Field(default=None, ge=1, le=7)
     max_session_minutes: int | None = Field(default=None, ge=15, le=480)
+    wunschzeit: str | None = Field(default=None, pattern=_WUNSCHZEIT)
 
 
 class SessionAction(BaseModel):

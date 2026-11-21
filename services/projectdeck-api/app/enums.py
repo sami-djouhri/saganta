@@ -87,14 +87,6 @@ LIVE_STATUSES = {
     ProjectStatus.REVIEW,
 }
 
-# Status, die niemals automatisch eingeplant werden dürfen.
-NO_AUTO_SCHEDULE_STATUSES = {
-    ProjectStatus.FROZEN,
-    ProjectStatus.SHUTDOWN_CANDIDATE,
-    ProjectStatus.SHUTDOWN,
-    ProjectStatus.ARCHIVED,
-}
-
 # Items der Public-Readiness-Checkliste (Reihenfolge = UI-Reihenfolge).
 PUBLIC_READINESS_ITEMS = [
     "description",

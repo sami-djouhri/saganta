@@ -3,7 +3,7 @@ from datetime import UTC, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,17 @@ from .auth import Me, verify_jwt
 from .config import settings
 from .db import get_db
 from .helfer import anhang_aus, notiz_aus, notiz_holen, notizen_kurz, verknuepfung_aus
-from .models import VERKNUEPFUNGS_TYPEN, Anhang, Notiz, Notizbuch, NotizStand, Papierkorb, Verknuepfung
+from .models import (
+    VERKNUEPFUNGS_TYPEN,
+    Anhang,
+    Freigabe,
+    Notiz,
+    Notizbuch,
+    NotizStand,
+    NotizVerweis,
+    Papierkorb,
+    Verknuepfung,
+)
 from .schemas import (
     AnhangAus,
     NotizAn,
@@ -25,6 +35,7 @@ from .schemas import (
     VerknuepfungAn,
     VerknuepfungAus,
 )
+from .routes_netz import verbinden_paare, verbundene_ids
 from .suche import suchen
 from .util import dateiname_saeubern, jetzt, tags_lesen, tags_normalisieren
 
@@ -51,11 +62,105 @@ def _notizbuch_pruefen(db: Session, owner_sub: str, buch_id: int | None) -> None
 # --- Notizen -------------------------------------------------------------
 
 
+# Was der Filter „hat …" kennt. Je Wort eine Bedingung, mehrere gelten
+# zusammen (UND), wie bei den Tags.
+HAT_FILTER = {"aufgabe", "termin", "projekt", "kontakt", "anhang", "freigabe", "verweis", "angeheftet"}
+SORTIERUNGEN = {"geaendert", "erstellt", "titel"}
+
+
+def _liste_aus(roh: str | None) -> list[str]:
+    return [t.strip().lower() for t in (roh or "").split(",") if t.strip()]
+
+
+def _filter_bedingungen(
+    me: Me,
+    *,
+    notizbuch_id: int | None,
+    ohne_notizbuch: bool,
+    tags: list[str],
+    hat: list[str],
+    verknuepft: str | None,
+    archivierte: bool,
+) -> list:
+    """Alle Filter der Liste als SQL-Bedingungen.
+
+    Eine Stelle fuer beide Wege: bis 2026-11-21 galten Tag und Verknuepfung
+    nur ohne Suchwort, mit Suchwort fielen sie still weg und die Liste zeigte
+    Treffer, die der gewaehlte Tag ausschloss.
+    """
+    unbekannt = set(hat) - HAT_FILTER
+    if unbekannt:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unbekannter Filter: {', '.join(sorted(unbekannt))}")
+    wo: list = [Notiz.owner_sub == me.sub]
+    if not archivierte:
+        wo.append(Notiz.archiviert.is_(False))
+    if ohne_notizbuch:
+        wo.append(Notiz.notizbuch_id.is_(None))
+    elif notizbuch_id is not None:
+        wo.append(Notiz.notizbuch_id == notizbuch_id)
+    for tag in tags:
+        # Tags liegen als kommagetrennte Liste, mit den Kommas an beiden Enden
+        # trifft LIKE genau ein ganzes Tag und nicht dessen Anfang ("haus" darf
+        # "hausrat" nicht mitnehmen). % und _ im Tag zaehlen woertlich.
+        muster = tag.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        wo.append(func.lower("," + Notiz.tags + ",").like(f"%,{muster},%", escape="\\"))
+    for art in hat:
+        if art in VERKNUEPFUNGS_TYPEN:
+            wo.append(Notiz.id.in_(
+                select(Verknuepfung.notiz_id).where(Verknuepfung.owner_sub == me.sub, Verknuepfung.typ == art)
+            ))
+        elif art == "anhang":
+            wo.append(Notiz.id.in_(select(Anhang.notiz_id).where(Anhang.owner_sub == me.sub)))
+        elif art == "freigabe":
+            wo.append(Notiz.id.in_(
+                select(Freigabe.notiz_id).where(Freigabe.owner_sub == me.sub, Freigabe.widerrufen_am.is_(None))
+            ))
+        elif art == "verweis":
+            # Von Hand verbunden oder ein [[Titel]] im Text.
+            wo.append(or_(
+                Notiz.id.in_(select(NotizVerweis.a_id).where(NotizVerweis.owner_sub == me.sub)),
+                Notiz.id.in_(select(NotizVerweis.b_id).where(NotizVerweis.owner_sub == me.sub)),
+                Notiz.inhalt.contains("[["),
+            ))
+        elif art == "angeheftet":
+            wo.append(Notiz.angeheftet.is_(True))
+    if verknuepft:
+        typ, _, ref = verknuepft.partition(":")
+        if not typ or not ref:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "verknuepft erwartet 'typ:kennung'")
+        wo.append(Notiz.id.in_(
+            select(Verknuepfung.notiz_id).where(
+                Verknuepfung.owner_sub == me.sub,
+                Verknuepfung.typ == typ,
+                Verknuepfung.ref == ref,
+            )
+        ))
+    return wo
+
+
+def _reihenfolge(sortierung: str):
+    if sortierung == "erstellt":
+        return (Notiz.angeheftet.desc(), Notiz.erstellt_am.desc())
+    if sortierung == "titel":
+        # Ohne Titel ans Ende, sonst stuenden sie alle vorn.
+        return (Notiz.angeheftet.desc(), (Notiz.titel == "").asc(), func.lower(Notiz.titel).asc())
+    return (Notiz.angeheftet.desc(), Notiz.geaendert_am.desc())
+
+
 @router.get("", response_model=list[NotizKurzAus])
 def liste(
     q: str | None = Query(default=None, description="Volltextsuche ueber Titel, Text und Tags"),
     notizbuch_id: int | None = None,
-    tag: str | None = None,
+    ohne_notizbuch: bool = Query(default=False, description="Nur Notizen ohne Notizbuch"),
+    tag: str | None = Query(default=None, description="Ein Tag oder mehrere, kommagetrennt; alle muessen passen"),
+    hat: str | None = Query(
+        default=None,
+        description="Kommagetrennt aus aufgabe, termin, projekt, kontakt, anhang, freigabe, verweis, angeheftet",
+    ),
+    sortierung: str | None = Query(
+        default=None,
+        description="geaendert (Vorgabe), erstellt oder titel; mit Suchwort ohne Angabe nach Relevanz",
+    ),
     verknuepft: str | None = Query(
         default=None,
         description=(
@@ -68,51 +173,41 @@ def liste(
     me: Me = Depends(verify_jwt),
     db: Session = Depends(get_db),
 ) -> list[NotizKurzAus]:
+    if sortierung is not None and sortierung not in SORTIERUNGEN:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unbekannte Sortierung: {sortierung}")
+    wo = _filter_bedingungen(
+        me,
+        notizbuch_id=notizbuch_id,
+        ohne_notizbuch=ohne_notizbuch,
+        tags=_liste_aus(tag),
+        hat=_liste_aus(hat),
+        verknuepft=verknuepft,
+        archivierte=archivierte,
+    )
     if q:
+        # Die Volltextsuche liefert nach Relevanz; die Filter greifen danach.
+        # Deshalb mit weitem Deckel suchen, sonst schnitte er Treffer ab, die
+        # der Filter behalten haette.
         treffer = suchen(
             db,
             me.sub,
             q,
-            notizbuch_id=notizbuch_id,
+            notizbuch_id=None if ohne_notizbuch else notizbuch_id,
             archivierte=archivierte,
-            limit=limit,
+            limit=max(limit, 500),
         )
         if not treffer:
             return []
-        reihenfolge = {nid: i for i, (nid, _) in enumerate(treffer)}
+        rang = {nid: i for i, (nid, _) in enumerate(treffer)}
         ausschnitte = dict(treffer)
-        notizen = db.scalars(
-            select(Notiz).where(Notiz.owner_sub == me.sub, Notiz.id.in_(reihenfolge.keys()))
-        ).all()
-        notizen = sorted(notizen, key=lambda n: reihenfolge[n.id])
-        return notizen_kurz(db, list(notizen), ausschnitte)
+        anfrage = select(Notiz).where(*wo, Notiz.id.in_(rang.keys()))
+        if sortierung:
+            notizen = list(db.scalars(anfrage.order_by(*_reihenfolge(sortierung)).limit(limit)).all())
+        else:
+            notizen = sorted(db.scalars(anfrage).all(), key=lambda n: rang[n.id])[:limit]
+        return notizen_kurz(db, notizen, ausschnitte)
 
-    anfrage = select(Notiz).where(Notiz.owner_sub == me.sub)
-    if not archivierte:
-        anfrage = anfrage.where(Notiz.archiviert.is_(False))
-    if notizbuch_id is not None:
-        anfrage = anfrage.where(Notiz.notizbuch_id == notizbuch_id)
-    if tag:
-        # Tags liegen als kommagetrennte Liste, mit den Kommas an beiden Enden
-        # trifft LIKE genau ein ganzes Tag und nicht dessen Anfang ("haus" darf
-        # "hausrat" nicht mitnehmen).
-        anfrage = anfrage.where(
-            func.lower("," + Notiz.tags + ",").like(f"%,{tag.strip().lower()},%")
-        )
-    if verknuepft:
-        typ, _, ref = verknuepft.partition(":")
-        if not typ or not ref:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "verknuepft erwartet 'typ:kennung'")
-        anfrage = anfrage.where(
-            Notiz.id.in_(
-                select(Verknuepfung.notiz_id).where(
-                    Verknuepfung.owner_sub == me.sub,
-                    Verknuepfung.typ == typ,
-                    Verknuepfung.ref == ref,
-                )
-            )
-        )
-    anfrage = anfrage.order_by(Notiz.angeheftet.desc(), Notiz.geaendert_am.desc()).limit(limit)
+    anfrage = select(Notiz).where(*wo).order_by(*_reihenfolge(sortierung or "geaendert")).limit(limit)
     return notizen_kurz(db, list(db.scalars(anfrage).all()))
 
 
@@ -189,6 +284,46 @@ def verknuepft_sammel(
             continue  # archiviert oder inzwischen geloescht
         ergebnis.setdefault(ref, []).append(eintrag)
     return ergebnis
+
+
+@router.delete("/verknuepft", response_model=dict[str, int])
+def verknuepft_entfernen(
+    typ: str = Query(description="Verknuepfungstyp, z. B. 'aufgabe'"),
+    ref: str = Query(min_length=1, max_length=200, description="Kennung des Gegenstuecks"),
+    me: Me = Depends(verify_jwt),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    """Alle Verknuepfungen des Kontos auf ein Gegenstueck entfernen.
+
+    Fuer die Gegenseite, wenn sie ihr Objekt loescht (der Aufgaben-Dienst ruft
+    das beim Loeschen einer Aufgabe). Vorher blieb die Verknuepfung stehen und
+    zeigte mit ihrer kopierten Beschriftung auf etwas, das es nicht mehr gibt.
+    Kein Treffer ist kein Fehler: die Antwort nennt die Anzahl.
+    """
+    if typ not in VERKNUEPFUNGS_TYPEN:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unbekannter Verknuepfungstyp: {typ}")
+    ergebnis = db.execute(
+        delete(Verknuepfung).where(
+            Verknuepfung.owner_sub == me.sub,
+            Verknuepfung.typ == typ,
+            Verknuepfung.ref == ref.strip(),
+        )
+    )
+    entfernt = ergebnis.rowcount or 0
+    # Auch aus dem Papierkorb, sonst braechte das Zurueckholen einer Notiz
+    # die Verknuepfung auf das geloeschte Gegenstueck wieder mit.
+    for eintrag in db.scalars(
+        select(Papierkorb).where(Papierkorb.owner_sub == me.sub, Papierkorb.daten.contains(ref.strip()))
+    ):
+        d = json.loads(eintrag.daten)
+        vorher = d.get("verknuepfungen", [])
+        nachher = [v for v in vorher if not (v.get("typ") == typ and v.get("ref") == ref.strip())]
+        if len(nachher) != len(vorher):
+            d["verknuepfungen"] = nachher
+            eintrag.daten = json.dumps(d, ensure_ascii=False)
+            entfernt += len(vorher) - len(nachher)
+    db.commit()
+    return {"entfernt": entfernt}
 
 
 @router.post("", response_model=NotizAus, status_code=status.HTTP_201_CREATED)
@@ -392,6 +527,8 @@ def loeschen(
             "erstellt_am": notiz.erstellt_am.isoformat() if notiz.erstellt_am else None,
             "anhaenge": len(ablagen),
             "verknuepfungen": [{"typ": v.typ, "ref": v.ref, "label": v.label} for v in notiz.verknuepfungen],
+            # Kennungen der verbundenen Notizen; beim Zurueckholen nur die, die es noch gibt.
+            "verbunden": verbundene_ids(db, me.sub, notiz.id),
         }, ensure_ascii=False),
     ))
     db.delete(notiz)
@@ -438,6 +575,11 @@ def wiederherstellen(eintrag_id: int, me: Me = Depends(verify_jwt), db: Session 
     db.flush()
     for v in d.get("verknuepfungen", []):
         db.add(Verknuepfung(owner_sub=me.sub, notiz_id=notiz.id, typ=v["typ"], ref=v["ref"], label=v.get("label", "")))
+    verbunden = {i for i in d.get("verbunden", []) if isinstance(i, int)}
+    if verbunden:
+        noch_da = set(db.scalars(select(Notiz.id).where(Notiz.owner_sub == me.sub, Notiz.id.in_(verbunden))))
+        for andere in noch_da:
+            verbinden_paare(db, me.sub, [notiz.id, andere])
     db.delete(z)
     db.commit()
     return notiz_aus(notiz_holen(db, me.sub, notiz.id))

@@ -1,4 +1,4 @@
-FROM node:22-slim AS base
+FROM node:24-slim AS base
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
@@ -33,7 +33,7 @@ RUN node -e 'const fs=require("fs"); \
   fs.writeFileSync("/repo/laufzeit-deps.txt", zeilen.join("\n")+"\n"); \
   console.log(zeilen.join("\n"));'
 
-FROM node:22-slim AS runner
+FROM node:24-slim AS runner
 # Sicherheitsstand des Basis-Image nachziehen. Ein Upstream-Image friert die Paketstaende
 # vom Tag seines Baus ein, Debian-security ist regelmaessig weiter, und ein `--pull` holt
 # nur ein neueres Bild derselben Verspaetung: gemessen am 2026-09-13 trug das aktuelle

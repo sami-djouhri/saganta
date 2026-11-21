@@ -36,6 +36,7 @@ export interface DienstAufgabe {
   zeitfenster?: Zeitfenster[] | null;
   unteraufgaben?: Unteraufgabe[] | null;
   projekt?: string | null;
+  weitere_projekte?: string[] | null;
   liste_id?: string | null;
   turnus_tage?: number | null;
 }
@@ -78,6 +79,7 @@ export function alsAufgabe(d: DienstAufgabe): Aufgabe {
     energy_required: d.energie ? ENERGIE_ZU_OBERFLAECHE[d.energie] : null,
     // Der Projekt-Slug ist die Kennung: `Projekt.id` ist hier der Slug.
     project_id: d.projekt ?? null,
+    weitere_projekte: d.weitere_projekte ?? null,
     liste_id: d.liste_id ?? null,
     defer_count: d.verschoben,
     tageszeit: d.tageszeit ?? null,
@@ -123,9 +125,13 @@ export const PROJECTDECK_API_AUDIENCE = 'projectdeck-api';
 
 /** So liefert das ProjectDeck ein Projekt, soweit die Aufgaben es brauchen. */
 export interface DeckProjekt {
+  id: number;
   slug: string;
   name: string;
   status: string;
+  /** Gliederung (seit 2026-11-15): direkte Eltern und Kinder als Zahl-Kennungen. */
+  eltern_ids?: number[];
+  kinder_ids?: number[];
 }
 
 /**

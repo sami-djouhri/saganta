@@ -9,7 +9,7 @@ Das ist der Grund, warum die geteilte Schicht eine Liste von Spaltennamen fuehrt
 und keinen einzigen: ein Pruefer, der Eigenschaften am Namen erkennt, findet
 genau das nicht, was anders benannt ist.
 
-Sieben Tabellen tragen hier **keine** Mandantenspalte und haengen per
+Neun Tabellen tragen hier **keine** Mandantenspalte und haengen per
 ``ondelete="CASCADE"`` an ``projects``. Sie stehen deshalb in keinem Schritt,
 und das ist kein Versehen: die Abdeckungspruefung loest diese Ketten auf und
 wuerde sich melden, wenn eine davon ihr CASCADE verloere. Dass das wirklich
@@ -29,7 +29,7 @@ PLAN = loeschen.Plan(
         loeschen.eigene(
             "projects",
             spalte="owner",
-            warum="Projekte, mit Aufgaben, Meilensteinen, Reviews und Zeitbloecken per CASCADE",
+            warum="Projekte, mit Aufgaben, Meilensteinen, Reviews, Zeitbloecken, Kontakt-Verweisen und Eltern-Verknuepfungen per CASCADE",
         ),
     ),
 )

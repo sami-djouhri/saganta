@@ -2,11 +2,14 @@
   import { enhance } from '$app/forms';
   import { Button, Icon } from '@saganta/ui';
   import ProjectGrid from '$lib/components/ProjectGrid.svelte';
+  import ProjektBaum from '$lib/components/ProjektBaum.svelte';
+  import { baum, eingerueckt } from '$lib/gliederung';
   import { PROJECT_STATUS, PROJECT_TYPES, VISIBILITY } from '$lib/meta';
   import type { PageData, ActionData } from './$types';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
-  let showCreate = $state(false);
+  // `?oben=<id>` oeffnet das Formular gleich als „Unterprojekt anlegen".
+  let showCreate = $state(Boolean(data.oben));
 
   const ACHSEN = [
     { titel: 'Art', feld: 'type' as const, labels: PROJECT_TYPES },
@@ -25,6 +28,18 @@
         ),
   );
 
+  const nachSortierung = (a: (typeof data.projects)[number], b: (typeof data.projects)[number]) =>
+    data.sortierung === 'prioritaet'
+      ? a.priority - b.priority || a.name.localeCompare(b.name, 'de')
+      : (b.open_high ?? 0) - (a.open_high ?? 0) || (b.open_tasks ?? 0) - (a.open_tasks ?? 0) ||
+        a.name.localeCompare(b.name, 'de');
+  let gliederung = $derived(baum(data.alleProjekte ?? data.projects, nachSortierung));
+  let auswahl = $derived(eingerueckt(data.alleProjekte ?? data.projects));
+
+  const ANSICHTEN: [string, string][] = [
+    ['gliederung', 'Gliederung'],
+    ['kacheln', 'Kacheln'],
+  ];
   const SORTIERUNGEN: [string, string][] = [
     ['offen', 'nach Offenem'],
     ['prioritaet', 'nach Priorität'],
@@ -36,6 +51,7 @@
     if (data.filter?.type) q.set('type', data.filter.type);
     if (data.filter?.status) q.set('status', data.filter.status);
     if (wert !== 'offen') q.set('sort', wert);
+    if (data.ansicht === 'kacheln' && !gefiltert) q.set('ansicht', 'kacheln');
     const s = q.toString();
     return s ? `/projekte?${s}` : '/projekte';
   }
@@ -113,6 +129,17 @@
       />
     </label>
     <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+      <span class="text-muted">Unter Oberprojekt (optional)</span>
+      <select name="eltern_id" class="rounded-md border border-border-stark bg-surface px-3 py-2">
+        <option value="">steht oben (kein Oberprojekt)</option>
+        {#each auswahl as { projekt, tiefe }, i (`${projekt.id}-${i}`)}
+          <option value={projekt.id} selected={String(projekt.id) === data.oben}
+            >{'\u00a0\u00a0'.repeat(tiefe)}{tiefe ? '└ ' : ''}{projekt.name}</option
+          >
+        {/each}
+      </select>
+    </label>
+    <label class="flex flex-col gap-1 text-sm sm:col-span-2">
       <span class="text-muted">Nächste Aktion (optional)</span>
       <input name="next_action" class="rounded-md border border-border-stark bg-surface px-3 py-2" />
     </label>
@@ -146,6 +173,17 @@
     >
       {(data.alleProjekte ?? data.projects).length} Projekte
     </a>
+    {#if !gefiltert}
+      <span class="ml-3 text-xs uppercase tracking-wide text-muted">Ansicht</span>
+      {#each ANSICHTEN as [wert, label] (wert)}
+        <a
+          href={wert === 'kacheln' ? `/projekte?ansicht=kacheln${data.sortierung === 'prioritaet' ? '&sort=prioritaet' : ''}` : mitSortierung(data.sortierung ?? 'offen').replace(/[?&]ansicht=kacheln/, '')}
+          class="rounded-md border px-2 py-1 text-xs {data.ansicht === wert
+            ? 'border-accent-500/60 bg-surface-2'
+            : 'border-border text-muted'}">{label}</a
+        >
+      {/each}
+    {/if}
     <span class="ml-auto text-xs uppercase tracking-wide text-muted">Sortiert</span>
     {#each SORTIERUNGEN as [wert, label] (wert)}
       <a
@@ -178,5 +216,9 @@
 </div>
 
 <div class="mt-6">
-  <ProjectGrid projects={sortiert} empty="Noch keine Projekte, leg dein erstes an." />
+  {#if data.ansicht === 'gliederung'}
+    <ProjektBaum knoten={gliederung} />
+  {:else}
+    <ProjectGrid projects={sortiert} empty="Noch keine Projekte, leg dein erstes an." />
+  {/if}
 </div>

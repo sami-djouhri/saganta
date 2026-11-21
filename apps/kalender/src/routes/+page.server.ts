@@ -35,6 +35,9 @@ import {
 } from '$lib/cal';
 import type { Beleg, LaufenderTimer } from '$lib/handzeit';
 import type { Actions, PageServerLoad } from './$types';
+import { ausDeck, projektBaum, type BaumZeile } from '@saganta/ui';
+import { ladeDeckProjekte } from '$lib/server/projekte';
+import { projektFeld } from '$lib/projektfeld';
 
 const ALLOWED_DAYS = [7, 14, 30] as const;
 
@@ -130,6 +133,10 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
   // rueckwirkende Nachtragen verpasster Tage und bleibt teilbar in der Adresse.
   const deckeParam = url.searchParams.get('decke') ?? '';
   const deckeTag = /^\d{4}-\d{2}-\d{2}$/.test(deckeParam) ? deckeParam : today;
+
+  // Projekte fuer das Feld „Projekt" und die Marke am Termin (seit 2026-11-15).
+  // Nebenher und fail-soft: ohne ProjectDeck bleibt der Editor bedienbar.
+  const deckLauf = locals.user ? ladeDeckProjekte(locals.user, fetch) : Promise.resolve([]);
 
   if (locals.user && env.KALENDER_BFF_BASE_URL) {
     const token = kalenderBffToken(locals.user, backendSecret());
@@ -314,7 +321,17 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
     }
   }
 
+  const deck = await deckLauf;
+  // Auswahl: laufende Projekte, eingerueckt nach der Gliederung.
+  const projektZeilen: BaumZeile[] = projektBaum(
+    deck.filter((p) => !['archived', 'shutdown'].includes(p.status ?? '')).map(ausDeck),
+  );
+  // Namen fuer die Marke: alle, auch archivierte (ein alter Termin behaelt seinen Namen).
+  const projektNamen: Record<string, string> = Object.fromEntries(deck.map((p) => [p.slug, p.name]));
+
   return {
+    projektZeilen,
+    projektNamen,
     zeitTimer,
     zeitBelege,
     termineHeute,
@@ -369,6 +386,20 @@ function eventTimes(
   if (start.length < 19 || end.length < 19) return { error: 'Start und Ende angeben.' };
   if (start >= end) return { error: 'Start muss vor Ende liegen.' };
   return { start, end, all_day: false };
+}
+
+/**
+ * Erinnerung aus dem Editor (seit 2026-11-21): Minuten vor Beginn, leer = keine.
+ * Beim Aendern heisst „keine" -1, weil der BFF ``null`` als „unveraendert" liest.
+ */
+function erinnerungFeld(fd: FormData, aendern: boolean): { reminder_minutes?: number | null } | { fehler: string } {
+  const roh = fd.get('reminder_minutes');
+  if (roh === null) return {};
+  const text = String(roh).trim();
+  if (text === '') return aendern ? { reminder_minutes: -1 } : {};
+  const n = Number(text);
+  if (!Number.isInteger(n) || n < 0 || n > 10080) return { fehler: 'Erinnerung unlesbar.' };
+  return { reminder_minutes: n };
 }
 
 export const actions: Actions = {
@@ -757,6 +788,10 @@ export const actions: Actions = {
     const times = eventTimes(fd);
     if ('error' in times) return fail(400, { error: times.error });
     const activityType = String(fd.get('activity_type') ?? '').trim();
+    const projekt = projektFeld(String(fd.get('projekt') ?? ''), null, false);
+    if ('fehler' in projekt) return fail(400, { error: projekt.fehler });
+    const erinnerung = erinnerungFeld(fd, false);
+    if ('fehler' in erinnerung) return fail(400, { error: erinnerung.fehler });
     try {
       await kalenderBffFetch(ctx.base, '/api/events', ctx.token, fetch, {
         method: 'POST',
@@ -766,6 +801,8 @@ export const actions: Actions = {
           title,
           location: String(fd.get('location') ?? '').trim() || null,
           activity_type: activityType || null,
+          ...projekt,
+          ...erinnerung,
           ...times,
         }),
       });
@@ -794,6 +831,15 @@ export const actions: Actions = {
     };
     const calendar_id = String(fd.get('calendar_id') ?? '').trim();
     if (calendar_id) body.calendar_id = calendar_id;
+    // Projekt nur bei einer Aenderung: fehlte die Projektliste, zeigte das Feld
+    // „kein Projekt", und ein blindes Leeren loeste den Bezug still.
+    const altRoh = fd.get('projekt_alt');
+    const projekt = projektFeld(String(fd.get('projekt') ?? ''), altRoh === null ? null : String(altRoh), true);
+    if ('fehler' in projekt) return fail(400, { error: projekt.fehler });
+    Object.assign(body, projekt);
+    const erinnerung = erinnerungFeld(fd, true);
+    if ('fehler' in erinnerung) return fail(400, { error: erinnerung.fehler });
+    Object.assign(body, erinnerung);
     try {
       await kalenderBffFetch(ctx.base, `/api/events/${id}`, ctx.token, fetch, {
         method: 'PUT',
@@ -856,6 +902,41 @@ export const actions: Actions = {
           body: JSON.stringify({ start, end }),
         });
       }
+      return { eventOk: true };
+    } catch (err) {
+      return fail(502, { error: String(err) });
+    }
+  },
+
+  /**
+   * „Rueckgaengig" nach dem Loeschen eines Einzeltermins (seit 2026-11-21): legt
+   * ihn mit denselben Feldern neu an. Der Termin bekommt dabei eine neue Kennung;
+   * Notizen, die am alten hingen, haengen nicht mehr daran.
+   */
+  eventWiederherstellen: async ({ locals, fetch, request }) => {
+    const ctx = bffCtx(locals);
+    if (!ctx) return fail(401, { error: 'nicht angemeldet' });
+    const fd = await request.formData();
+    let t: Record<string, unknown>;
+    try {
+      t = JSON.parse(String(fd.get('termin') ?? ''));
+    } catch {
+      return fail(400, { error: 'Termin unlesbar.' });
+    }
+    const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+    if (typeof t?.title !== 'string' || !t.title || typeof t.calendar_id !== 'string'
+      || !iso.test(String(t.start)) || !iso.test(String(t.end))) {
+      return fail(400, { error: 'Termin unvollständig.' });
+    }
+    const erlaubt = ['calendar_id', 'title', 'start', 'end', 'all_day', 'location', 'description',
+      'reminder_minutes', 'activity_type', 'projekt'];
+    const rumpf = Object.fromEntries(Object.entries(t).filter(([k, v]) => erlaubt.includes(k) && v !== null && v !== ''));
+    try {
+      await kalenderBffFetch(ctx.base, '/api/events', ctx.token, fetch, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rumpf),
+      });
       return { eventOk: true };
     } catch (err) {
       return fail(502, { error: String(err) });

@@ -24,6 +24,8 @@ export const AUSGEBLENDET: ReadonlySet<string> = new Set([
   'readiness',
   'client',
   'shutdown',
+  // Seit 15.11. in der Zeitleiste (Termine, Fristen und Eingeplantes zusammen).
+  'calendar',
 ]);
 
 const NAV_ALLE = [

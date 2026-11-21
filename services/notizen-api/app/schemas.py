@@ -275,3 +275,71 @@ class StandAus(BaseModel):
     inhalt: str
     tags: list[str]
     stand_vom: datetime
+
+
+# --- Verweise zwischen Notizen (seit 2026-11-20) --------------------------
+
+
+class NotizVerweisAus(BaseModel):
+    """Eine andere Notiz im Netz der angesehenen, mit Titel von jetzt."""
+
+    id: int
+    titel: str
+    ausschnitt: str
+    notizbuch_id: int | None
+    archiviert: bool
+
+
+class TextVerweisAus(BaseModel):
+    """Ein ``[[Titel]]`` im Text und die Notiz, die er meint (``id`` None: gibt es nicht)."""
+
+    text: str
+    id: int | None
+
+
+class NetzAus(BaseModel):
+    verbunden: list[NotizVerweisAus]
+    erwaehnt_in: list[NotizVerweisAus]
+    verweist_auf: list[TextVerweisAus]
+
+
+class TitelTreffer(BaseModel):
+    id: int
+    titel: str
+    archiviert: bool
+
+
+class GesamtKnoten(BaseModel):
+    id: int
+    titel: str
+    notizbuch_id: int | None
+    archiviert: bool
+    angeheftet: bool
+    grad: int
+    offene_verweise: int
+
+
+class GesamtKante(BaseModel):
+    """Eine Linie im Netz. Bei ``art`` "text" verweist ``a`` per ``[[ ]]`` auf ``b``."""
+
+    a: int
+    b: int
+    art: str
+
+
+class GesamtNetzAus(BaseModel):
+    knoten: list[GesamtKnoten]
+    kanten: list[GesamtKante]
+
+
+class VerbindenAn(BaseModel):
+    ids: list[int] = Field(min_length=2, max_length=20)
+
+
+class VerbindenAus(BaseModel):
+    neu: int
+    vorhanden: int
+
+
+class VerbundenAn(BaseModel):
+    mit: int

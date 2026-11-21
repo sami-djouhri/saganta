@@ -9,7 +9,7 @@
     "preview": "node build",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "eslint .",
-    "test": "echo 'no tests yet' && exit 0"
+    "test": "vitest run"
   },
   "dependencies": {
     "@saganta/auth": "workspace:*",
@@ -29,6 +29,7 @@
     "svelte-check": "^4.1.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
-    "vite": "^6.4.5"
+    "vite": "^6.4.5",
+    "vitest": "^4.1.12"
   }
 }
